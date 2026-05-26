@@ -352,14 +352,15 @@ export async function dispatchProvider(
 }
 
 export function isLlmServiceError(message: string): boolean {
+  const m = message.toLowerCase();
   return (
-    message.includes('OpenAI') ||
-    message.includes('Anthropic') ||
-    message.includes('Google') ||
-    message.includes('OpenRouter') ||
-    message.includes('OPENROUTER_API_KEY') ||
-    message.includes('quota') ||
-    message.includes('RESOURCE_EXHAUSTED')
+    m.includes('OpenAI') ||
+    m.includes('Anthropic') ||
+    m.includes('Google') ||
+    m.includes('OpenRouter') ||
+    m.includes('OPENROUTER_API_KEY') ||
+    m.includes('quota') ||
+    m.includes('RESOURCE_EXHAUSTED')
   );
 }
 
