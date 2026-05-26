@@ -1,0 +1,36 @@
+{
+  "name": "cv-tailoring-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "API-only backend: POST /api/tailor-cv returns a tailored CV as base64 .docx",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "node --import tsx --test tests/**/*.test.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.67.0",
+    "@google/genai": "^1.27.0",
+    "@langfuse/client": "^5.3.0",
+    "@langfuse/otel": "^5.3.0",
+    "@langfuse/tracing": "^5.3.0",
+    "@opentelemetry/sdk-node": "^0.217.0",
+    "@types/node": "18.15.3",
+    "docx": "^9.5.0",
+    "langsmith": "0.6.3",
+    "next": "^15.5.7",
+    "openai": "^6.5.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "typescript": "5.0.2",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.15",
+    "@types/uuid": "^10.0.0",
+    "dotenv": "^17.2.3",
+    "tsx": "^4.19.0"
+  }
+}
