@@ -4,16 +4,31 @@ import { GoogleGenAI } from '@google/genai';
 import { traceLLMCall } from './langsmith';
 import { traceLLMCall as traceLLMCallLangFuse, type LangfusePromptRef } from './langfuse';
 
+const DEFAULT_MAX_TOKENS = 8192;
+const DEFAULT_TEMPERATURE = 0.3;
+const MIN_MAX_TOKENS = 1;
+const MAX_MAX_TOKENS = 128_000;
+
+function parseMaxTokens(raw: string | undefined): number {
+  if (!raw) return DEFAULT_MAX_TOKENS;
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < MIN_MAX_TOKENS) {
+    return DEFAULT_MAX_TOKENS;
+  }
+  return Math.min(Math.floor(parsed), MAX_MAX_TOKENS);
+}
+
+function parseTemperature(raw: string | undefined): number {
+  if (!raw) return DEFAULT_TEMPERATURE;
+  const parsed = parseFloat(raw);
+  if (!Number.isFinite(parsed)) return DEFAULT_TEMPERATURE;
+  return Math.min(1, Math.max(0, parsed));
+}
+
 // Configuration helper
 function getLLMConfig() {
-  const maxTokens = process.env.AI_MAX_TOKENS
-    ? parseInt(process.env.AI_MAX_TOKENS, 10)
-    : 8192;
-
-  const temperature = process.env.AI_TEMPERATURE
-    ? parseFloat(process.env.AI_TEMPERATURE)
-    : 0.3;
-
+  const maxTokens = parseMaxTokens(process.env.AI_MAX_TOKENS);
+  const temperature = parseTemperature(process.env.AI_TEMPERATURE);
   return { maxTokens, temperature };
 }
 
