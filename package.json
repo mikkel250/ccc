@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "test": "node --import tsx --test tests/**/*.test.ts"
   },
   "dependencies": {
@@ -31,6 +31,8 @@
     "@types/react": "19.2.15",
     "@types/uuid": "^10.0.0",
     "dotenv": "^17.2.3",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "16.2.6",
     "tsx": "^4.19.0"
   }
 }
