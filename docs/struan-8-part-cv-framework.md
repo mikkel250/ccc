@@ -114,7 +114,7 @@ Order: reverse chronological. Subheadings per employer (e.g. `### Company Name` 
 
 | Part | Heading |
 |------|---------|
-| Name | `# Full Name` |
+| Document header | `# Full Name` |
 | 1–8 | `## Contact Information` … `## Education` |
 | Per role | `### Company Name` under Standard Job Information / following blocks |
 
