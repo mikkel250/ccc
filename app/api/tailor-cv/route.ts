@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "../lib/rate-limit";
 import { getAllContext } from "../lib/knowledge-base";
 import { getCvPrompt, compileCvPrompt } from "../lib/cv-prompt";
-import { chat } from "../lib/llm";
+import { chat, isLlmServiceError } from "../lib/llm";
 import { markdownToDocxBase64 } from "../lib/markdown-docx";
 import { validateTailorCvBody } from "../lib/tailor-cv-validation";
 
@@ -70,14 +70,7 @@ export async function POST(request: NextRequest) {
     console.error("Tailor CV API error:", error);
     const message = error instanceof Error ? error.message : String(error);
 
-    if (
-      message.includes("OpenAI") ||
-      message.includes("Anthropic") ||
-      message.includes("Google") ||
-      message.includes("All providers failed") ||
-      message.includes("quota") ||
-      message.includes("RESOURCE_EXHAUSTED")
-    ) {
+    if (isLlmServiceError(message)) {
       return NextResponse.json(
         { error: "AI service error. Please try again." },
         { status: 503 }
