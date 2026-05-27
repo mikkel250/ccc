@@ -2,6 +2,9 @@
   "name": "cv-tailoring-api",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "description": "API-only backend: POST /api/tailor-cv returns a tailored CV as base64 .docx",
   "scripts": {
     "dev": "next dev",
@@ -17,7 +20,7 @@
     "@langfuse/otel": "^5.3.0",
     "@langfuse/tracing": "^5.3.0",
     "@opentelemetry/sdk-node": "^0.217.0",
-    "@types/node": "18.15.3",
+    "@types/node": "^22.15.0",
     "docx": "^9.5.0",
     "langsmith": "0.6.3",
     "next": "^15.5.7",
