@@ -14,8 +14,8 @@
     "test": "node --import tsx --test tests/**/*.test.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.67.0",
-    "@google/genai": "^1.27.0",
+    "@anthropic-ai/sdk": "^0.67.1",
+    "@google/genai": "^1.52.0",
     "@langfuse/client": "^5.3.0",
     "@langfuse/otel": "^5.3.0",
     "@langfuse/tracing": "^5.3.0",
