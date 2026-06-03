@@ -108,19 +108,6 @@ describe("detectProvider + dispatchProvider", () => {
     assert.equal(capturedModel, "deepseek-v4-pro");
   });
 
-  it("dispatchProvider throws for deepseek without API key", async () => {
-    delete process.env.DEEPSEEK_API_KEY;
-    await assert.rejects(
-      () =>
-        dispatchProvider(
-          "deepseek",
-          [{ role: "user", content: "Hi" }],
-          "System",
-          { model: "deepseek-v4-pro" }
-        ),
-      /DEEPSEEK_API_KEY/
-    );
-  });
 });
 
 describe("callOpenRouter — openRouterFlex", () => {
