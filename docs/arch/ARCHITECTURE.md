@@ -11,7 +11,7 @@ The project was cloned from `portfolio-react-ts` and stripped of all portfolio p
 | Language | TypeScript 5 | Strict mode |
 | Framework | Next.js 15 App Router | API routes only (`app/api/`). No pages, no components, no layout beyond API root. |
 | Runtime | Node.js 22 LTS (≥22.0.0) | Railway (Nixpacks reads `.nvmrc`); no Edge Functions |
-| LLM | OpenAI, Anthropic, Google Gemini, DeepSeek via OpenRouter + native batch APIs | Multi-provider sync + async batch. Separate worker for cost-optimized batch processing. Separate `TAILOR_MODEL` env var for CV generation (frontier model). |
+| LLM | DeepSeek + Anthropic (direct sync); OpenAI + Google via OpenRouter flex | `detectProvider()` routes bare `gpt-*` / `o4-*` / `gemini-*` → OpenRouter (`openRouterFlex` default true); bare `deepseek-*` → DeepSeek API; evergreen `haiku` / `sonnet` / `opus` and `claude-*` → Anthropic direct (no OpenRouter for Anthropic). Slash-prefixed models (e.g. `openai/gpt-5.4-mini`, `deepseek/deepseek-v4-pro`) → OpenRouter. Separate `TAILOR_MODEL` for CV generation. Native batch APIs deferred. |
 | Auth | None | MVP is single-user, no auth layer |
 | Database | SQLite (MVP), PostgreSQL + pgvector (future) | Learning system stores feedback, few-shot examples, and hallucination corrections. Not needed for MVP (single-pass, stateless). |
 | Storage | None | CV .docx is generated in-memory per request, returned as base64 |
@@ -68,22 +68,24 @@ Key decisions:
 - **Queue-backed inputs**: JDs from any source (email, paste, link, job boards) land in the same queue. The worker does not care about input origin.
 - **Shared CV engine**: The same prompt assembly, knowledge base injection, and 8-part framework logic serves both sync (instant) and async (batch) paths. Only the LLM dispatch mechanism differs.
 - **Tiered delivery**: Instant path = premium tier (sync, frontier model). Batch path = economy tier (async, cost-optimized, up to 24h turnaround). BYOK option lets users bring their own API keys for direct provider pricing.
-- **Provider strategy**: OpenRouter flex for OpenAI/Google models during MVP. Native batch APIs for Anthropic. DeepSeek initially via OpenRouter (passes through 75%-discounted base at $0.435/$0.87/M), with a planned migration to direct DeepSeek API for batch processing — direct off-peak (9:30 AM–5:30 PM PDT) cuts rates another 50% to $0.22/$0.44/M. Three distinct batch protocols (submit → poll → retrieve) to maintain.
+- **Provider strategy (sync MVP)**: OpenAI and Google models go through OpenRouter flex (`service_tier: flex`, overridable via `openRouterFlex: false`). DeepSeek and Anthropic use direct native APIs (`DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`). Slash-prefixed DeepSeek models (`deepseek/deepseek-v4-pro`) remain on OpenRouter as a credit-fallback. Default `chat()` model: `deepseek-v4-pro`. Native batch APIs (Anthropic Message Batches, DeepSeek batch) are deferred — require async poll infrastructure.
 
 ### Model selection
 
-Model for CV generation is not yet finalized. Candidates:
+Settled sync defaults in `app/api/lib/llm.ts` (CV eval still in progress via Langfuse):
 
-| Model | Provider | Estimated cost/M tokens | Rationale |
-|-------|----------|------------------------|-----------|
-| DeepSeek V4 Pro | DeepSeek native batch (direct) | $0.22 in / $0.44 out (off-peak direct) | Near-frontier quality at fraction of cost; primary candidate. OpenRouter passes through the 75%-discounted base rate ($0.435/$0.87) but does NOT apply the extra 50% off-peak discount that direct DeepSeek API offers during 9:30 AM–5:30 PM PDT. Plan to transition from OpenRouter → direct DeepSeek API before batch launch. |
-| Claude Haiku 4.5 | Anthropic native batch | ~$0.25–0.50 | Best human-like text generation |
-| Gemini 2.5 Flash | Google via OpenRouter flex | ~$0 free tier or low cost | Fast, free tier available |
-| GPT-4o-mini | OpenAI via OpenRouter flex | ~$0.15 | Reliable, widely used |
-| Kimi K2.5 | Moonshot native batch | $1.80/M output (batch) | Leads IFEval at 94.0 (instruction following); open-weight. Deprioritized: 4x DeepSeek's cost without proportionate quality gain for this task, which requires JD intent reasoning, not just format compliance. |
-| Qwen3.5-35B | Alibaba Cloud | ~$0.50–1.00 | Best structured extraction accuracy on SOB benchmark (80.1% leaf-value). Deprioritized: coding benchmarks (proxy for reasoning) don't beat DeepSeek; format compliance alone is not the differentiator. |
+| Model ID | Route | Role |
+|----------|-------|------|
+| `deepseek-v4-pro` | Direct DeepSeek API | Primary driver; default for `chat()` and `callDeepSeek()` |
+| `openai/gpt-5.4-mini` | OpenRouter flex | Polish / alignment; default for `callOpenRouter()` |
+| `gpt-5.4-mini`, `o4-mini` | OpenRouter flex | Bare OpenAI IDs routed via OpenRouter |
+| `haiku`, `sonnet`, `opus` | Direct Anthropic API | Evergreen tier aliases; default `callAnthropic()` → `sonnet` |
+| `gemini-3.1-pro-preview` | OpenRouter flex | Google baseline |
+| `deepseek/deepseek-v4-pro` | OpenRouter | Credit-fallback when direct DeepSeek quota exhausted |
 
-Evaluation planned (post-MVP): Run 3+ models against 2–3 real JDs, score on hallucination rate, 8-part format compliance, and accomplishment relevance. Langfuse prompt management and evaluation framework will be used. No model choice is committed until eval results are in.
+**Deferred:** LLM-as-Judge scoring; Anthropic Message Batches API (async submit/poll/retrieve).
+
+Evaluation planned (post-MVP): Run models against 2–3 real JDs, score on hallucination rate, 8-part format compliance, and accomplishment relevance. Langfuse eval framework. No final CV production model committed until results are in.
 
 ### CV generation pipeline enhancements (post-MVP)
 

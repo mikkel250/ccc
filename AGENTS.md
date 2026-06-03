@@ -1,3 +1,24 @@
+# AGENTS.md
+
+Canonical instructions for AI coding agents working in this repository.
+
+## Project
+
+- Name: TODO
+- Purpose: TODO: describe the product, service, or library.
+- Primary stack: TODO: list runtime, framework, database, and package manager.
+
+## Working Rules
+
+- Read existing code and docs before changing behavior.
+- Keep changes scoped to the user's request.
+- Preserve user edits and unrelated dirty worktree changes.
+- Prefer existing local patterns over introducing new abstractions.
+- Update docs when behavior, architecture, or test strategy changes.
+- Run the validation command in `## Commands` after docs changes when the CLI is available, and follow its traceability guidance for behavior specs.
+- Follow the project code conventions in `docs/arch/CODE_CONVENTIONS.md`.
+- For complex multi-step tasks (intake, decomposition, review), reason through fully before producing any artifact. Do not narrate the reasoning process in output — lead with conclusions and artifacts.
+
 # Git Branch Safety
 
 You operate under a locked-down branch policy. The `main` branch is protected at the remote level (PR-only). Your local behavior must align.
@@ -38,21 +59,6 @@ Before running `git commit`, `git push`, `git merge`, or `git rebase`:
 **Wrong:** Assume the branch is correct without checking.
 **Right:** Run `git branch --show-current` before any git operation or code modification.
 
-# Agent Capability Usage
-
-You are equipped with powerful tools inside Cursor. Use them effectively:
-
-- **Broad Exploration vs Specific Needles**: When searching for patterns across many files, analyzing broad repository structure, or extracting themes from a large codebase, spawn an `explore` subagent (the Task tool with `subagent_type: explore`). Do NOT run iterative `grep` or `find` directly unless you're searching for a specific known symbol. Use the `Read` tool immediately if you already know the file path and it is directly relevant.
-- **File reading threshold**: If a task requires reading more than 2 files for discovery or understanding — rather than reading a known target — spawn an `explore` subagent instead of chaining `Read` calls. Sequential speculative reads are slower and consume more context than a single focused explore pass.
-- **Parallel tool calls**: When multiple independent reads, searches, or operations are needed in the same step, batch them in a single response. Do not execute them sequentially unless each depends on the result of the previous.
-- **No speculative reads**: Do not read a file to find out whether it is relevant. Decide first — using the Context Discipline artifact table, the task description, or an explore pass — then read only files you have determined are needed.
-- **Thinking model discipline**: If you are a reasoning or thinking-capable model, use your internal trace to decide which files to read and what tool calls to make *before* executing them. Do not read files as part of your reasoning process. Decide, then act.
-- **Agent Skills**: When the user requests tasks like "write rules", "add a statusline hook", or mentions platform specifics like Vercel, Next.js, or shadcn, immediately read any matching Skill file (provided in your prompt context) to get the correct instructions and format. Do not guess platform semantics if a Skill is available.
-- **Task Management**: Use the TodoWriter/Task tools directly to persist complex multi-step goals, ensuring you do not lose track of subtasks.
-- **Post-execution lint check**: After making code changes, run `ReadLints` on every edited file before declaring the task complete. Fix any errors your changes introduced. Do not pass lint errors to the review agent.
-- **Background subagents**: When spawning an `explore` or other subagent whose result is not needed until a later step, run it in the background (`run_in_background: true`). Do not block on work that can proceed in parallel.
-- **Modes**: Leverage your ability to `SwitchMode` to 'plan' when architecture decisions need collaborative review before writing code. Use 'agent' when you are ready to write code independently.
-
 # Communication
 
 - Be extremely concise
@@ -60,6 +66,12 @@ You are equipped with powerful tools inside Cursor. Use them effectively:
 - Never explain what you're about to do
 - Never summarize what you just did
 - Maximum 3 prose sentences unless explicitly necessary
+
+**Wrong:** "I'll now read the plan file to understand the task scope..."
+**Right:** Read the file. Lead with what you found.
+
+**Wrong:** "I've completed the implementation. Here's a summary of what I did..."
+**Right:** Emit the artifact or the run command. Stop.
 
 # Scope
 
@@ -91,7 +103,7 @@ Resolve the active slug from `docs/plan/_ACTIVE` (first line), then append your 
 **Stale plan check:** after resolving `<slug>` from `docs/plan/_ACTIVE`, when reading `docs/plan/<slug>/README.md`, check the `## Session: YYYY-MM-DD` stamp at the top. If the date does not match today's date, or if no stamp is present, ask the user: "The plan in `docs/plan/<slug>/README.md` is dated [date]. Is this the current session's plan, or should I discard it?" Do not act on a potentially stale plan without confirmation. Do not generate or guess today's date — run `date +%Y-%m-%d` if you need to verify it.
 
 | When | Read (in order) | Purpose |
-|------|-----------------|--------|
+|------|-----------------|---------|
 | Session / task start | `docs/plan/_ACTIVE`, then `docs/plan/<slug>/README.md` | Objective, constraints, acceptance criteria |
 | Immediately after | `docs/plan/<slug>/OPEN_QUESTIONS.md` | Blockers; do not proceed past unresolved items without updating this file or stopping |
 | Before coding or changing architecture | `docs/arch/ARCHITECTURE.md` | Stack, decisions, invariants |
@@ -100,15 +112,78 @@ Resolve the active slug from `docs/plan/_ACTIVE` (first line), then append your 
 
 **Handoffs:** prefer `@docs/plan/...`, `@docs/arch/...`, or `@docs/archive/...` plus **scoped** git context (`git diff`, specific commits, named paths) over long chat transcripts. Do not rely on prior messages for facts that belong in artifacts or the repo.
 
-- **Stack and repo-wide conventions** live only in `docs/arch/ARCHITECTURE.md` (see its *Stack context* section and the tables below it); do not duplicate them in rules.
+- **Stack and repo-wide conventions** live only in `docs/arch/ARCHITECTURE.md`; do not duplicate them in rules.
+- Prefer artifact references over long chat history.
+- Codebase reality overrides conversation history. If artifacts contradict stale discussion, follow the artifacts.
 
-- Prefer artifact references over long chat history
-- Codebase reality overrides conversation history
-- If artifacts contradict stale discussion, follow the artifacts
+## Commands
+
+```bash
+# Install dependencies
+npm install
+
+# Run development server
+npm run dev
+
+# Run tests
+npm test
+
+# Lint
+npm run lint
+
+# Build
+npm run build
+```
+
+## Coding Practices
+
+### Config-driven routing, code-driven integration
+
+- **Model strings are namespaced.** Every model identifier uses the form `provider/model` (e.g. `openrouter/openai/gpt-4o`, `anthropic/sonnet`, `deepseek/deepseek-v4-pro`). The first `/`-delimited segment is the provider. No bare aliases — `sonnet` without a provider prefix is invalid.
+- **Adding a new model or provider must not require a code change in routing logic.** Provider detection reduces to splitting the model string on `/` and looking up the first segment in a provider registry. That registry is configuration (env vars), not a chain of `if` statements.
+- **Provider-specific call shapes (message formatting, auth, API structure) live in the provider's integration function** behind a stable `dispatchProvider` interface. That `switch` is fine — it dispatches behavior, not routing decisions.
+- **Every tunable parameter must originate from an environment variable.** This includes: default models per provider, API base URLs, max tokens, temperature, OpenRouter service tier, and model resolution cache TTLs. Per-function hardcoded fallbacks (e.g. `"gpt-4o-mini"` inside `callOpenAI`) are prohibited — each function receives its model from the caller, which resolves it from `process.env`.
+
+### Senior Engineer Heuristics
+
+**Configuration vs. behavior — classify before coding.** Before adding a conditional, ask: is this configuration or behavior? If configuration — a new model, provider name, threshold, or URL — it belongs in an env var or config object, not an `if` branch. If it is genuinely different behavior (Anthropic's message format vs. OpenAI's), it belongs in code behind an existing interface. Misclassifying configuration as code is the single most common mistake.
+
+**80% overlap means extend, don't copy.** Before adding a function, scan the module and its siblings. If an existing function already does 80% of what you need, extend it with a parameter rather than duplicating it. Duplication is worse than the wrong abstraction — at least the wrong abstraction can be renamed.
+
+**Every literal value is a future outage.** Numbers, strings, URLs, timeouts, TTLs — if it is not a language keyword, it goes in `process.env` with a sensible default. The one exception is test fixtures. Reuse `lib/env.ts` helpers (`getEnvNumber`, `getEnvString`) instead of repeating `parseInt(process.env.X || "5")` across modules.
+
+**New code must look like old code.** Match the existing module's export style (named, not default), error shape (discriminated union `{ ok: true, data } | { ok: false, error: string }`), type naming convention, and file structure. Consistency beats cleverness — a codebase where every module invents its own pattern is unmaintainable regardless of how elegant any single module is.
+
+**Handle errors at exactly one boundary.** Internal functions throw or return discriminated unions. The route handler is the only place that maps errors to HTTP status codes. No `try/catch` in a `lib/` function that returns an HTTP-shaped object.
+
+**External data is `unknown` until validated.** `request.json()`, `process.env`, API responses — type them through a validation function before they touch business logic. Never `as`-cast external data.
+
+**`.env.example` is the canonical env var catalog.** Every new environment variable must appear in `.env.example` with a comment describing its purpose and default. The file is the single source of truth for what the application needs at runtime.
+
+## Documentation Map
+
+- `docs/spec/`: product behavior, API contracts, user-facing requirements.
+- `docs/test/`: test strategy, regression cases, manual verification notes.
+- `docs/arch/`: architecture decisions, code conventions, module boundaries, data flow, infrastructure/runtime dependencies, integration boundaries, and migration design.
+- `docs/`: all directories use kebab-case; all markdown file names use UPPER_SNAKE_CASE, including `README.md`.
+- `docs/`: prefer keeping individual markdown files under the configured markdown validation budgets (default 200 lines and 10,000 characters); split larger docs into focused UPPER_SNAKE_CASE files and keep `README.md` as the index/overview unless a narrow size-check exception is configured.
+- `docs/`: when adding, renaming, splitting, moving, or archiving docs, update the nearest relevant `README.md` index/table of contents in the same change.
+- `docs/`: each docs subdirectory `README.md` acts as the local table of contents; list important files, task directories, status, and a one-line purpose for each entry.
+- `docs/`: start small with a single focused markdown file; when one domain grows into multiple docs, promote it to `docs/<area>/<domain>/README.md` plus related UPPER_SNAKE_CASE files in that directory.
+- `docs/arch/`: code conventions may start as `CODE_CONVENTIONS.md`; when they grow across multiple topics, use `docs/arch/conventions/README.md` as the index with supporting UPPER_SNAKE_CASE files.
+- `docs/plan/`: local active implementation plans. Create one kebab-case directory per task (`docs/plan/<task-slug>/`), keep the task overview/index in that directory's `README.md`, and add supporting UPPER_SNAKE_CASE plan files alongside it. Ignored by git by default.
+- `docs/archive/`: local completed plans, temporary reports, historical notes, payload captures. Move completed plan task directories to `docs/archive/plan/<task-slug>/`; put temporary reports and investigations under `docs/archive/report/<report-slug>/`. Ignored by git by default.
+
+## Agent-Specific Entrypoints
+
+- `CLAUDE.md` imports this file with `@AGENTS.md`.
+- `CODEX.md` points users to this file.
+
+Keep long-lived instructions here so agent-specific files do not drift.
 
 # Workflow subagents
 
-Subagent files in this pack use YAML `name` values: `intake`, `decomposition`, `test`, `implement`, `review-local`, `review-validate`, `commit`, `reflection`.
+Subagent files in this pack use YAML `name` values: `intake`, `decomposition`, `testWriter`, `implement`, `review-local`, `review-validate`, `commit`, `reflection`.
 
 When running as one of these subagents:
 
@@ -119,7 +194,7 @@ When running as one of these subagents:
 |-----------------|------------------------------|
 | `intake` | `docs/plan/_ACTIVE`, `docs/plan/<slug>/README.md`, `docs/plan/<slug>/OPEN_QUESTIONS.md`, `docs/arch/ARCHITECTURE.md` |
 | `decomposition` | `docs/plan/_ACTIVE`, `docs/plan/<slug>/README.md`, `docs/plan/<slug>/OPEN_QUESTIONS.md`, `docs/arch/ARCHITECTURE.md` |
-| `test` | `docs/plan/_ACTIVE`, `docs/plan/<slug>/README.md`, `docs/plan/<slug>/OPEN_QUESTIONS.md`, `docs/arch/ARCHITECTURE.md` |
+| `testWriter` | `docs/plan/_ACTIVE`, `docs/plan/<slug>/README.md`, `docs/plan/<slug>/OPEN_QUESTIONS.md`, `docs/arch/ARCHITECTURE.md` |
 | `implement` | `docs/plan/_ACTIVE`, `docs/plan/<slug>/README.md`, `docs/plan/<slug>/OPEN_QUESTIONS.md`, `docs/arch/ARCHITECTURE.md` |
 | `review-local` | `docs/plan/_ACTIVE`, `docs/plan/<slug>/README.md`, `docs/plan/<slug>/OPEN_QUESTIONS.md`, `docs/plan/<slug>/REVIEW_NOTES.md`, `docs/arch/ARCHITECTURE.md` |
 | `review-validate` | `docs/plan/<slug>/REVIEW_NOTES.md`, `docs/plan/<slug>/README.md`, `docs/arch/ARCHITECTURE.md` |
@@ -136,8 +211,8 @@ Slash commands in `commands/` form an optional but recommended sequence. Invoke 
 - `/0-pair-programmer` — when you need to think through a design, debug a tricky issue, or rubber-duck before committing to a plan.
 - `/1-task-definition` — when the *what* is known and the task is bounded. Writes the Task Definition to `docs/plan/<slug>/README.md`.
 - `/2-decomposition` — after agent 1 produces the plan README. Plan mode; writes task plan and Cursor plan steps.
-- `/3-test` — per task: writes the **complete** failing test suite. You run tests and verify failure.
-- `/4-implement` — per task: writes implementation from failure output; you run tests until green; agent marks `Status: Done` when you confirm pass.
+- `/3-testWriter` — **one pass:** writes the **complete** failing test suite for **all** `Pending` tasks before any implementation begins. You run the full suite and verify all tests fail.
+- `/4-implement` — **task by task:** reads pre-written tests, implements production code for the first `Pending` task whose dependencies are `Done`; you run tests until green; agent marks `Status: Done` when you confirm pass. Re-run for each subsequent task.
 - `/5-review-local` — after all tasks are `Done`. Reviews uncommitted working tree; writes `docs/plan/<slug>/REVIEW_NOTES.md`.
 - `/5a-review-validate` — only if step 5 surfaced Critical or Low-Confidence findings.
 - `/6-commit` — semantic commits from working tree; push feature branch; then wait for CodeRabbit.

@@ -7,6 +7,7 @@ import { getCvPrompt, compileCvPrompt } from "../lib/cv-prompt";
 import { chat, isLlmServiceError } from "../lib/llm";
 import { markdownToDocxBase64 } from "../lib/markdown-docx";
 import { validateTailorCvBody } from "../lib/tailor-cv-validation";
+import { getTailorModel } from "../../../lib/env";
 
 export async function POST(request: NextRequest) {
   try {
@@ -46,13 +47,8 @@ export async function POST(request: NextRequest) {
       },
     ];
 
-    const tailorModel =
-      process.env.TAILOR_MODEL ||
-      process.env.AI_MODEL ||
-      "gemini-2.5-pro";
-
     const llmResponse = await chat(messages, systemPrompt, {
-      model: tailorModel,
+      model: getTailorModel(),
       langfusePrompt: langfusePrompt ?? { name: "cv-tailor-system", version: 0, isFallback: true },
       source: "tailor-cv",
     });
