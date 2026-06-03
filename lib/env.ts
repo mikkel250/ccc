@@ -6,7 +6,11 @@ export function getEnvNumber(key: string, defaultValue: number): number {
 }
 
 export function getEnvString(key: string, defaultValue?: string): string | undefined {
-  return process.env[key] ?? defaultValue;
+  const value = process.env[key];
+  if (value === undefined || value === null || value.trim() === '') {
+    return defaultValue;
+  }
+  return value;
 }
 
 export function getEnvBoolean(key: string, defaultValue: boolean): boolean {
