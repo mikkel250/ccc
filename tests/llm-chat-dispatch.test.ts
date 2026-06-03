@@ -3,73 +3,76 @@ import assert from "node:assert/strict";
 import OpenAI from "openai";
 import {
   chat,
+  callOpenRouter,
   detectProvider,
   dispatchProvider,
   isLlmServiceError,
 } from "../app/api/lib/llm";
 
+function mockOpenAiChatResponse(content: string, model: string) {
+  return {
+    model,
+    usage: {
+      prompt_tokens: 1,
+      completion_tokens: 1,
+      total_tokens: 2,
+    },
+    choices: [
+      {
+        message: { content },
+        finish_reason: "stop",
+      },
+    ],
+  };
+}
+
+function createCapturingOpenRouterClient(
+  onCreate?: (params: Record<string, unknown>) => void
+) {
+  return {
+    chat: {
+      completions: {
+        create: async (params: Record<string, unknown>) => {
+          onCreate?.(params);
+          return mockOpenAiChatResponse(
+            "routed",
+            String(params.model ?? "openai/gpt-4o")
+          );
+        },
+      },
+    },
+  } as unknown as OpenAI;
+}
+
 describe("detectProvider + dispatchProvider", () => {
-  const originalOpenAiKey = process.env.OPENAI_API_KEY;
   const originalOpenRouterKey = process.env.OPENROUTER_API_KEY;
+  const originalDeepSeekKey = process.env.DEEPSEEK_API_KEY;
 
   afterEach(() => {
-    if (originalOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
-    else process.env.OPENAI_API_KEY = originalOpenAiKey;
     if (originalOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
     else process.env.OPENROUTER_API_KEY = originalOpenRouterKey;
+    if (originalDeepSeekKey === undefined) delete process.env.DEEPSEEK_API_KEY;
+    else process.env.DEEPSEEK_API_KEY = originalDeepSeekKey;
   });
 
-  it("maps gpt-4o to openai provider", () => {
-    assert.equal(detectProvider("gpt-4o"), "openai");
+  it('maps deepseek-v4-pro to "deepseek" provider', () => {
+    assert.equal(detectProvider("deepseek-v4-pro"), "deepseek");
   });
 
   it("maps openai/gpt-4o to openrouter provider", () => {
     assert.equal(detectProvider("openai/gpt-4o"), "openrouter");
   });
 
-  it("maps claude-sonnet-4 to anthropic provider", () => {
-    assert.equal(detectProvider("claude-sonnet-4-20250514"), "anthropic");
+  it("maps evergreen sonnet to anthropic provider", () => {
+    assert.equal(detectProvider("sonnet"), "anthropic");
   });
 
-  it("maps gemini-2.5-pro to google provider", () => {
-    assert.equal(detectProvider("gemini-2.5-pro"), "google");
-  });
-
-  it("dispatchProvider throws for openai without API key", async () => {
-    delete process.env.OPENAI_API_KEY;
-    await assert.rejects(
-      () =>
-        dispatchProvider(
-          "openai",
-          [{ role: "user", content: "Hi" }],
-          "System",
-          { model: "gpt-4o" }
-        ),
-      /OPENAI_API_KEY/
-    );
+  it("maps bare gpt-4o to openrouter provider", () => {
+    assert.equal(detectProvider("gpt-4o"), "openrouter");
   });
 
   it("dispatchProvider routes openrouter through callOpenRouter", async () => {
-    const mockClient = {
-      chat: {
-        completions: {
-          create: async () => ({
-            model: "openai/gpt-4o",
-            usage: {
-              prompt_tokens: 1,
-              completion_tokens: 1,
-              total_tokens: 2,
-            },
-            choices: [
-              {
-                message: { content: "routed" },
-                finish_reason: "stop",
-              },
-            ],
-          }),
-        },
-      },
-    } as unknown as OpenAI;
+    const mockClient = createCapturingOpenRouterClient();
 
     process.env.OPENROUTER_API_KEY = "test-key";
     const response = await dispatchProvider(
@@ -80,18 +83,99 @@ describe("detectProvider + dispatchProvider", () => {
     );
     assert.equal(response.content, "routed");
   });
+
+  it("dispatchProvider routes deepseek through callDeepSeek", async () => {
+    let capturedModel: string | undefined;
+    const mockClient = {
+      chat: {
+        completions: {
+          create: async (params: { model: string }) => {
+            capturedModel = params.model;
+            return mockOpenAiChatResponse("deepseek response", params.model);
+          },
+        },
+      },
+    } as unknown as OpenAI;
+
+    const response = await dispatchProvider(
+      "deepseek",
+      [{ role: "user", content: "Hi" }],
+      "System",
+      { model: "deepseek-v4-pro", deepseekClient: mockClient }
+    );
+
+    assert.equal(response.content, "deepseek response");
+    assert.equal(capturedModel, "deepseek-v4-pro");
+  });
+
+  it("dispatchProvider throws for deepseek without API key", async () => {
+    delete process.env.DEEPSEEK_API_KEY;
+    await assert.rejects(
+      () =>
+        dispatchProvider(
+          "deepseek",
+          [{ role: "user", content: "Hi" }],
+          "System",
+          { model: "deepseek-v4-pro" }
+        ),
+      /DEEPSEEK_API_KEY/
+    );
+  });
+});
+
+describe("callOpenRouter — openRouterFlex", () => {
+  const originalKey = process.env.OPENROUTER_API_KEY;
+
+  afterEach(() => {
+    if (originalKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = originalKey;
+  });
+
+  it("sets service_tier flex by default", async () => {
+    let capturedParams: Record<string, unknown> | undefined;
+    const mockClient = createCapturingOpenRouterClient((params) => {
+      capturedParams = params;
+    });
+
+    await callOpenRouter(
+      [{ role: "user", content: "Hi" }],
+      "System",
+      { model: "openai/gpt-5.4-mini", openRouterClient: mockClient }
+    );
+
+    assert.equal(capturedParams?.service_tier, "flex");
+  });
+
+  it("omits flex tier when openRouterFlex is false", async () => {
+    let capturedParams: Record<string, unknown> | undefined;
+    const mockClient = createCapturingOpenRouterClient((params) => {
+      capturedParams = params;
+    });
+
+    await callOpenRouter(
+      [{ role: "user", content: "Hi" }],
+      "System",
+      {
+        model: "openai/gpt-5.4-mini",
+        openRouterFlex: false,
+        openRouterClient: mockClient,
+      }
+    );
+
+    assert.equal(capturedParams?.service_tier, undefined);
+  });
 });
 
 describe("chat — no fallback retry", () => {
-  const originalOpenAiKey = process.env.OPENAI_API_KEY;
+  const originalOpenRouterKey = process.env.OPENROUTER_API_KEY;
 
   beforeEach(() => {
-    process.env.OPENAI_API_KEY = "test-key";
+    process.env.OPENROUTER_API_KEY = "test-key";
   });
 
   afterEach(() => {
-    if (originalOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
-    else process.env.OPENAI_API_KEY = originalOpenAiKey;
+    if (originalOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = originalOpenRouterKey;
   });
 
   it("throws on failure without retrying another provider", async () => {
@@ -101,7 +185,7 @@ describe("chat — no fallback retry", () => {
         completions: {
           create: async () => {
             callCount += 1;
-            throw new Error("OpenAI service unavailable");
+            throw new Error("OpenRouter service unavailable");
           },
         },
       },
@@ -114,10 +198,10 @@ describe("chat — no fallback retry", () => {
           "System",
           {
             model: "gpt-4o",
-            openaiClient: mockClient,
+            openRouterClient: mockClient,
           }
         ),
-      /OpenAI service unavailable/
+      /OpenRouter service unavailable/
     );
     assert.equal(callCount, 1, "chat must not retry with a second provider");
   });
@@ -130,6 +214,14 @@ describe("isLlmServiceError", () => {
       true
     );
     assert.equal(isLlmServiceError("OpenRouter rate limit exceeded"), true);
+  });
+
+  it("matches DeepSeek error messages", () => {
+    assert.equal(
+      isLlmServiceError("DEEPSEEK_API_KEY is not configured"),
+      true
+    );
+    assert.equal(isLlmServiceError("DeepSeek rate limit exceeded"), true);
   });
 
   it("does not match unrelated errors", () => {
