@@ -134,13 +134,9 @@ function getDeepSeek(options?: ChatOptions): OpenAI {
   if (options?.deepseekClient) {
     return options.deepseekClient;
   }
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) {
-    throw new Error('DEEPSEEK_API_KEY is not configured');
-  }
   if (!deepseekClient) {
     deepseekClient = new OpenAI({
-      apiKey,
+      apiKey: process.env.DEEPSEEK_API_KEY || '',
       baseURL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
     });
   }
@@ -527,7 +523,7 @@ export async function chat(
   systemPrompt: string,
   options: ChatOptions = {}
 ): Promise<ChatResponse> {
-  const model = options.model || process.env.AI_MODEL || 'deepseek-v4-pro';
+  const model = options.model || process.env.AI_MODEL || 'openai/gpt-5.4-mini';
   const provider = detectProvider(model);
   const startTime = Date.now();
 
@@ -552,8 +548,6 @@ export async function chat(
       options.langfusePrompt ?? null
     ).catch(err => console.error('Tracing error (Langfuse):', err));
 
-    logUsage(provider, model, response.usage.totalTokens);
-
     return response;
   } catch (error: unknown) {
     const err = error as { message?: string };
@@ -577,35 +571,6 @@ export async function chat(
 
     throw error;
   }
-}
-
-export interface UsageStats {
-  provider: string;
-  model: string;
-  tokens: number;
-  cost: number;
-  timestamp: Date;
-}
-
-export const COST_PER_1K_TOKENS: Record<string, number> = {
-  'deepseek-v4-pro': 0.00028,
-  'gpt-5.4-mini': 0.00015,
-  'o4-mini': 0.00011,
-  'openai/gpt-5.4-mini': 0.00015,
-  haiku: 0.00025,
-  sonnet: 0.003,
-  opus: 0.015,
-  'gemini-3.1-pro-preview': 0.00125,
-};
-
-function calculateCost(model: string, tokens: number): number {
-  const costPer1K = COST_PER_1K_TOKENS[model] || 0.001;
-  return (tokens / 1000) * costPer1K;
-}
-
-function logUsage(provider: string, model: string, tokens: number): void {
-  const cost = calculateCost(model, tokens);
-  console.log(`Usage: ${provider} (${model}) - ${tokens} tokens - $${cost.toFixed(4)}`);
 }
 
 export async function testConnection(): Promise<boolean> {
