@@ -56,18 +56,25 @@ export interface ChatOptions {
   model?: string;
   source?: string;
   langfusePrompt?: LangfusePromptRef | null;
+  /** OpenRouter flex pricing tier (default true). No effect on direct providers. */
+  openRouterFlex?: boolean;
   /** Test-only: inject OpenAI client */
   openaiClient?: OpenAI;
   /** Test-only: inject OpenRouter client */
   openRouterClient?: OpenAI;
+  /** Test-only: inject DeepSeek client */
+  deepseekClient?: OpenAI;
+  /** Test-only: inject Anthropic client */
+  anthropicClient?: Anthropic;
 }
 
-export type Provider = 'openai' | 'anthropic' | 'google' | 'openrouter';
+export type Provider = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'deepseek';
 
 let openaiClient: OpenAI | null = null;
 let anthropicClient: Anthropic | null = null;
 let googleClient: GoogleGenAI | null = null;
 let openrouterClient: OpenAI | null = null;
+let deepseekClient: OpenAI | null = null;
 
 function getOpenAI(options?: ChatOptions): OpenAI {
   if (options?.openaiClient) {
@@ -83,7 +90,10 @@ function getOpenAI(options?: ChatOptions): OpenAI {
   return openaiClient;
 }
 
-function getAnthropic(): Anthropic {
+function getAnthropic(options?: ChatOptions): Anthropic {
+  if (options?.anthropicClient) {
+    return options.anthropicClient;
+  }
   if (!anthropicClient) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
@@ -120,23 +130,48 @@ function getOpenRouter(options?: ChatOptions): OpenAI {
   return openrouterClient;
 }
 
-/** OpenRouter models use provider/model (e.g. openai/gpt-4o). */
+function getDeepSeek(options?: ChatOptions): OpenAI {
+  if (options?.deepseekClient) {
+    return options.deepseekClient;
+  }
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    throw new Error('DEEPSEEK_API_KEY is not configured');
+  }
+  if (!deepseekClient) {
+    deepseekClient = new OpenAI({
+      apiKey,
+      baseURL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
+    });
+  }
+  return deepseekClient;
+}
+
+/** Slash-prefixed models (e.g. openai/gpt-4o) route through OpenRouter. Anthropic is excluded — uses direct API only. */
 export function detectProvider(model: string): Provider {
+  if (model.startsWith('anthropic/')) {
+    return 'anthropic';
+  }
   if (model.includes('/')) {
     return 'openrouter';
   }
 
   const modelToLower = model.toLowerCase();
 
-  if (modelToLower.includes('claude')) {
+  if (modelToLower.startsWith('deepseek-')) {
+    return 'deepseek';
+  }
+
+  if (
+    modelToLower === 'sonnet' ||
+    modelToLower === 'opus' ||
+    modelToLower === 'haiku' ||
+    modelToLower.includes('claude')
+  ) {
     return 'anthropic';
   }
 
-  if (modelToLower.includes('gemini')) {
-    return 'google';
-  }
-
-  return 'openai';
+  return 'openrouter';
 }
 
 function formatMessages(
@@ -205,7 +240,8 @@ export async function callOpenRouter(
   const {
     temperature = defaultTemperature,
     maxTokens = defaultMaxTokens,
-    model = process.env.AI_MODEL || 'openai/gpt-4o-mini',
+    model = process.env.AI_MODEL || 'openai/gpt-5.4-mini',
+    openRouterFlex = true,
   } = options;
 
   const formattedMessages = formatMessages(messages);
@@ -220,6 +256,7 @@ export async function callOpenRouter(
     messages: fullMessages,
     temperature,
     max_tokens: maxTokens,
+    ...(openRouterFlex ? { service_tier: 'flex' as const } : {}),
   });
 
   const choice = response.choices[0];
@@ -239,13 +276,55 @@ export async function callOpenRouter(
   };
 }
 
-async function callAnthropic(
+export async function callDeepSeek(
   messages: Omit<ChatMessage, 'role'>[] | ChatMessage[],
   systemPrompt: string,
-  options: ChatOptions
+  options: ChatOptions = {}
 ): Promise<ChatResponse> {
   const { maxTokens: defaultMaxTokens, temperature: defaultTemperature } = getLLMConfig();
-  const { temperature = defaultTemperature, maxTokens = defaultMaxTokens, model = 'claude-haiku-4-5-20251001' } = options;
+  const {
+    temperature = defaultTemperature,
+    maxTokens = defaultMaxTokens,
+    model = process.env.AI_MODEL || 'deepseek-v4-pro',
+  } = options;
+
+  const formattedMessages = formatMessages(messages);
+  const fullMessages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    ...formattedMessages,
+  ];
+
+  const response = await getDeepSeek(options).chat.completions.create({
+    model,
+    messages: fullMessages,
+    temperature,
+    max_tokens: maxTokens,
+  });
+
+  const choice = response.choices[0];
+  if (!choice || !choice.message) {
+    throw new Error('No response from DeepSeek');
+  }
+
+  return {
+    content: choice.message.content || '',
+    usage: {
+      promptTokens: response.usage?.prompt_tokens || 0,
+      completionTokens: response.usage?.completion_tokens || 0,
+      totalTokens: response.usage?.total_tokens || 0,
+    },
+    model: response.model,
+    finishReason: choice.finish_reason,
+  };
+}
+
+export async function callAnthropic(
+  messages: Omit<ChatMessage, 'role'>[] | ChatMessage[],
+  systemPrompt: string,
+  options: ChatOptions = {}
+): Promise<ChatResponse> {
+  const { maxTokens: defaultMaxTokens, temperature: defaultTemperature } = getLLMConfig();
+  const { temperature = defaultTemperature, maxTokens = defaultMaxTokens, model = 'sonnet' } = options;
 
   const formattedMessages = formatMessages(messages);
   const claudeMessages = formattedMessages
@@ -255,7 +334,7 @@ async function callAnthropic(
       content: msg.content,
     }));
 
-  const response = await getAnthropic().messages.create({
+  const response = await getAnthropic(options).messages.create({
     model,
     system: systemPrompt,
     messages: claudeMessages,
@@ -344,6 +423,8 @@ export async function dispatchProvider(
       return await callAnthropic(messages, systemPrompt, options);
     case 'google':
       return await callGoogle(messages, systemPrompt, options);
+    case 'deepseek':
+      return await callDeepSeek(messages, systemPrompt, options);
     default: {
       const _exhaustive: never = provider;
       throw new Error(`Unknown provider: ${_exhaustive}`);
@@ -354,13 +435,15 @@ export async function dispatchProvider(
 export function isLlmServiceError(message: string): boolean {
   const m = message.toLowerCase();
   return (
-    m.includes('OpenAI') ||
-    m.includes('Anthropic') ||
-    m.includes('Google') ||
-    m.includes('OpenRouter') ||
-    m.includes('OPENROUTER_API_KEY') ||
+    m.includes('openai') ||
+    m.includes('anthropic') ||
+    m.includes('google') ||
+    m.includes('openrouter') ||
+    m.includes('deepseek') ||
+    m.includes('openrouter_api_key') ||
+    m.includes('deepseek_api_key') ||
     m.includes('quota') ||
-    m.includes('RESOURCE_EXHAUSTED')
+    m.includes('resource_exhausted')
   );
 }
 
@@ -369,7 +452,7 @@ export async function chat(
   systemPrompt: string,
   options: ChatOptions = {}
 ): Promise<ChatResponse> {
-  const model = options.model || process.env.AI_MODEL || 'gemini-2.5-flash';
+  const model = options.model || process.env.AI_MODEL || 'deepseek-v4-pro';
   const provider = detectProvider(model);
   const startTime = Date.now();
 
@@ -429,12 +512,15 @@ export interface UsageStats {
   timestamp: Date;
 }
 
-const COST_PER_1K_TOKENS: Record<string, number> = {
-  'gemini-2.5-flash': 0.0,
-  'gemini-2.5-pro': 0.0,
-  'claude-haiku-4-5-20251001': 0.00025,
-  'gpt-4o': 0.005,
-  'gpt-4o-mini': 0.00015,
+export const COST_PER_1K_TOKENS: Record<string, number> = {
+  'deepseek-v4-pro': 0.00028,
+  'gpt-5.4-mini': 0.00015,
+  'o4-mini': 0.00011,
+  'openai/gpt-5.4-mini': 0.00015,
+  haiku: 0.00025,
+  sonnet: 0.003,
+  opus: 0.015,
+  'gemini-3.1-pro-preview': 0.00125,
 };
 
 function calculateCost(model: string, tokens: number): number {
