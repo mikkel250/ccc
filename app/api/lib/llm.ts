@@ -3,19 +3,20 @@ import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
 import { traceLLMCall } from './langsmith';
 import { traceLLMCall as traceLLMCallLangFuse, type LangfusePromptRef } from './langfuse';
+import { getEnvNumber } from '../../../lib/env';
+import anthropicModels from '../../../config/anthropic-models.json';
 
 const DEFAULT_MAX_TOKENS = 8192;
 const DEFAULT_TEMPERATURE = 0.3;
 const MIN_MAX_TOKENS = 1;
-const MAX_MAX_TOKENS = 128_000;
 
-function parseMaxTokens(raw: string | undefined): number {
+function parseMaxTokens(raw: string | undefined, limit: number): number {
   if (!raw) return DEFAULT_MAX_TOKENS;
   const parsed = parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed < MIN_MAX_TOKENS) {
     return DEFAULT_MAX_TOKENS;
   }
-  return Math.min(Math.floor(parsed), MAX_MAX_TOKENS);
+  return Math.min(Math.floor(parsed), limit);
 }
 
 function parseTemperature(raw: string | undefined): number {
@@ -25,9 +26,9 @@ function parseTemperature(raw: string | undefined): number {
   return Math.min(1, Math.max(0, parsed));
 }
 
-// Configuration helper
 function getLLMConfig() {
-  const maxTokens = parseMaxTokens(process.env.AI_MAX_TOKENS);
+  const maxTokensLimit = getEnvNumber('AI_MAX_TOKENS_LIMIT', 128_000);
+  const maxTokens = parseMaxTokens(process.env.AI_MAX_TOKENS, maxTokensLimit);
   const temperature = parseTemperature(process.env.AI_TEMPERATURE);
   return { maxTokens, temperature };
 }
@@ -69,6 +70,8 @@ export interface ChatOptions {
 }
 
 export type Provider = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'deepseek';
+
+const KNOWN_PROVIDERS = new Set<Provider>(['openai', 'anthropic', 'google', 'openrouter', 'deepseek']);
 
 let openaiClient: OpenAI | null = null;
 let anthropicClient: Anthropic | null = null;
@@ -143,31 +146,26 @@ function getDeepSeek(options?: ChatOptions): OpenAI {
   return deepseekClient;
 }
 
-/** Slash-prefixed models (e.g. openai/gpt-4o) route through OpenRouter. Anthropic is excluded — uses direct API only. */
+/**
+ * Detect provider from a namespaced model string (provider/model).
+ * The first slash-delimited segment must be a known provider.
+ */
 export function detectProvider(model: string): Provider {
-  if (model.startsWith('anthropic/')) {
-    return 'anthropic';
+  const slash = model.indexOf('/');
+  if (slash === -1) {
+    throw new Error(`Invalid model string "${model}": must be namespaced as provider/model`);
   }
-  if (model.includes('/')) {
-    return 'openrouter';
+  const providerSegment = model.slice(0, slash);
+  if (!KNOWN_PROVIDERS.has(providerSegment as Provider)) {
+    throw new Error(`Unknown provider "${providerSegment}" in model "${model}"`);
   }
+  return providerSegment as Provider;
+}
 
-  const modelToLower = model.toLowerCase();
-
-  if (modelToLower.startsWith('deepseek-')) {
-    return 'deepseek';
-  }
-
-  if (
-    modelToLower === 'sonnet' ||
-    modelToLower === 'opus' ||
-    modelToLower === 'haiku' ||
-    modelToLower.includes('claude')
-  ) {
-    return 'anthropic';
-  }
-
-  return 'openrouter';
+/** Strip the provider prefix before passing model to a provider integration function. */
+function stripProviderPrefix(model: string, provider: Provider): string {
+  const prefix = `${provider}/`;
+  return model.startsWith(prefix) ? model.slice(prefix.length) : model;
 }
 
 function formatMessages(
@@ -193,8 +191,10 @@ async function callOpenAI(
   const {
     temperature = defaultTemperature,
     maxTokens = defaultMaxTokens,
-    model = process.env.AI_MODEL || 'gpt-4o-mini',
+    model,
   } = options;
+
+  if (!model) throw new Error('model is required for callOpenAI');
 
   const formattedMessages = formatMessages(messages);
   const fullMessages: ChatMessage[] = [
@@ -236,9 +236,11 @@ export async function callOpenRouter(
   const {
     temperature = defaultTemperature,
     maxTokens = defaultMaxTokens,
-    model = process.env.AI_MODEL || 'openai/gpt-5.4-mini',
+    model,
     openRouterFlex = true,
   } = options;
+
+  if (!model) throw new Error('model is required for callOpenRouter');
 
   const formattedMessages = formatMessages(messages);
   const fullMessages: ChatMessage[] = [
@@ -281,8 +283,10 @@ export async function callDeepSeek(
   const {
     temperature = defaultTemperature,
     maxTokens = defaultMaxTokens,
-    model = process.env.AI_MODEL || 'deepseek-v4-pro',
+    model,
   } = options;
+
+  if (!model) throw new Error('model is required for callDeepSeek');
 
   const formattedMessages = formatMessages(messages);
   const fullMessages: ChatMessage[] = [
@@ -314,16 +318,18 @@ export async function callDeepSeek(
   };
 }
 
-/** Static fallback used when the Models API is unreachable. */
-const FALLBACK_ANTHROPIC_MODELS: Record<string, string> = {
-  sonnet: 'claude-sonnet-4-6',
-  opus: 'claude-opus-4-8',
-  haiku: 'claude-haiku-4-5',
-};
+type AnthropicModelAlias = keyof typeof anthropicModels;
 
-type AnthropicModelFamily = 'sonnet' | 'opus' | 'haiku';
+function isAnthropicAlias(s: string): s is AnthropicModelAlias {
+  return s in anthropicModels;
+}
 
-function detectAnthropicFamily(model: string): AnthropicModelFamily | null {
+/** Is the model string already a versioned ID that needs no resolution? */
+function isVersionedModelId(model: string): boolean {
+  return /\d{6,}|\d+\.\d+|\bclaude-\d|\bclaude-[a-z]+-\d/.test(model);
+}
+
+function detectAnthropicFamily(model: string): AnthropicModelAlias | null {
   const lower = model.toLowerCase();
   if (lower.includes('sonnet')) return 'sonnet';
   if (lower.includes('opus')) return 'opus';
@@ -331,28 +337,15 @@ function detectAnthropicFamily(model: string): AnthropicModelFamily | null {
   return null;
 }
 
-/** Is the model string already a versioned ID that needs no resolution? */
-function isVersionedModelId(model: string): boolean {
-  // Date suffix, dotted version, claude-<digit> (legacy), or claude-<name>-<digit>
-  return /\d{6,}|\d+\.\d+|\bclaude-\d|\bclaude-[a-z]+-\d/.test(model);
-}
+const resolvedModelCache = new Map<AnthropicModelAlias, { id: string; ts: number }>();
 
-// ---- Dynamic model resolution via the Anthropic Models API ----
-
-const resolvedModelCache = new Map<AnthropicModelFamily, { id: string; ts: number }>();
-const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
-
-/**
- * Resolve a model family alias to the latest versioned model ID by querying
- * the Anthropic Models API. Results are cached for 1 week. Falls back to
- * FALLBACK_ANTHROPIC_MODELS if the API is unreachable.
- */
 async function resolveLatestModelId(
-  family: AnthropicModelFamily,
+  family: AnthropicModelAlias,
   client: Anthropic,
 ): Promise<string> {
+  const cacheTtlMs = getEnvNumber('ANTHROPIC_MODEL_CACHE_TTL_MS', 7 * 24 * 60 * 60 * 1000);
   const cached = resolvedModelCache.get(family);
-  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.id;
+  if (cached && Date.now() - cached.ts < cacheTtlMs) return cached.id;
 
   try {
     const page = await client.models.list();
@@ -367,26 +360,22 @@ async function resolveLatestModelId(
   }
 
   if (cached) return cached.id;
-  return FALLBACK_ANTHROPIC_MODELS[family];
+  return anthropicModels[family];
 }
 
-/** Normalize a model alias to a versioned Anthropic model ID. */
+/** Internal to callAnthropic: strips anthropic/ prefix and resolves aliases to versioned IDs. */
 async function normalizeAnthropicModel(
   model: string,
   client: Anthropic,
 ): Promise<string> {
-  // Strip provider prefix so detectProvider-style routing doesn't leak into the API call
   const cleaned = model.replace(/^anthropic\//, '');
-  const lower = cleaned.toLowerCase();
-
-  // Already a versioned ID — pass through unchanged
   if (isVersionedModelId(cleaned)) return cleaned;
 
-  // Detect family and resolve dynamically
-  const family = detectAnthropicFamily(lower);
+  if (isAnthropicAlias(cleaned)) return resolveLatestModelId(cleaned, client);
+
+  const family = detectAnthropicFamily(cleaned);
   if (family) return resolveLatestModelId(family, client);
 
-  // Unrecognised alias — pass through and let the API reject it
   return cleaned;
 }
 
@@ -396,7 +385,10 @@ export async function callAnthropic(
   options: ChatOptions = {}
 ): Promise<ChatResponse> {
   const { maxTokens: defaultMaxTokens, temperature: defaultTemperature } = getLLMConfig();
-  const { temperature = defaultTemperature, maxTokens = defaultMaxTokens, model: rawModel = 'sonnet' } = options;
+  const { temperature = defaultTemperature, maxTokens = defaultMaxTokens, model: rawModel } = options;
+
+  if (!rawModel) throw new Error('model is required for callAnthropic');
+
   const anthropic = getAnthropic(options);
   const model = await normalizeAnthropicModel(rawModel, anthropic);
 
@@ -439,7 +431,9 @@ async function callGoogle(
   options: ChatOptions
 ): Promise<ChatResponse> {
   const { maxTokens: defaultMaxTokens, temperature: defaultTemperature } = getLLMConfig();
-  const { temperature = defaultTemperature, maxTokens = defaultMaxTokens, model = 'gemini-2.5-pro' } = options;
+  const { temperature = defaultTemperature, maxTokens = defaultMaxTokens, model } = options;
+
+  if (!model) throw new Error('model is required for callGoogle');
 
   const formattedMessages = formatMessages(messages);
 
@@ -488,17 +482,20 @@ export async function dispatchProvider(
   systemPrompt: string,
   options: ChatOptions
 ): Promise<ChatResponse> {
+  const strippedModel = options.model ? stripProviderPrefix(options.model, provider) : options.model;
+  const strippedOptions = { ...options, model: strippedModel };
+
   switch (provider) {
     case 'openai':
-      return await callOpenAI(messages, systemPrompt, options);
+      return await callOpenAI(messages, systemPrompt, strippedOptions);
     case 'openrouter':
-      return await callOpenRouter(messages, systemPrompt, options, options.openRouterClient);
+      return await callOpenRouter(messages, systemPrompt, strippedOptions, options.openRouterClient);
     case 'anthropic':
-      return await callAnthropic(messages, systemPrompt, options);
+      return await callAnthropic(messages, systemPrompt, strippedOptions);
     case 'google':
-      return await callGoogle(messages, systemPrompt, options);
+      return await callGoogle(messages, systemPrompt, strippedOptions);
     case 'deepseek':
-      return await callDeepSeek(messages, systemPrompt, options);
+      return await callDeepSeek(messages, systemPrompt, strippedOptions);
     default: {
       const _exhaustive: never = provider;
       throw new Error(`Unknown provider: ${_exhaustive}`);
@@ -526,7 +523,7 @@ export async function chat(
   systemPrompt: string,
   options: ChatOptions = {}
 ): Promise<ChatResponse> {
-  const model = options.model || process.env.AI_MODEL || 'openai/gpt-5.4-mini';
+  const model = options.model || process.env.AI_MODEL || 'openrouter/openai/gpt-5.4-mini';
   const provider = detectProvider(model);
   const startTime = Date.now();
 
@@ -577,7 +574,7 @@ export async function chat(
 }
 
 export async function testConnection(): Promise<boolean> {
-  const defaultModel = process.env.AI_MODEL || 'openai/gpt-5.4-mini';
+  const defaultModel = process.env.AI_MODEL || 'openrouter/openai/gpt-5.4-mini';
   const provider = detectProvider(defaultModel);
 
   try {
@@ -598,12 +595,10 @@ export async function testConnection(): Promise<boolean> {
         if (!process.env.DEEPSEEK_API_KEY) return false;
         return true;
       default:
-        // Google / unknown — best-effort check via OpenRouter if key exists
         if (process.env.OPENROUTER_API_KEY) {
           await getOpenRouter().models.list();
           return true;
         }
-        // Fall back to OpenAI if configured
         if (process.env.OPENAI_API_KEY) {
           await getOpenAI().models.list();
           return true;
