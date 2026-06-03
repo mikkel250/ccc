@@ -83,6 +83,36 @@ describe("provider default models", () => {
     assert.equal(capturedModel, "openai/gpt-5.4-mini");
   });
 
+  it("callAnthropic falls back to anthropic-models.json when models.list fails", async () => {
+    let capturedModel: string | undefined;
+    const mockClient = {
+      models: {
+        list: async () => {
+          throw new Error("Anthropic API unavailable");
+        },
+      },
+      messages: {
+        create: async (params: { model: string }) => {
+          capturedModel = params.model;
+          return {
+            model: params.model,
+            content: [{ type: "text", text: "ok" }],
+            usage: { input_tokens: 1, output_tokens: 1 },
+            stop_reason: "end_turn",
+          };
+        },
+      },
+    } as unknown as Anthropic;
+
+    await callAnthropic(
+      [{ role: "user", content: "Hi" }],
+      "System",
+      { anthropicClient: mockClient, model: "haiku" }
+    );
+
+    assert.equal(capturedModel, "claude-haiku-4-5");
+  });
+
   it("callAnthropic resolves sonnet alias to versioned model id", async () => {
     let capturedModel: string | undefined;
     const mockClient = {

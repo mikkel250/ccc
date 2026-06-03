@@ -1,6 +1,7 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import {
   chat,
   callOpenRouter,
@@ -47,12 +48,15 @@ function createCapturingOpenRouterClient(
 describe("detectProvider + dispatchProvider", () => {
   const originalOpenRouterKey = process.env.OPENROUTER_API_KEY;
   const originalDeepSeekKey = process.env.DEEPSEEK_API_KEY;
+  const originalGoogleKey = process.env.GOOGLE_API_KEY;
 
   afterEach(() => {
     if (originalOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
     else process.env.OPENROUTER_API_KEY = originalOpenRouterKey;
     if (originalDeepSeekKey === undefined) delete process.env.DEEPSEEK_API_KEY;
     else process.env.DEEPSEEK_API_KEY = originalDeepSeekKey;
+    if (originalGoogleKey === undefined) delete process.env.GOOGLE_API_KEY;
+    else process.env.GOOGLE_API_KEY = originalGoogleKey;
   });
 
   it('maps deepseek/deepseek-v4-pro to "deepseek" provider', () => {
@@ -111,14 +115,61 @@ describe("detectProvider + dispatchProvider", () => {
     assert.equal(response.content, "deepseek response");
     assert.equal(capturedModel, "deepseek-v4-pro");
   });
+
+  it("dispatchProvider routes anthropic through callAnthropic and strips prefix", async () => {
+    let capturedModel: string | undefined;
+    const mockClient = {
+      messages: {
+        create: async (params: { model: string }) => {
+          capturedModel = params.model;
+          return {
+            model: params.model,
+            content: [{ type: "text", text: "anthropic response" }],
+            usage: { input_tokens: 1, output_tokens: 1 },
+            stop_reason: "end_turn",
+          };
+        },
+      },
+    } as unknown as Anthropic;
+
+    const response = await dispatchProvider(
+      "anthropic",
+      [{ role: "user", content: "Hi" }],
+      "System",
+      {
+        model: "anthropic/claude-sonnet-4-6",
+        anthropicClient: mockClient,
+      }
+    );
+
+    assert.equal(response.content, "anthropic response");
+    assert.equal(capturedModel, "claude-sonnet-4-6");
+  });
+
+  it("dispatchProvider rejects google when GOOGLE_API_KEY is missing", async () => {
+    delete process.env.GOOGLE_API_KEY;
+    await assert.rejects(
+      () =>
+        dispatchProvider(
+          "google",
+          [{ role: "user", content: "Hi" }],
+          "System",
+          { model: "google/gemini-2.5-pro" }
+        ),
+      /GOOGLE_API_KEY is not configured/
+    );
+  });
 });
 
 describe("callOpenRouter — openRouterFlex", () => {
   const originalKey = process.env.OPENROUTER_API_KEY;
+  const originalFlex = process.env.OPENROUTER_FLEX_ENABLED;
 
   afterEach(() => {
     if (originalKey === undefined) delete process.env.OPENROUTER_API_KEY;
     else process.env.OPENROUTER_API_KEY = originalKey;
+    if (originalFlex === undefined) delete process.env.OPENROUTER_FLEX_ENABLED;
+    else process.env.OPENROUTER_FLEX_ENABLED = originalFlex;
   });
 
   it("sets service_tier flex by default", async () => {
@@ -150,6 +201,22 @@ describe("callOpenRouter — openRouterFlex", () => {
         openRouterFlex: false,
         openRouterClient: mockClient,
       }
+    );
+
+    assert.equal(capturedParams?.service_tier, undefined);
+  });
+
+  it("omits flex tier when OPENROUTER_FLEX_ENABLED is false", async () => {
+    process.env.OPENROUTER_FLEX_ENABLED = "false";
+    let capturedParams: Record<string, unknown> | undefined;
+    const mockClient = createCapturingOpenRouterClient((params) => {
+      capturedParams = params;
+    });
+
+    await callOpenRouter(
+      [{ role: "user", content: "Hi" }],
+      "System",
+      { model: "openai/gpt-5.4-mini", openRouterClient: mockClient }
     );
 
     assert.equal(capturedParams?.service_tier, undefined);
