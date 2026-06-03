@@ -55,36 +55,40 @@ describe("detectProvider + dispatchProvider", () => {
     else process.env.DEEPSEEK_API_KEY = originalDeepSeekKey;
   });
 
-  it('maps deepseek-v4-pro to "deepseek" provider', () => {
-    assert.equal(detectProvider("deepseek-v4-pro"), "deepseek");
+  it('maps deepseek/deepseek-v4-pro to "deepseek" provider', () => {
+    assert.equal(detectProvider("deepseek/deepseek-v4-pro"), "deepseek");
   });
 
-  it("maps openai/gpt-4o to openrouter provider", () => {
-    assert.equal(detectProvider("openai/gpt-4o"), "openrouter");
+  it("maps openrouter/openai/gpt-4o to openrouter provider", () => {
+    assert.equal(detectProvider("openrouter/openai/gpt-4o"), "openrouter");
   });
 
-  it("maps evergreen sonnet to anthropic provider", () => {
-    assert.equal(detectProvider("sonnet"), "anthropic");
+  it("maps anthropic/sonnet to anthropic provider", () => {
+    assert.equal(detectProvider("anthropic/sonnet"), "anthropic");
   });
 
-  it("maps bare gpt-4o to openrouter provider", () => {
-    assert.equal(detectProvider("gpt-4o"), "openrouter");
+  it("maps openai/gpt-4o to openai provider", () => {
+    assert.equal(detectProvider("openai/gpt-4o"), "openai");
   });
 
-  it("dispatchProvider routes openrouter through callOpenRouter", async () => {
-    const mockClient = createCapturingOpenRouterClient();
+  it("dispatchProvider routes openrouter through callOpenRouter and strips prefix", async () => {
+    let capturedModel: string | undefined;
+    const mockClient = createCapturingOpenRouterClient((params) => {
+      capturedModel = String(params.model);
+    });
 
     process.env.OPENROUTER_API_KEY = "test-key";
     const response = await dispatchProvider(
       "openrouter",
       [{ role: "user", content: "Hi" }],
       "System",
-      { model: "openai/gpt-4o", openRouterClient: mockClient }
+      { model: "openrouter/openai/gpt-4o", openRouterClient: mockClient }
     );
     assert.equal(response.content, "routed");
+    assert.equal(capturedModel, "openai/gpt-4o");
   });
 
-  it("dispatchProvider routes deepseek through callDeepSeek", async () => {
+  it("dispatchProvider routes deepseek through callDeepSeek and strips prefix", async () => {
     let capturedModel: string | undefined;
     const mockClient = {
       chat: {
@@ -101,13 +105,12 @@ describe("detectProvider + dispatchProvider", () => {
       "deepseek",
       [{ role: "user", content: "Hi" }],
       "System",
-      { model: "deepseek-v4-pro", deepseekClient: mockClient }
+      { model: "deepseek/deepseek-v4-pro", deepseekClient: mockClient }
     );
 
     assert.equal(response.content, "deepseek response");
     assert.equal(capturedModel, "deepseek-v4-pro");
   });
-
 });
 
 describe("callOpenRouter — openRouterFlex", () => {
@@ -184,7 +187,7 @@ describe("chat — no fallback retry", () => {
           [{ role: "user", content: "Hi" }],
           "System",
           {
-            model: "gpt-4o",
+            model: "openrouter/openai/gpt-4o",
             openRouterClient: mockClient,
           }
         ),

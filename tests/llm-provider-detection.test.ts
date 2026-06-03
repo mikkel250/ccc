@@ -2,47 +2,42 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { detectProvider } from "../app/api/lib/llm";
 
-describe("detectProvider", () => {
-  it("returns openrouter for OpenAI and Google slash patterns", () => {
-    assert.equal(detectProvider("openai/gpt-4o"), "openrouter");
-    assert.equal(detectProvider("google/gemini-2.5-pro"), "openrouter");
+describe("detectProvider — config-lookup (provider/model namespace)", () => {
+  it("returns openrouter for openrouter-prefixed models", () => {
+    assert.equal(detectProvider("openrouter/openai/gpt-4o"), "openrouter");
+    assert.equal(detectProvider("openrouter/google/gemini-2.5-pro"), "openrouter");
+    assert.equal(detectProvider("openrouter/openai/gpt-5.4-mini"), "openrouter");
   });
 
-  it("routes bare gpt-5.4-mini to openrouter", () => {
-    assert.equal(detectProvider("gpt-5.4-mini"), "openrouter");
+  it("returns anthropic for anthropic-prefixed models", () => {
+    assert.equal(detectProvider("anthropic/sonnet"), "anthropic");
+    assert.equal(detectProvider("anthropic/claude-sonnet-4-6"), "anthropic");
+    assert.equal(detectProvider("anthropic/opus"), "anthropic");
+    assert.equal(detectProvider("anthropic/haiku"), "anthropic");
   });
 
-  it("routes bare o4-mini to openrouter", () => {
-    assert.equal(detectProvider("o4-mini"), "openrouter");
+  it("returns openai for openai-prefixed models", () => {
+    assert.equal(detectProvider("openai/gpt-4o"), "openai");
+    assert.equal(detectProvider("openai/gpt-4o-mini"), "openai");
   });
 
-  it("routes bare gemini-3.1-pro-preview to openrouter", () => {
-    assert.equal(detectProvider("gemini-3.1-pro-preview"), "openrouter");
+  it("returns deepseek for deepseek-prefixed models", () => {
+    assert.equal(detectProvider("deepseek/deepseek-v4-pro"), "deepseek");
   });
 
-  it("routes bare deepseek-v4-pro to deepseek provider", () => {
-    assert.equal(detectProvider("deepseek-v4-pro") as string, "deepseek");
+  it("returns google for google-prefixed models", () => {
+    assert.equal(detectProvider("google/gemini-2.5-pro"), "google");
   });
 
-  it("routes slash-prefixed deepseek to openrouter (credit-fallback)", () => {
-    assert.equal(detectProvider("deepseek/deepseek-v4-pro"), "openrouter");
+  it("throws for bare model strings without a provider prefix", () => {
+    assert.throws(() => detectProvider("gpt-4o"), /Invalid model string/);
+    assert.throws(() => detectProvider("sonnet"), /Invalid model string/);
+    assert.throws(() => detectProvider("deepseek-v4-pro"), /Invalid model string/);
+    assert.throws(() => detectProvider("gemini-2.5-pro"), /Invalid model string/);
   });
 
-  it("routes evergreen Anthropic tier aliases to anthropic provider", () => {
-    assert.equal(detectProvider("sonnet"), "anthropic");
-    assert.equal(detectProvider("opus"), "anthropic");
-    assert.equal(detectProvider("haiku"), "anthropic");
-  });
-
-  it("routes slash-prefixed anthropic/claude-sonnet-4 to anthropic (no OpenRouter)", () => {
-    assert.equal(detectProvider("anthropic/claude-sonnet-4"), "anthropic");
-  });
-
-  it("routes bare claude-* generation IDs to anthropic provider", () => {
-    assert.equal(detectProvider("claude-sonnet-4-6"), "anthropic");
-  });
-
-  it("routes bare unknown some-model to openrouter (new default)", () => {
-    assert.equal(detectProvider("some-model"), "openrouter");
+  it("throws for unknown provider prefix", () => {
+    assert.throws(() => detectProvider("cohere/command-r"), /Unknown provider/);
+    assert.throws(() => detectProvider("mistral/mixtral-8x7b"), /Unknown provider/);
   });
 });

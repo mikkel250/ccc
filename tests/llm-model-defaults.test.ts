@@ -38,7 +38,7 @@ describe("provider default models", () => {
     else process.env.AI_MODEL = originalAiModel;
   });
 
-  it("callDeepSeek defaults to deepseek-v4-pro", async () => {
+  it("callDeepSeek uses the model from options", async () => {
     let capturedModel: string | undefined;
     const mockClient = {
       chat: {
@@ -54,13 +54,13 @@ describe("provider default models", () => {
     await callDeepSeek(
       [{ role: "user", content: "Hi" }],
       "System",
-      { deepseekClient: mockClient }
+      { deepseekClient: mockClient, model: "deepseek-v4-pro" }
     );
 
     assert.equal(capturedModel, "deepseek-v4-pro");
   });
 
-  it("callOpenRouter defaults to openai/gpt-5.4-mini", async () => {
+  it("callOpenRouter uses the model from options", async () => {
     let capturedModel: string | undefined;
     const mockClient = {
       chat: {
@@ -76,14 +76,14 @@ describe("provider default models", () => {
     await callOpenRouter(
       [{ role: "user", content: "Hi" }],
       "System",
-      {},
+      { model: "openai/gpt-5.4-mini" },
       mockClient
     );
 
     assert.equal(capturedModel, "openai/gpt-5.4-mini");
   });
 
-  it("callAnthropic defaults sonnet alias to resolved model id", async () => {
+  it("callAnthropic resolves sonnet alias to versioned model id", async () => {
     let capturedModel: string | undefined;
     const mockClient = {
       models: {
@@ -107,7 +107,7 @@ describe("provider default models", () => {
     await callAnthropic(
       [{ role: "user", content: "Hi" }],
       "System",
-      { anthropicClient: mockClient }
+      { anthropicClient: mockClient, model: "sonnet" }
     );
 
     assert.equal(capturedModel, "claude-sonnet-4-6");
@@ -202,7 +202,7 @@ describe("provider default models", () => {
     assert.equal(capturedModel, "claude-sonnet-4.6-20260218");
   });
 
-  it("chat defaults to openai/gpt-5.4-mini", async () => {
+  it("chat defaults to openrouter/openai/gpt-5.4-mini (strips to openai/gpt-5.4-mini for OpenRouter API)", async () => {
     let capturedModel: string | undefined;
     const mockClient = {
       chat: {
@@ -222,4 +222,3 @@ describe("provider default models", () => {
     assert.equal(capturedModel, "openai/gpt-5.4-mini");
   });
 });
-
