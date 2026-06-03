@@ -318,13 +318,88 @@ export async function callDeepSeek(
   };
 }
 
+/** Static fallback used when the Models API is unreachable. */
+const FALLBACK_ANTHROPIC_MODELS: Record<string, string> = {
+  sonnet: 'claude-sonnet-4-6',
+  opus: 'claude-opus-4-8',
+  haiku: 'claude-haiku-4-5',
+};
+
+type AnthropicModelFamily = 'sonnet' | 'opus' | 'haiku';
+
+function detectAnthropicFamily(model: string): AnthropicModelFamily | null {
+  const lower = model.toLowerCase();
+  if (lower.includes('sonnet')) return 'sonnet';
+  if (lower.includes('opus')) return 'opus';
+  if (lower.includes('haiku')) return 'haiku';
+  return null;
+}
+
+/** Is the model string already a versioned ID that needs no resolution? */
+function isVersionedModelId(model: string): boolean {
+  return /\d{6,}|\d+\.\d+/.test(model);
+}
+
+// ---- Dynamic model resolution via the Anthropic Models API ----
+
+const resolvedModelCache = new Map<AnthropicModelFamily, { id: string; ts: number }>();
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
+
+/**
+ * Resolve a model family alias to the latest versioned model ID by querying
+ * the Anthropic Models API. Results are cached for 1 hour. Falls back to
+ * FALLBACK_ANTHROPIC_MODELS if the API is unreachable.
+ */
+async function resolveLatestModelId(
+  family: AnthropicModelFamily,
+  client: Anthropic,
+): Promise<string> {
+  const cached = resolvedModelCache.get(family);
+  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.id;
+
+  try {
+    const page = await client.models.list();
+    for (const m of page.data) {
+      if (m.id.includes(family)) {
+        resolvedModelCache.set(family, { id: m.id, ts: Date.now() });
+        return m.id;
+      }
+    }
+  } catch {
+    // API unavailable — use stale cache if we have one, else fallback
+  }
+
+  if (cached) return cached.id;
+  return FALLBACK_ANTHROPIC_MODELS[family];
+}
+
+/** Normalize a model alias to a versioned Anthropic model ID. */
+async function normalizeAnthropicModel(
+  model: string,
+  client: Anthropic,
+): Promise<string> {
+  const lower = model.toLowerCase();
+
+  // Already a versioned ID — pass through unchanged
+  if (isVersionedModelId(model)) return model;
+
+  // Detect family and resolve dynamically
+  const family = detectAnthropicFamily(lower);
+  if (family) return resolveLatestModelId(family, client);
+
+  // Unrecognised alias — pass through and let the API reject it
+  return model;
+}
+
 export async function callAnthropic(
   messages: Omit<ChatMessage, 'role'>[] | ChatMessage[],
   systemPrompt: string,
   options: ChatOptions = {}
 ): Promise<ChatResponse> {
   const { maxTokens: defaultMaxTokens, temperature: defaultTemperature } = getLLMConfig();
-  const { temperature = defaultTemperature, maxTokens = defaultMaxTokens, model = 'sonnet' } = options;
+  const { temperature = defaultTemperature, maxTokens = defaultMaxTokens, model: rawModel = 'sonnet' } = options;
+  const anthropic = getAnthropic(options);
+  const model = await normalizeAnthropicModel(rawModel, anthropic);
 
   const formattedMessages = formatMessages(messages);
   const claudeMessages = formattedMessages
@@ -334,7 +409,7 @@ export async function callAnthropic(
       content: msg.content,
     }));
 
-  const response = await getAnthropic(options).messages.create({
+  const response = await anthropic.messages.create({
     model,
     system: systemPrompt,
     messages: claudeMessages,
