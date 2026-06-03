@@ -83,7 +83,7 @@ describe("provider default models", () => {
     assert.equal(capturedModel, "openai/gpt-5.4-mini");
   });
 
-  it("callAnthropic defaults to sonnet", async () => {
+  it("callAnthropic defaults sonnet alias to resolved model id", async () => {
     let capturedModel: string | undefined;
     const mockClient = {
       messages: {
@@ -105,7 +105,7 @@ describe("provider default models", () => {
       { anthropicClient: mockClient }
     );
 
-    assert.equal(capturedModel, "sonnet");
+    assert.equal(capturedModel, "claude-sonnet-4-6");
   });
 
   it("chat defaults to openai/gpt-5.4-mini", async () => {
