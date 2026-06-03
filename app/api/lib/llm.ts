@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
 import { traceLLMCall } from './langsmith';
 import { traceLLMCall as traceLLMCallLangFuse, type LangfusePromptRef } from './langfuse';
-import { getEnvNumber, getLLMConfig, getDefaultLlmModel } from '../../../lib/env';
+import { getDeepSeekBaseUrl, getEnvNumber, getLLMConfig, getDefaultLlmModel } from '../../../lib/env';
 import anthropicModels from '../../../config/anthropic-models.json';
 
 export const LLM_CONFIG = getLLMConfig();
@@ -119,7 +119,7 @@ function getDeepSeek(options?: ChatOptions): OpenAI {
     }
     deepseekClient = new OpenAI({
       apiKey,
-      baseURL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
+      baseURL: getDeepSeekBaseUrl(),
     });
   }
   return deepseekClient;
@@ -271,6 +271,7 @@ export async function callDeepSeek(
 
   if (!model) throw new Error('model is required for callDeepSeek');
 
+  const apiModel = stripProviderPrefix(model, 'deepseek');
   const formattedMessages = formatMessages(messages);
   const fullMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -278,7 +279,7 @@ export async function callDeepSeek(
   ];
 
   const response = await getDeepSeek(options).chat.completions.create({
-    model,
+    model: apiModel,
     messages: fullMessages,
     temperature,
     max_tokens: maxTokens,
@@ -322,6 +323,19 @@ function detectAnthropicFamily(model: string): AnthropicModelAlias | null {
 
 const resolvedModelCache = new Map<AnthropicModelAlias, { id: string; ts: number }>();
 
+function pickVersionedAnthropicModelId(
+  family: AnthropicModelAlias,
+  discoveredIds: string[],
+): string | null {
+  const pinned = anthropicModels[family];
+  const versioned = discoveredIds.filter(
+    (id) => id.includes(family) && isVersionedModelId(id),
+  );
+  if (versioned.includes(pinned)) return pinned;
+  if (versioned.length === 0) return null;
+  return versioned.sort((a, b) => b.length - a.length)[0];
+}
+
 async function resolveLatestModelId(
   family: AnthropicModelAlias,
   client: Anthropic,
@@ -332,11 +346,13 @@ async function resolveLatestModelId(
 
   try {
     const page = await client.models.list();
-    for (const m of page.data) {
-      if (m.id.includes(family)) {
-        resolvedModelCache.set(family, { id: m.id, ts: Date.now() });
-        return m.id;
-      }
+    const resolved = pickVersionedAnthropicModelId(
+      family,
+      page.data.map((m) => m.id),
+    );
+    if (resolved) {
+      resolvedModelCache.set(family, { id: resolved, ts: Date.now() });
+      return resolved;
     }
   } catch {
     // API unavailable — use stale cache if we have one, else fallback
@@ -576,6 +592,10 @@ export async function testConnection(): Promise<boolean> {
         return true;
       case 'deepseek':
         if (!process.env.DEEPSEEK_API_KEY) return false;
+        return true;
+      case 'google':
+        if (!process.env.GOOGLE_API_KEY) return false;
+        await getGoogle().models.list();
         return true;
       default:
         if (process.env.OPENROUTER_API_KEY) {
