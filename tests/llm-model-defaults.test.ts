@@ -86,6 +86,11 @@ describe("provider default models", () => {
   it("callAnthropic defaults sonnet alias to resolved model id", async () => {
     let capturedModel: string | undefined;
     const mockClient = {
+      models: {
+        list: async () => ({
+          data: [{ id: "claude-sonnet-4-6" }],
+        }),
+      },
       messages: {
         create: async (params: { model: string }) => {
           capturedModel = params.model;
@@ -106,6 +111,95 @@ describe("provider default models", () => {
     );
 
     assert.equal(capturedModel, "claude-sonnet-4-6");
+  });
+
+  it("callAnthropic passes through pinned versioned model IDs", async () => {
+    let capturedModel: string | undefined;
+    const mockClient = {
+      messages: {
+        create: async (params: { model: string }) => {
+          capturedModel = params.model;
+          return {
+            model: params.model,
+            content: [{ type: "text", text: "ok" }],
+            usage: { input_tokens: 1, output_tokens: 1 },
+            stop_reason: "end_turn",
+          };
+        },
+      },
+    } as unknown as Anthropic;
+
+    await callAnthropic(
+      [{ role: "user", content: "Hi" }],
+      "System",
+      { anthropicClient: mockClient, model: "claude-sonnet-4-6" }
+    );
+
+    assert.equal(capturedModel, "claude-sonnet-4-6");
+  });
+
+  it("callAnthropic resolves opus alias and strips anthropic/ prefix", async () => {
+    let capturedModel: string | undefined;
+    const mockClient = {
+      models: {
+        list: async () => ({
+          data: [{ id: "claude-opus-4-8" }],
+        }),
+      },
+      messages: {
+        create: async (params: { model: string }) => {
+          capturedModel = params.model;
+          return {
+            model: params.model,
+            content: [{ type: "text", text: "ok" }],
+            usage: { input_tokens: 1, output_tokens: 1 },
+            stop_reason: "end_turn",
+          };
+        },
+      },
+    } as unknown as Anthropic;
+
+    await callAnthropic(
+      [{ role: "user", content: "Hi" }],
+      "System",
+      { anthropicClient: mockClient, model: "anthropic/claude-sonnet-4-6" }
+    );
+
+    // anthropic/ prefix stripped, versioned ID passes through
+    assert.equal(capturedModel, "claude-sonnet-4-6");
+  });
+
+  it("callAnthropic passes through dotted-version model ids with and without anthropic/ prefix", async () => {
+    let capturedModel: string | undefined;
+    const mockClient = {
+      messages: {
+        create: async (params: { model: string }) => {
+          capturedModel = params.model;
+          return {
+            model: params.model,
+            content: [{ type: "text", text: "ok" }],
+            usage: { input_tokens: 1, output_tokens: 1 },
+            stop_reason: "end_turn",
+          };
+        },
+      },
+    } as unknown as Anthropic;
+
+    // Without prefix
+    await callAnthropic(
+      [{ role: "user", content: "Hi" }],
+      "System",
+      { anthropicClient: mockClient, model: "claude-sonnet-4.6-20260218" }
+    );
+    assert.equal(capturedModel, "claude-sonnet-4.6-20260218");
+
+    // With anthropic/ prefix
+    await callAnthropic(
+      [{ role: "user", content: "Hi" }],
+      "System",
+      { anthropicClient: mockClient, model: "anthropic/claude-sonnet-4.6-20260218" }
+    );
+    assert.equal(capturedModel, "claude-sonnet-4.6-20260218");
   });
 
   it("chat defaults to openai/gpt-5.4-mini", async () => {
