@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     const tailorModel =
       process.env.TAILOR_MODEL ||
       process.env.AI_MODEL ||
-      "gemini-2.5-pro";
+      "openrouter/google/gemini-2.5-pro";
 
     const llmResponse = await chat(messages, systemPrompt, {
       model: tailorModel,
