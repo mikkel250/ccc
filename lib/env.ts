@@ -22,7 +22,28 @@ const DEFAULT_LLM_MAX_TOKENS = 8192;
 const DEFAULT_LLM_TEMPERATURE = 0.3;
 const DEFAULT_LLM_MODEL = 'openrouter/openai/gpt-5.4-mini';
 const DEFAULT_TAILOR_MODEL = 'openrouter/google/gemini-2.5-pro';
+const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
 const MIN_MAX_TOKENS = 1;
+
+const KNOWN_LLM_PROVIDERS = new Set([
+  'openai',
+  'anthropic',
+  'google',
+  'openrouter',
+  'deepseek',
+]);
+
+function validateDefaultModel(model: string): string {
+  const slash = model.indexOf('/');
+  if (slash <= 0 || slash === model.length - 1) {
+    throw new Error(`Invalid AI_MODEL "${model}": must be namespaced as provider/model`);
+  }
+  const provider = model.slice(0, slash);
+  if (!KNOWN_LLM_PROVIDERS.has(provider)) {
+    throw new Error(`Unknown provider "${provider}" in AI_MODEL "${model}"`);
+  }
+  return model;
+}
 
 function parseMaxTokens(raw: string | undefined, limit: number): number {
   const fallback = Math.min(Math.floor(DEFAULT_LLM_MAX_TOKENS), limit);
@@ -46,8 +67,12 @@ export function getLLMConfig() {
   const maxTokens = parseMaxTokens(process.env.AI_MAX_TOKENS, maxTokensLimit);
   const temperature = parseTemperature(process.env.AI_TEMPERATURE);
   const openRouterFlex = getEnvBoolean('OPENROUTER_FLEX_ENABLED', true);
-  const defaultModel = process.env.AI_MODEL || DEFAULT_LLM_MODEL;
+  const defaultModel = validateDefaultModel(process.env.AI_MODEL || DEFAULT_LLM_MODEL);
   return { maxTokens, temperature, openRouterFlex, defaultModel };
+}
+
+export function getDeepSeekBaseUrl(): string {
+  return getEnvString('DEEPSEEK_BASE_URL', DEFAULT_DEEPSEEK_BASE_URL)!;
 }
 
 export function getDefaultLlmModel(): string {
@@ -55,5 +80,5 @@ export function getDefaultLlmModel(): string {
 }
 
 export function getTailorModel(): string {
-  return process.env.TAILOR_MODEL || process.env.AI_MODEL || DEFAULT_TAILOR_MODEL;
+  return process.env.TAILOR_MODEL || DEFAULT_TAILOR_MODEL;
 }
