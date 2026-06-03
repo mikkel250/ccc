@@ -3,35 +3,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
 import { traceLLMCall } from './langsmith';
 import { traceLLMCall as traceLLMCallLangFuse, type LangfusePromptRef } from './langfuse';
-import { getEnvNumber } from '../../../lib/env';
+import { getEnvNumber, getLLMConfig, getDefaultLlmModel } from '../../../lib/env';
 import anthropicModels from '../../../config/anthropic-models.json';
-
-const DEFAULT_MAX_TOKENS = 8192;
-const DEFAULT_TEMPERATURE = 0.3;
-const MIN_MAX_TOKENS = 1;
-
-function parseMaxTokens(raw: string | undefined, limit: number): number {
-  if (!raw) return DEFAULT_MAX_TOKENS;
-  const parsed = parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed < MIN_MAX_TOKENS) {
-    return DEFAULT_MAX_TOKENS;
-  }
-  return Math.min(Math.floor(parsed), limit);
-}
-
-function parseTemperature(raw: string | undefined): number {
-  if (!raw) return DEFAULT_TEMPERATURE;
-  const parsed = parseFloat(raw);
-  if (!Number.isFinite(parsed)) return DEFAULT_TEMPERATURE;
-  return Math.min(1, Math.max(0, parsed));
-}
-
-function getLLMConfig() {
-  const maxTokensLimit = getEnvNumber('AI_MAX_TOKENS_LIMIT', 128_000);
-  const maxTokens = parseMaxTokens(process.env.AI_MAX_TOKENS, maxTokensLimit);
-  const temperature = parseTemperature(process.env.AI_TEMPERATURE);
-  return { maxTokens, temperature };
-}
 
 export const LLM_CONFIG = getLLMConfig();
 
@@ -109,9 +82,11 @@ function getAnthropic(options?: ChatOptions): Anthropic {
 
 function getGoogle(): GoogleGenAI {
   if (!googleClient) {
-    googleClient = new GoogleGenAI({
-      apiKey: process.env.GOOGLE_API_KEY || '',
-    });
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      throw new Error('GOOGLE_API_KEY is not configured');
+    }
+    googleClient = new GoogleGenAI({ apiKey });
   }
   return googleClient;
 }
@@ -138,8 +113,12 @@ function getDeepSeek(options?: ChatOptions): OpenAI {
     return options.deepseekClient;
   }
   if (!deepseekClient) {
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    if (!apiKey) {
+      throw new Error('DEEPSEEK_API_KEY is not configured');
+    }
     deepseekClient = new OpenAI({
-      apiKey: process.env.DEEPSEEK_API_KEY || '',
+      apiKey,
       baseURL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
     });
   }
@@ -232,12 +211,16 @@ export async function callOpenRouter(
   options: ChatOptions = {},
   clientOverride?: OpenAI
 ): Promise<ChatResponse> {
-  const { maxTokens: defaultMaxTokens, temperature: defaultTemperature } = getLLMConfig();
+  const {
+    maxTokens: defaultMaxTokens,
+    temperature: defaultTemperature,
+    openRouterFlex: defaultOpenRouterFlex,
+  } = getLLMConfig();
   const {
     temperature = defaultTemperature,
     maxTokens = defaultMaxTokens,
     model,
-    openRouterFlex = true,
+    openRouterFlex = defaultOpenRouterFlex,
   } = options;
 
   if (!model) throw new Error('model is required for callOpenRouter');
@@ -523,7 +506,7 @@ export async function chat(
   systemPrompt: string,
   options: ChatOptions = {}
 ): Promise<ChatResponse> {
-  const model = options.model || process.env.AI_MODEL || 'openrouter/openai/gpt-5.4-mini';
+  const model = options.model || getDefaultLlmModel();
   const provider = detectProvider(model);
   const startTime = Date.now();
 
@@ -574,7 +557,7 @@ export async function chat(
 }
 
 export async function testConnection(): Promise<boolean> {
-  const defaultModel = process.env.AI_MODEL || 'openrouter/openai/gpt-5.4-mini';
+  const defaultModel = getDefaultLlmModel();
   const provider = detectProvider(defaultModel);
 
   try {
