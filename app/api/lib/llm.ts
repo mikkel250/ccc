@@ -333,7 +333,8 @@ function detectAnthropicFamily(model: string): AnthropicModelFamily | null {
 
 /** Is the model string already a versioned ID that needs no resolution? */
 function isVersionedModelId(model: string): boolean {
-  return /\d{6,}|\d+\.\d+/.test(model);
+  // Date suffix, dotted version, claude-<digit> (legacy), or claude-<name>-<digit>
+  return /\d{6,}|\d+\.\d+|\bclaude-\d|\bclaude-[a-z]+-\d/.test(model);
 }
 
 // ---- Dynamic model resolution via the Anthropic Models API ----
@@ -343,7 +344,7 @@ const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
 
 /**
  * Resolve a model family alias to the latest versioned model ID by querying
- * the Anthropic Models API. Results are cached for 1 hour. Falls back to
+ * the Anthropic Models API. Results are cached for 1 week. Falls back to
  * FALLBACK_ANTHROPIC_MODELS if the API is unreachable.
  */
 async function resolveLatestModelId(
@@ -374,17 +375,19 @@ async function normalizeAnthropicModel(
   model: string,
   client: Anthropic,
 ): Promise<string> {
-  const lower = model.toLowerCase();
+  // Strip provider prefix so detectProvider-style routing doesn't leak into the API call
+  const cleaned = model.replace(/^anthropic\//, '');
+  const lower = cleaned.toLowerCase();
 
   // Already a versioned ID — pass through unchanged
-  if (isVersionedModelId(model)) return model;
+  if (isVersionedModelId(cleaned)) return cleaned;
 
   // Detect family and resolve dynamically
   const family = detectAnthropicFamily(lower);
   if (family) return resolveLatestModelId(family, client);
 
   // Unrecognised alias — pass through and let the API reject it
-  return model;
+  return cleaned;
 }
 
 export async function callAnthropic(
@@ -574,13 +577,39 @@ export async function chat(
 }
 
 export async function testConnection(): Promise<boolean> {
+  const defaultModel = process.env.AI_MODEL || 'openai/gpt-5.4-mini';
+  const provider = detectProvider(defaultModel);
+
   try {
-    if (process.env.OPENROUTER_API_KEY) {
-      await getOpenRouter().models.list();
-      return true;
+    switch (provider) {
+      case 'openrouter':
+        if (!process.env.OPENROUTER_API_KEY) return false;
+        await getOpenRouter().models.list();
+        return true;
+      case 'openai':
+        if (!process.env.OPENAI_API_KEY) return false;
+        await getOpenAI().models.list();
+        return true;
+      case 'anthropic':
+        if (!process.env.ANTHROPIC_API_KEY) return false;
+        await getAnthropic().models.list();
+        return true;
+      case 'deepseek':
+        if (!process.env.DEEPSEEK_API_KEY) return false;
+        return true;
+      default:
+        // Google / unknown — best-effort check via OpenRouter if key exists
+        if (process.env.OPENROUTER_API_KEY) {
+          await getOpenRouter().models.list();
+          return true;
+        }
+        // Fall back to OpenAI if configured
+        if (process.env.OPENAI_API_KEY) {
+          await getOpenAI().models.list();
+          return true;
+        }
+        return false;
     }
-    await getOpenAI().models.list();
-    return true;
   } catch (error) {
     console.error('LLM connection test failed:', error);
     return false;
