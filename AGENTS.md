@@ -118,18 +118,47 @@ Resolve the active slug from `docs/plan/_ACTIVE` (first line), then append your 
 
 ## Commands
 
-Document the project-specific commands here:
-
 ```bash
 # Install dependencies
-TODO
+npm install
+
+# Run development server
+npm run dev
 
 # Run tests
-TODO
+npm test
 
-# Run the app
-TODO
+# Lint
+npm run lint
+
+# Build
+npm run build
 ```
+
+## Coding Practices
+
+### Config-driven routing, code-driven integration
+
+- **Model strings are namespaced.** Every model identifier uses the form `provider/model` (e.g. `openrouter/openai/gpt-4o`, `anthropic/sonnet`, `deepseek/deepseek-v4-pro`). The first `/`-delimited segment is the provider. No bare aliases — `sonnet` without a provider prefix is invalid.
+- **Adding a new model or provider must not require a code change in routing logic.** Provider detection reduces to splitting the model string on `/` and looking up the first segment in a provider registry. That registry is configuration (env vars), not a chain of `if` statements.
+- **Provider-specific call shapes (message formatting, auth, API structure) live in the provider's integration function** behind a stable `dispatchProvider` interface. That `switch` is fine — it dispatches behavior, not routing decisions.
+- **Every tunable parameter must originate from an environment variable.** This includes: default models per provider, API base URLs, max tokens, temperature, OpenRouter service tier, and model resolution cache TTLs. Per-function hardcoded fallbacks (e.g. `"gpt-4o-mini"` inside `callOpenAI`) are prohibited — each function receives its model from the caller, which resolves it from `process.env`.
+
+### Senior Engineer Heuristics
+
+**Configuration vs. behavior — classify before coding.** Before adding a conditional, ask: is this configuration or behavior? If configuration — a new model, provider name, threshold, or URL — it belongs in an env var or config object, not an `if` branch. If it is genuinely different behavior (Anthropic's message format vs. OpenAI's), it belongs in code behind an existing interface. Misclassifying configuration as code is the single most common mistake.
+
+**80% overlap means extend, don't copy.** Before adding a function, scan the module and its siblings. If an existing function already does 80% of what you need, extend it with a parameter rather than duplicating it. Duplication is worse than the wrong abstraction — at least the wrong abstraction can be renamed.
+
+**Every literal value is a future outage.** Numbers, strings, URLs, timeouts, TTLs — if it is not a language keyword, it goes in `process.env` with a sensible default. The one exception is test fixtures. Reuse `lib/env.ts` helpers (`getEnvNumber`, `getEnvString`) instead of repeating `parseInt(process.env.X || "5")` across modules.
+
+**New code must look like old code.** Match the existing module's export style (named, not default), error shape (discriminated union `{ ok: true, data } | { ok: false, error: string }`), type naming convention, and file structure. Consistency beats cleverness — a codebase where every module invents its own pattern is unmaintainable regardless of how elegant any single module is.
+
+**Handle errors at exactly one boundary.** Internal functions throw or return discriminated unions. The route handler is the only place that maps errors to HTTP status codes. No `try/catch` in a `lib/` function that returns an HTTP-shaped object.
+
+**External data is `unknown` until validated.** `request.json()`, `process.env`, API responses — type them through a validation function before they touch business logic. Never `as`-cast external data.
+
+**`.env.example` is the canonical env var catalog.** Every new environment variable must appear in `.env.example` with a comment describing its purpose and default. The file is the single source of truth for what the application needs at runtime.
 
 ## Documentation Map
 
