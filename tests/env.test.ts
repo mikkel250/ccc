@@ -19,10 +19,10 @@ describe("getTailorModel", () => {
     assert.equal(getTailorModel(), "openrouter/google/gemini-2.5-pro");
   });
 
-  it("falls back to AI_MODEL when TAILOR_MODEL is unset", () => {
+  it("uses DEFAULT_TAILOR_MODEL when TAILOR_MODEL is unset, ignoring AI_MODEL", () => {
     delete process.env.TAILOR_MODEL;
     process.env.AI_MODEL = "deepseek/deepseek-v4-pro";
-    assert.equal(getTailorModel(), "deepseek/deepseek-v4-pro");
+    assert.equal(getTailorModel(), "openrouter/google/gemini-2.5-pro");
   });
 
   it("uses default when neither env var is set", () => {

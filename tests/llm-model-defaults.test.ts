@@ -83,7 +83,7 @@ describe("provider default models", () => {
     assert.equal(capturedModel, "openai/gpt-5.4-mini");
   });
 
-  it("callAnthropic falls back to anthropic-models.json when models.list fails", async () => {
+  it("callAnthropic falls back to anthropic-models.json when models.list fails (namespaced input)", async () => {
     let capturedModel: string | undefined;
     const mockClient = {
       models: {
@@ -107,7 +107,7 @@ describe("provider default models", () => {
     await callAnthropic(
       [{ role: "user", content: "Hi" }],
       "System",
-      { anthropicClient: mockClient, model: "haiku" }
+      { anthropicClient: mockClient, model: "anthropic/haiku" }
     );
 
     assert.equal(capturedModel, "claude-haiku-4-5");

@@ -4,24 +4,27 @@ import OpenAI from "openai";
 import { callDeepSeek } from "../app/api/lib/llm";
 
 describe("callDeepSeek", () => {
-  it("returns ChatResponse shape on success", async () => {
+  it("returns ChatResponse shape on success and strips provider prefix", async () => {
     const mockClient = {
       chat: {
         completions: {
-          create: async () => ({
-            model: "deepseek-v4-pro",
-            usage: {
-              prompt_tokens: 10,
-              completion_tokens: 5,
-              total_tokens: 15,
-            },
-            choices: [
-              {
-                message: { content: "Hello from DeepSeek" },
-                finish_reason: "stop",
+          create: async (req: { model: string }) => {
+            assert.equal(req.model, "deepseek-v4-pro");
+            return {
+              model: "deepseek-v4-pro",
+              usage: {
+                prompt_tokens: 10,
+                completion_tokens: 5,
+                total_tokens: 15,
               },
-            ],
-          }),
+              choices: [
+                {
+                  message: { content: "Hello from DeepSeek" },
+                  finish_reason: "stop",
+                },
+              ],
+            };
+          },
         },
       },
     } as unknown as OpenAI;
@@ -29,7 +32,7 @@ describe("callDeepSeek", () => {
     const response = await callDeepSeek(
       [{ role: "user", content: "Hi" }],
       "System prompt",
-      { model: "deepseek-v4-pro", deepseekClient: mockClient }
+      { model: "deepseek/deepseek-v4-pro", deepseekClient: mockClient }
     );
 
     assert.equal(response.content, "Hello from DeepSeek");
