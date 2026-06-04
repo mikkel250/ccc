@@ -2,8 +2,7 @@
 
 Architecture decisions, code conventions, module boundaries, and infrastructure choices for the CV Tailoring API.
 
-- [Architecture overview](./ARCHITECTURE.md) — stack, request flow, evaluation pipeline
-- [Model selection](./MODEL_SELECTION.md) — provider routing, model defaults, evaluation strategy
+- [Model selection](./MODEL_SELECTION.md) — provider routing, model defaults, evaluation pipeline and results
 - [Pipeline enhancements](./PIPELINE_ENHANCEMENTS.md) — two-pass pipeline, structured output, critic node, batch processing
 - [Learning system](./LEARNING_SYSTEM.md) — feedback capture, hallucination memory, few-shot routing, persona evolution, drift detection
 - [File layout](./FILE_LAYOUT.md) — canonical project tree, source of truth for module locations

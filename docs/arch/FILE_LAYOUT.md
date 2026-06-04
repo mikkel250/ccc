@@ -2,7 +2,7 @@
 
 Canonical project tree for the CV Tailoring API. The tree is the source of truth for module locations; if a file is missing, create it at the path shown here.
 
-```
+```text
 /root/
 ├── app/                          # Next.js App Router
 │   ├── layout.tsx                # Root layout (metadata only, no UI)
