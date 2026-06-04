@@ -9,6 +9,13 @@ export function getEnvString(key: string, defaultValue?: string): string | undef
   return process.env[key] ?? defaultValue;
 }
 
+import {
+  DEFAULT_EVAL_EXTRACTION_MIN_SCORE,
+  DEFAULT_EVAL_EXTRACTION_MODEL,
+  DEFAULT_EVAL_JUDGE_MODEL,
+  DEFAULT_EVAL_MODELS_CSV,
+} from '../app/api/lib/eval-schema';
+
 export function getEnvBoolean(key: string, defaultValue: boolean): boolean {
   const raw = process.env[key];
   if (!raw) return defaultValue;
@@ -21,7 +28,7 @@ export function getEnvBoolean(key: string, defaultValue: boolean): boolean {
 const DEFAULT_LLM_MAX_TOKENS = 8192;
 const DEFAULT_LLM_TEMPERATURE = 0.3;
 const DEFAULT_LLM_MODEL = 'openrouter/openai/gpt-5.4-mini';
-const DEFAULT_TAILOR_MODEL = 'openrouter/google/gemini-2.5-pro';
+const DEFAULT_TAILOR_MODEL = 'anthropic/sonnet';
 const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
 const MIN_MAX_TOKENS = 1;
 
@@ -81,4 +88,23 @@ export function getDefaultLlmModel(): string {
 
 export function getTailorModel(): string {
   return process.env.TAILOR_MODEL || DEFAULT_TAILOR_MODEL;
+}
+
+export function getEvalJudgeModel(): string {
+  return getEnvString('EVAL_JUDGE_MODEL', DEFAULT_EVAL_JUDGE_MODEL)!;
+}
+
+export function getEvalModels(): string {
+  return getEnvString('EVAL_MODELS', DEFAULT_EVAL_MODELS_CSV)!;
+}
+
+export function getEvalExtractionModel(): string {
+  return getEnvString('EVAL_EXTRACTION_MODEL', DEFAULT_EVAL_EXTRACTION_MODEL)!;
+}
+
+export function getEvalExtractionMinScore(): number {
+  const raw = process.env.EVAL_EXTRACTION_MIN_SCORE;
+  if (!raw) return DEFAULT_EVAL_EXTRACTION_MIN_SCORE;
+  const parsed = parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : DEFAULT_EVAL_EXTRACTION_MIN_SCORE;
 }
