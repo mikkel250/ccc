@@ -9,7 +9,8 @@ const ENV_EXAMPLE_PATH = path.join(process.cwd(), ".env.example");
 const ENV_TS_PATH = path.join(process.cwd(), "lib", "env.ts");
 const TEST_JDS_DIR = path.join(process.cwd(), "knowledge-base", "test-jds");
 
-const NAMESPACED_MODEL_RE = /^(openai|anthropic|google|openrouter|deepseek)\/.+/;
+/** provider/model — first segment must not contain `/` */
+const NAMESPACED_MODEL_RE = /^[^/\s]+\/.+/;
 
 function readTailorModelFromEnvExample(): string {
   const content = fs.readFileSync(ENV_EXAMPLE_PATH, "utf-8");

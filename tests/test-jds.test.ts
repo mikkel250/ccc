@@ -1,10 +1,23 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
 const TEST_JDS_DIR = path.join(process.cwd(), "knowledge-base", "test-jds");
 const GITIGNORE_PATH = path.join(process.cwd(), ".gitignore");
+
+function isGitIgnored(relativePath: string): boolean {
+  try {
+    execFileSync("git", ["check-ignore", "-q", "--", relativePath], {
+      cwd: process.cwd(),
+      stdio: "ignore",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 const PHONE_RE =
@@ -95,23 +108,16 @@ describe("knowledge-base/test-jds — test JD set", () => {
   });
 
   it("test-jds directory is not gitignored (files are committed)", () => {
-    const gitignore = fs.readFileSync(GITIGNORE_PATH, "utf-8");
-    const ignoredPatterns = gitignore
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith("#"));
-    const testJdsPatterns = [
-      "knowledge-base/test-jds",
+    assert.ok(fs.existsSync(GITIGNORE_PATH), ".gitignore must exist");
+    const representativePaths = [
       "knowledge-base/test-jds/",
-      "/knowledge-base/test-jds",
-      "/knowledge-base/test-jds/",
-      "test-jds/",
-      "test-jds",
+      "knowledge-base/test-jds/file.txt",
+      "test-jds/file.txt",
     ];
-    for (const pattern of testJdsPatterns) {
+    for (const relativePath of representativePaths) {
       assert.ok(
-        !ignoredPatterns.includes(pattern),
-        `.gitignore must not ignore ${pattern} — test JDs are committed to the repo`
+        !isGitIgnored(relativePath),
+        `.gitignore must not ignore ${relativePath} — test JDs are committed to the repo`
       );
     }
   });

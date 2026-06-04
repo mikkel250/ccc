@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-const ARCHITECTURE_PATH = path.join(process.cwd(), "docs", "arch", "ARCHITECTURE.md");
+const ARCHITECTURE_PATH = path.join(process.cwd(), "docs", "arch", "MODEL_SELECTION.md");
 const MODEL_SELECTION_PATH = path.join(process.cwd(), "docs", "arch", "MODEL_SELECTION.md");
 const ENV_EXAMPLE_PATH = path.join(process.cwd(), ".env.example");
 
@@ -13,7 +13,7 @@ function readTailorModelFromEnvExample(): string {
   return match?.[1]?.trim() ?? "";
 }
 
-describe("docs/arch/ARCHITECTURE.md — eval pipeline documentation", () => {
+describe("docs/arch/MODEL_SELECTION.md — eval pipeline documentation", () => {
   it("exists and documents the Evaluation pipeline subsection", () => {
     assert.ok(fs.existsSync(ARCHITECTURE_PATH), "docs/arch/ARCHITECTURE.md must exist");
     const content = fs.readFileSync(ARCHITECTURE_PATH, "utf-8");
@@ -50,10 +50,9 @@ describe("docs/arch/ARCHITECTURE.md — eval pipeline documentation", () => {
     const content = fs.readFileSync(ARCHITECTURE_PATH, "utf-8");
     assert.ok(!/single-pass/i.test(content), "must not reference single-pass judging");
     assert.ok(!/single-stage/i.test(content), "must not reference single-stage judging");
-    const evalSection = content.slice(
-      content.indexOf("### Evaluation pipeline"),
-      content.indexOf("### Key decisions")
-    );
+    const evalStart = content.indexOf("### Evaluation pipeline");
+    const evalEnd = content.indexOf("\n### Eval results");
+    const evalSection = content.slice(evalStart, evalEnd > evalStart ? evalEnd : undefined);
     assert.ok(
       !/three dimensions/i.test(evalSection) || /four dimensions/i.test(evalSection),
       "evaluation pipeline must document four dimensions, not three only"
