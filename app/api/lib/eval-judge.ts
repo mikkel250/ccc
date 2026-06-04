@@ -71,7 +71,7 @@ export function extractStructuredJson(llmResponse: string): unknown {
 /** Resolve cross-provider judge model for a generator model. */
 export function resolveJudgeModel(generatorModel: string): string {
   if (generatorModel in JUDGE_MAP) {
-    return JUDGE_MAP[generatorModel as keyof typeof JUDGE_MAP];
+    return JUDGE_MAP[generatorModel]!;
   }
   warnUnmappedJudgeModels([generatorModel]);
   return getEvalJudgeModel();

@@ -356,9 +356,7 @@ async function main(): Promise<void> {
 
   const langfuse = initLangFuse();
   const langfuseScoreCreate = langfuse
-    ? async (params: Evaluation) => {
-        langfuse.score.create(params);
-      }
+    ? async (params: Evaluation) => langfuse.score.create(params)
     : undefined;
 
   console.log(`Evaluating ${jdFiles.length} JD(s) × ${models.length} model(s)...`);

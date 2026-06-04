@@ -89,14 +89,65 @@ export const DEFAULT_EVAL_EXTRACTION_MODEL = "openrouter/openai/gpt-4o-mini";
 /** Canonical comma-separated default for `EVAL_MODELS` (derived from candidate list). */
 export const DEFAULT_EVAL_MODELS_CSV = CANDIDATE_GENERATION_MODELS.join(",");
 
-/** Cross-provider judge mapping: generator model → judge model (different provider). */
-export const JUDGE_MAP = {
+const DEFAULT_JUDGE_MAP: Record<string, string> = {
   "deepseek/deepseek-v4-pro": "anthropic/sonnet",
   "anthropic/sonnet": "deepseek/deepseek-v4-pro",
   "openrouter/openai/gpt-5.4-mini": "anthropic/sonnet",
   "openrouter/google/gemini-2.5-pro": "deepseek/deepseek-v4-pro",
   [DEFAULT_EVAL_EXTRACTION_MODEL]: "anthropic/sonnet",
-} as const satisfies Record<string, string>;
+};
+
+function isNamespacedModelString(value: unknown): value is string {
+  return typeof value === "string" && /^[^/\s]+\/.+/.test(value);
+}
+
+function buildJudgeMap(): Record<string, string> {
+  const raw = process.env.EVAL_JUDGE_MAP_JSON?.trim();
+  if (!raw) {
+    return { ...DEFAULT_JUDGE_MAP };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    console.warn(
+      "[eval] Invalid EVAL_JUDGE_MAP_JSON — using default JUDGE_MAP"
+    );
+    return { ...DEFAULT_JUDGE_MAP };
+  }
+
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    console.warn(
+      "[eval] EVAL_JUDGE_MAP_JSON must be a JSON object — using default JUDGE_MAP"
+    );
+    return { ...DEFAULT_JUDGE_MAP };
+  }
+
+  const map: Record<string, string> = { ...DEFAULT_JUDGE_MAP };
+  for (const [generator, judge] of Object.entries(parsed)) {
+    if (!isNamespacedModelString(generator) || !isNamespacedModelString(judge)) {
+      continue;
+    }
+    map[generator] = judge;
+  }
+
+  if (!(DEFAULT_EVAL_EXTRACTION_MODEL in map)) {
+    map[DEFAULT_EVAL_EXTRACTION_MODEL] =
+      DEFAULT_JUDGE_MAP[DEFAULT_EVAL_EXTRACTION_MODEL] ?? DEFAULT_EVAL_JUDGE_MODEL;
+  }
+
+  for (const model of CANDIDATE_GENERATION_MODELS) {
+    if (!(model in map)) {
+      map[model] = DEFAULT_EVAL_JUDGE_MODEL;
+    }
+  }
+
+  return map;
+}
+
+/** Cross-provider judge mapping: generator model → judge model (different provider). */
+export const JUDGE_MAP: Record<string, string> = buildJudgeMap();
 
 export function warnUnmappedJudgeModels(models: readonly string[]): void {
   for (const model of models) {
