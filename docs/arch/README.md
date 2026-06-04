@@ -2,9 +2,11 @@
 
 Architecture decisions, code conventions, module boundaries, and infrastructure choices for the CV Tailoring API.
 
+- [Architecture overview](./ARCHITECTURE.md) — stack, request flow, evaluation pipeline
 - [Model selection](./MODEL_SELECTION.md) — provider routing, model defaults, evaluation strategy
 - [Pipeline enhancements](./PIPELINE_ENHANCEMENTS.md) — two-pass pipeline, structured output, critic node, batch processing
 - [Learning system](./LEARNING_SYSTEM.md) — feedback capture, hallucination memory, few-shot routing, persona evolution, drift detection
+- [File layout](./FILE_LAYOUT.md) — canonical project tree, source of truth for module locations
 
 ---
 
@@ -21,7 +23,7 @@ The project was cloned from `portfolio-react-ts` and stripped of all portfolio p
 | Language | TypeScript 5 | Strict mode |
 | Framework | Next.js 15 App Router | API routes only (`app/api/`). No pages, no components, no layout beyond API root. |
 | Runtime | Node.js 22 LTS (≥22.0.0) | Railway (Nixpacks reads `.nvmrc`); no Edge Functions |
-| LLM | OpenAI, Anthropic, Google, DeepSeek, OpenRouter (multi-provider dispatch) | Model strings use `provider/model` namespace. No bare aliases. Provider detection is a config lookup, not an `if` chain. OpenRouter supports `service_tier: flex` (discounted, latency-tolerant) for OpenAI/Google models; Anthropic batch processing requires direct API. Separate `TAILOR_MODEL` for CV generation. Native batch APIs deferred. |
+| LLM | OpenAI, Anthropic, Google, DeepSeek, OpenRouter (multi-provider dispatch) | Model strings use `provider/model` namespace. No bare aliases. Provider detection is a config lookup, not an `if` chain. OpenRouter supports `service_tier: flex` (discounted, latency-tolerant) for OpenAI/Google models; Anthropic batch processing requires direct API. Separate `TAILOR_MODEL` for CV generation. LLM-as-Judge eval pipeline — complete (MVP). Native batch APIs deferred. |
 | Auth | None | MVP is single-user, no auth layer |
 | Database | SQLite (MVP), PostgreSQL + pgvector (future) | Learning system stores feedback, few-shot examples, and hallucination corrections. Not needed for MVP (single-pass, stateless). |
 | Storage | None | CV .docx is generated in-memory per request, returned as base64 |
@@ -79,64 +81,7 @@ See [Pipeline enhancements](./PIPELINE_ENHANCEMENTS.md) for the two-pass pipelin
 
 ## File layout
 
-```
-/root/
-├── app/                          # Next.js App Router
-│   ├── layout.tsx                # Root layout (metadata only, no UI)
-│   ├── page.tsx                  # Returns notFound() — API-only, no frontend
-│   ├── not-found.tsx             # 404 page
-│   └── api/
-│       ├── hello/route.ts        # Health check GET /api/hello
-│       ├── tailor-cv/route.ts    # POST /api/tailor-cv — main CV generation endpoint
-│       └── lib/                  # All business logic lives here
-│           ├── llm.ts            # Multi-provider LLM client (531 lines)
-│           ├── cv-prompt.ts      # CV tailoring prompt (Langfuse + hardcoded fallback)
-│           ├── chat-prompt.ts    # Chat assistant system prompt (massive, ~320 lines)
-│           ├── chat-prompt.4o-mini.ts        # Model-specific variant
-│           ├── chat-prompt.gemini-flash-v0.ts
-│           ├── chat-prompt.gemini-flash-v1.ts
-│           ├── jd-prompt.ts      # Job description analysis prompt (evaluation rubric inside)
-│           ├── prompts.ts        # Chat prompt builder with query classification
-│           ├── langfuse-prompts.ts  # Prompt management abstraction layer
-│           ├── langfuse.ts       # Langfuse tracing client
-│           ├── langfuse-otel.ts  # OTEL bootstrap (lazy)
-│           ├── langsmith.ts      # LangSmith tracing (optional)
-│           ├── knowledge-base.ts # Context retrieval (RAG, file-based)
-│           ├── markdown-docx.ts  # Markdown → .docx conversion
-│           ├── rate-limit.ts     # IP-based burst rate limiter
-│           └── tailor-cv-validation.ts  # Request body validation
-├── knowledge-base/               # Candidate profile data (Markdown files)
-│   ├── career-story.md           # ~~28KB career narrative
-│   ├── experience.md             # 25KB work experience
-│   ├── skills.md                 # 28KB skills inventory
-│   ├── projects.md               # 12KB project details
-│   └── meta-project.md           # 19KB about this project itself
-├── lib/
-│   ├── input-filter.ts           # Client-side input filtering (location, salary, JD detection)
-│   └── formatDate.ts             # Date formatting utility
-├── scripts/
-│   ├── create-langfuse-prompts.ts  # Upload prompts to Langfuse
-│   └── e2e-tailor-cv.ts           # End-to-end smoke tests for /api/tailor-cv
-├── tests/
-│   ├── cv-prompt.test.ts                  # compileCvPrompt() unit tests
-│   ├── cv-prompt-struan-fallback.test.ts  # Struan 8-part framework contract tests
-│   ├── tailor-cv-validation.test.ts       # Request validation tests
-│   ├── llm-chat-dispatch.test.ts          # LLM provider routing tests
-│   ├── llm-openrouter.test.ts             # OpenRouter-specific tests
-│   ├── llm-provider-detection.test.ts     # detectProvider() tests
-│   ├── rate-limit.test.ts                 # Rate limiter tests
-│   ├── markdown-docx.test.ts              # DOCX conversion tests
-│   └── eslint-config.test.ts              # ESLint config tests
-├── docs/
-│   └── struan-8-part-cv-framework.md     # Reference for CV output structure
-├── instrumentation.ts           # Next.js instrument hook (no-op)
-├── next.config.mjs              # Next.js config (OTEL external packages)
-├── railway.toml                 # Railway deployment config
-├── .coderabbit.yaml             # CodeRabbit review config
-├── .env.example                 # Environment variable template
-├── package.json                 # Dependencies
-└── tsconfig.json                # TypeScript config
-```
+See [File layout reference](./FILE_LAYOUT.md).
 
 ## Constraints
 

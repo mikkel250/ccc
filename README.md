@@ -48,4 +48,4 @@ Deploy only when local validation is done — Railway bills on usage/traffic. Co
 
 ## Stack
 
-See [`.cursor/artifacts/ARCHITECTURE.md`](.cursor/artifacts/ARCHITECTURE.md).
+See [`docs/arch/README.md`](docs/arch/README.md).

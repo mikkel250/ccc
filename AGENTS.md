@@ -96,7 +96,7 @@ Resolve the active slug from `docs/plan/_ACTIVE` (first line), then append your 
 
 # Context Discipline
 
-**Declarative paths:** resolve the active slug from `docs/plan/_ACTIVE` (first line). Task coordination files live under `docs/plan/<slug>/` (e.g. `docs/plan/<slug>/README.md`). Stable architecture lives in `docs/arch/ARCHITECTURE.md`. Do not search the repo root or other folders for legacy `.cursor/artifacts/` basenames; if a required file is missing, create it under the correct `docs/` path or stop and record the gap in `docs/plan/<slug>/OPEN_QUESTIONS.md`.
+**Declarative paths:** resolve the active slug from `docs/plan/_ACTIVE` (first line). Task coordination files live under `docs/plan/<slug>/` (e.g. `docs/plan/<slug>/README.md`). Stable architecture lives in `docs/arch/README.md` (with topic files: `MODEL_SELECTION.md`, `PIPELINE_ENHANCEMENTS.md`, `LEARNING_SYSTEM.md`). Do not search the repo root or other folders for legacy `.cursor/artifacts/` basenames; if a required file is missing, create it under the correct `docs/` path or stop and record the gap in `docs/plan/<slug>/OPEN_QUESTIONS.md`.
 
 **Before any non-trivial work (planning, implementation, or review):** read, in order, only what you need — do not load the whole tree by default.
 
@@ -106,13 +106,13 @@ Resolve the active slug from `docs/plan/_ACTIVE` (first line), then append your 
 |------|-----------------|---------|
 | Session / task start | `docs/plan/_ACTIVE`, then `docs/plan/<slug>/README.md` | Objective, constraints, acceptance criteria |
 | Immediately after | `docs/plan/<slug>/OPEN_QUESTIONS.md` | Blockers; do not proceed past unresolved items without updating this file or stopping |
-| Before coding or changing architecture | `docs/arch/ARCHITECTURE.md` | Stack, decisions, invariants |
+| Before coding or changing architecture | `docs/arch/README.md` | Stack, decisions, invariants |
 | When debugging past decisions or incidents | `docs/archive/engineering-learnings.md` | Prior post-mortems and gotchas |
 | When producing or merging structured review output | `docs/plan/<slug>/REVIEW_NOTES.md` | Where review findings belong (read if continuing a review thread) |
 
 **Handoffs:** prefer `@docs/plan/...`, `@docs/arch/...`, or `@docs/archive/...` plus **scoped** git context (`git diff`, specific commits, named paths) over long chat transcripts. Do not rely on prior messages for facts that belong in artifacts or the repo.
 
-- **Stack and repo-wide conventions** live only in `docs/arch/ARCHITECTURE.md`; do not duplicate them in rules.
+- **Stack and repo-wide conventions** live only in `docs/arch/` (start with `docs/arch/README.md`); do not duplicate them in rules.
 - Prefer artifact references over long chat history.
 - Codebase reality overrides conversation history. If artifacts contradict stale discussion, follow the artifacts.
 
@@ -192,12 +192,12 @@ When running as one of these subagents:
 
 | Agent `name` | Read first (`docs/…`) |
 |-----------------|------------------------------|
-| `intake` | `docs/plan/_ACTIVE`, `docs/plan/<slug>/README.md`, `docs/plan/<slug>/OPEN_QUESTIONS.md`, `docs/arch/ARCHITECTURE.md` |
-| `decomposition` | `docs/plan/_ACTIVE`, `docs/plan/<slug>/README.md`, `docs/plan/<slug>/OPEN_QUESTIONS.md`, `docs/arch/ARCHITECTURE.md` |
-| `testWriter` | `docs/plan/_ACTIVE`, `docs/plan/<slug>/README.md`, `docs/plan/<slug>/OPEN_QUESTIONS.md`, `docs/arch/ARCHITECTURE.md` |
-| `implement` | `docs/plan/_ACTIVE`, `docs/plan/<slug>/README.md`, `docs/plan/<slug>/OPEN_QUESTIONS.md`, `docs/arch/ARCHITECTURE.md` |
-| `review-local` | `docs/plan/_ACTIVE`, `docs/plan/<slug>/README.md`, `docs/plan/<slug>/OPEN_QUESTIONS.md`, `docs/plan/<slug>/REVIEW_NOTES.md`, `docs/arch/ARCHITECTURE.md` |
-| `review-validate` | `docs/plan/<slug>/REVIEW_NOTES.md`, `docs/plan/<slug>/README.md`, `docs/arch/ARCHITECTURE.md` |
+| `intake` | `docs/plan/_ACTIVE`, `docs/plan/<slug>/README.md`, `docs/plan/<slug>/OPEN_QUESTIONS.md`, `docs/arch/README.md` |
+| `decomposition` | `docs/plan/_ACTIVE`, `docs/plan/<slug>/README.md`, `docs/plan/<slug>/OPEN_QUESTIONS.md`, `docs/arch/README.md` |
+| `testWriter` | `docs/plan/_ACTIVE`, `docs/plan/<slug>/README.md`, `docs/plan/<slug>/OPEN_QUESTIONS.md`, `docs/arch/README.md` |
+| `implement` | `docs/plan/_ACTIVE`, `docs/plan/<slug>/README.md`, `docs/plan/<slug>/OPEN_QUESTIONS.md`, `docs/arch/README.md` |
+| `review-local` | `docs/plan/_ACTIVE`, `docs/plan/<slug>/README.md`, `docs/plan/<slug>/OPEN_QUESTIONS.md`, `docs/plan/<slug>/REVIEW_NOTES.md`, `docs/arch/README.md` |
+| `review-validate` | `docs/plan/<slug>/REVIEW_NOTES.md`, `docs/plan/<slug>/README.md`, `docs/arch/README.md` |
 | `commit` | `docs/plan/_ACTIVE`, `docs/plan/<slug>/README.md`, `docs/plan/<slug>/OPEN_QUESTIONS.md` |
 | `reflection` | `docs/plan/<slug>/README.md`, `docs/plan/<slug>/REVIEW_NOTES.md` |
 
