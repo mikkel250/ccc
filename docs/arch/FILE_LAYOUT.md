@@ -57,7 +57,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── rate-limit.test.ts                 # Rate limiter tests
 │   ├── markdown-docx.test.ts              # DOCX conversion tests
 │   ├── eslint-config.test.ts              # ESLint config tests
-│   ├── eval-architecture-docs.test.ts     # ARCHITECTURE.md / MODEL_SELECTION.md contract tests
+│   ├── eval-architecture-docs.test.ts     # MODEL_SELECTION.md / .env.example contract tests
 │   ├── eval-cv.test.ts                    # eval-cv.ts runner unit tests
 │   ├── eval-extract.test.ts               # JD extraction unit tests
 │   ├── eval-format.test.ts                # Format compliance checker tests
@@ -67,6 +67,9 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   └── test-jds.test.ts                   # knowledge-base/test-jds fixture contract tests
 ├── eval-results/                 # Eval output artifacts per JD×model
 ├── docs/
+│   ├── arch/
+│   │   ├── APP_WALKTHROUGH.md            # Start-to-finish flow with file/function refs
+│   │   └── …
 │   ├── struan-8-part-cv-framework.md     # Reference for CV output structure
 │   └── plan/llm-eval-pipeline/           # Active eval pipeline plan
 ├── instrumentation.ts           # Next.js instrument hook (no-op)

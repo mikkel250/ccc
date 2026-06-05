@@ -2,6 +2,7 @@
 
 Architecture decisions, code conventions, module boundaries, and infrastructure choices for the CV Tailoring API.
 
+- [Application walkthrough](./APP_WALKTHROUGH.md) — start-to-finish flow with file and function references
 - [Model selection](./MODEL_SELECTION.md) — provider routing, model defaults, evaluation pipeline and results
 - [Pipeline enhancements](./PIPELINE_ENHANCEMENTS.md) — two-pass pipeline, structured output, critic node, batch processing
 - [Learning system](./LEARNING_SYSTEM.md) — feedback capture, hallucination memory, few-shot routing, persona evolution, drift detection
