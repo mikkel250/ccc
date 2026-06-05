@@ -5,6 +5,8 @@
  * and scripts/eval-cv.ts. Defines the 4 eval dimensions used to select TAILOR_MODEL.
  */
 
+import { getEnvString } from "../../../lib/env";
+
 export enum EvalDimension {
   FORMAT = "format",
   RELEVANCE = "relevance",
@@ -162,11 +164,13 @@ export function warnUnmappedJudgeModels(models: readonly string[]): void {
   }
 }
 
-export const RELEVANCE_JUDGE_PROMPT = `You are an expert evaluator scoring CV tailoring quality.
+export const RELEVANCE_JUDGE_PROMPT = getEnvString(
+  "RELEVANCE_JUDGE_PROMPT",
+  `You are an expert evaluator scoring CV tailoring quality.
 
 Score how well the "Relevant Accomplishments" section of the CV maps to the extracted requirements from the job description (normalized statements with Must-Have/Nice-to-Have weights and keyword bank).
 
-Use this 1–5 rubric scale with anchor descriptions:
+Use this 1-5 rubric scale with anchor descriptions:
 1 — No meaningful alignment; accomplishments are generic or unrelated to extracted requirements.
 2 — Weak alignment; only tangential overlap with extracted requirements.
 3 — Moderate alignment; some extracted requirements addressed but gaps remain.
@@ -174,9 +178,12 @@ Use this 1–5 rubric scale with anchor descriptions:
 5 — Excellent alignment; accomplishments directly and comprehensively address extracted requirements.
 
 Respond with JSON only:
-{"score": <1-5 integer>, "reasoning": "<brief explanation>"}`;
+{"score": <1-5 integer>, "reasoning": "<brief explanation>"}`
+)!;
 
-export const HALLUCINATION_JUDGE_PROMPT = `You are an expert fact-checker evaluating a tailored CV for hallucinations.
+export const HALLUCINATION_JUDGE_PROMPT = getEnvString(
+  "HALLUCINATION_JUDGE_PROMPT",
+  `You are an expert fact-checker evaluating a tailored CV for hallucinations.
 
 Cross-reference every factual claim in the CV against the provided knowledge base (ground truth). Use the extracted requirements, keywords, and hiring context only as supplementary JD context — the knowledge base is the primary ground truth for factual verification.
 
@@ -194,9 +201,12 @@ Score hallucination rate on a 0.0–1.0 scale:
 1.0 — Predominantly hallucinated content.
 
 Respond with JSON only:
-{"score": <0.0-1.0 number>, "flaggedClaims": ["<claim 1>", "<claim 2>"]}`;
+{"score": <0.0-1.0 number>, "flaggedClaims": ["<claim 1>", "<claim 2>"]}`
+)!;
 
-export const EXTRACTION_JUDGE_PROMPT = `You are an expert evaluator assessing JD metadata extraction quality.
+export const EXTRACTION_JUDGE_PROMPT = getEnvString(
+  "EXTRACTION_JUDGE_PROMPT",
+  `You are an expert evaluator assessing JD metadata extraction quality.
 
 Compare the structured extraction against the raw job description text. Score completeness and accuracy on a 0.0–1.0 scale.
 
@@ -212,4 +222,5 @@ Assess:
 1.0 — Complete and accurate extraction with no fabrication.
 
 Respond with JSON only:
-{"score": <0.0-1.0 number>, "reasoning": "<brief explanation>", "gaps": ["<gap 1>", "<gap 2>"]}`;
+{"score": <0.0-1.0 number>, "reasoning": "<brief explanation>", "gaps": ["<gap 1>", "<gap 2>"]}`
+)!;
