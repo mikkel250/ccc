@@ -1,3 +1,9 @@
+/**
+ * LangSmith run tracing — parallel observability path to Langfuse.
+ *
+ * Both tracers fire from `llm.ts :: chat()` so either or both can be enabled via env.
+ * Opt-in: LANGSMITH_TRACING=true and LANGSMITH_API_KEY.
+ */
 import { Client } from 'langsmith';
 import { ChatMessage, ChatResponse } from './llm';
 

@@ -1,3 +1,12 @@
+/**
+ * LLM-as-Judge scorers for the offline eval pipeline (scripts/eval-cv.ts).
+ *
+ * scoreExtraction — validates Stage 1 JD parsing
+ * scoreRelevance / scoreHallucination — judge generated CVs against KB + extraction
+ * resolveJudgeModel — maps generator model → judge model via JUDGE_MAP (eval-schema.ts)
+ *
+ * Not invoked by POST /api/tailor-cv; used only to pick TAILOR_MODEL.
+ */
 import { chat, type ChatMessage, type ChatResponse } from "./llm";
 import { getEvalJudgeModel } from "../../../lib/env";
 import {

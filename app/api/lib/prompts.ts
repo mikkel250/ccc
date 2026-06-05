@@ -1,9 +1,11 @@
-// devpro-build/app/api/lib/prompts.ts
-
 /**
- * Shared prompt utilities and helper functions
- * Note: Main chat prompt is in chat-prompt.ts, JD prompt is in jd-prompt.ts
+ * Shared prompt utilities for the legacy chat bot.
+ *
+ * Query classifiers (isSkillQuery, etc.) drive getRelevantContext() file selection.
+ * buildChatSystemPrompt() compiles Langfuse or fallback chat prompts with KB context.
+ * Not on the tailor-cv production path — see docs/arch/APP_WALKTHROUGH.md.
  */
+// devpro-build/app/api/lib/prompts.ts
 
 import { compilePrompt } from './langfuse-prompts';
 import { CHAT_SYSTEM_PROMPT } from './chat-prompt';

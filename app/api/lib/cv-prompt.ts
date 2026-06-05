@@ -2,6 +2,8 @@
  * CV tailoring system prompt — fetched from Langfuse Prompt Management at runtime.
  * Falls back to the hardcoded prompt if Langfuse is unavailable.
  *
+ * In production, route.ts calls getCvPrompt() → compileCvPrompt() before chat().
+ * Eval scripts use getCvPromptFallbackText() directly to avoid Langfuse dependency in CI.
  * Schema reference: docs/struan-8-part-cv-framework.md
  */
 
@@ -117,7 +119,7 @@ export async function getCvPrompt(): Promise<{
   }
 }
 
-/** Compile the prompt by substituting the context variable. */
+/** Substitutes the full knowledge base into the system prompt before the LLM call. */
 export function compileCvPrompt(promptText: string, context: string): string {
   // NOTE: Temperature recommendations for anti-hallucination CV generation:
   //   DeepSeek V4 Pro:  0.0–0.1  (strong instruction follower, low temp for factual extraction)

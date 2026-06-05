@@ -1,6 +1,8 @@
 /**
  * Eval scoring dimensions, types, judge prompts, and cross-provider judge mapping.
- * Config-only — no behavioral code.
+ *
+ * Config-only module — consumed by eval-judge.ts, eval-format.ts, eval-extract.ts,
+ * and scripts/eval-cv.ts. Defines the 4 eval dimensions used to select TAILOR_MODEL.
  */
 
 export enum EvalDimension {

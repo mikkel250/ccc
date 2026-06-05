@@ -1,3 +1,10 @@
+/**
+ * In-memory IP burst rate limiter for the tailor-cv endpoint.
+ *
+ * Protects LLM API spend from rapid retries; not a durable per-user quota.
+ * `sessionId` is accepted for API compatibility but limiting is keyed on IP.
+ * State resets on deploy (stateless MVP). See RATE_LIMIT_* env vars.
+ */
 // Simple IP-based rate limiting — burst detection only.
 // Prevents a single IP from hammering the LLM endpoint.
 

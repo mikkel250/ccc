@@ -1,3 +1,7 @@
+/**
+ * Request boundary validation for POST /api/tailor-cv.
+ * Keeps parsing/typing out of the route handler — the route maps `{ ok: false }` to HTTP 400.
+ */
 export interface TailorCvRequestBody {
   jobDescription?: unknown;
   sessionId?: unknown;

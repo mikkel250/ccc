@@ -1,3 +1,9 @@
+/**
+ * Converts LLM markdown output into the consumer-facing deliverable.
+ *
+ * The CCC app expects base64-encoded .docx, not raw markdown. This is the last
+ * transformation before `route.ts` returns JSON. Supports headings, bullets, bold.
+ */
 import {
   Document,
   HeadingLevel,

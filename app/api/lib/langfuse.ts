@@ -1,3 +1,9 @@
+/**
+ * Langfuse generation tracing — links each LLM call to prompt versions and usage.
+ *
+ * Invoked from `llm.ts :: chat()` after every provider call. Requires
+ * LANGFUSE_TRACING=true and keys; pairs with langfuse-otel.ts for span export.
+ */
 import { LangfuseClient } from '@langfuse/client';
 import {
   startActiveObservation,

@@ -1,3 +1,10 @@
+/**
+ * Centralized environment variable parsing and model defaults.
+ *
+ * Every tunable (models, tokens, temperature, eval config) flows through here.
+ * Production CV generation uses `getTailorModel()` (TAILOR_MODEL); generic chat
+ * defaults use `getDefaultLlmModel()` (AI_MODEL). See .env.example for the catalog.
+ */
 export function getEnvNumber(key: string, defaultValue: number): number {
   const raw = process.env[key];
   if (!raw) return defaultValue;

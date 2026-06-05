@@ -1,3 +1,11 @@
+/**
+ * Multi-provider LLM client — single entry point for every LLM call in this repo.
+ *
+ * Production CV generation (`tailor-cv/route.ts`), eval scripts, and future routes
+ * all call `chat()`. Routing is config-driven: model strings are `provider/model`,
+ * `detectProvider()` picks the integration, `dispatchProvider()` calls it.
+ * Every successful or failed call is traced to LangSmith and Langfuse.
+ */
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
@@ -475,6 +483,7 @@ async function callGoogle(
   };
 }
 
+/** Routes to the provider-specific API integration. Adding a provider = new case + env key, not routing if-chains elsewhere. */
 export async function dispatchProvider(
   provider: Provider,
   messages: Omit<ChatMessage, 'role'>[] | ChatMessage[],
@@ -517,6 +526,10 @@ export function isLlmServiceError(message: string): boolean {
   );
 }
 
+/**
+ * Central entry for all LLM chat completions. Resolves model from options or AI_MODEL,
+ * dispatches to the correct provider integration, and records traces for observability.
+ */
 export async function chat(
   messages: Omit<ChatMessage, 'role'>[] | ChatMessage[],
   systemPrompt: string,

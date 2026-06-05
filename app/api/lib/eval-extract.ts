@@ -1,3 +1,10 @@
+/**
+ * Stage 1 of the eval pipeline: structured JD extraction via LLM.
+ *
+ * Output feeds extraction scoring and Stage 2 relevance/hallucination judges.
+ * Gated by EVAL_EXTRACTION_MIN_SCORE in scripts/eval-cv.ts — bad extractions skip
+ * expensive CV generation for that JD. Not used by production tailor-cv.
+ */
 import { chat, type ChatMessage, type ChatResponse } from "./llm";
 import { getEvalExtractionModel } from "../../../lib/env";
 import type { JdExtraction, JdKeywordBank, JdRequirement } from "./eval-schema";

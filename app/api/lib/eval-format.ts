@@ -1,3 +1,9 @@
+/**
+ * Stage 2 format scorer — sync check that generated CVs match the Struan 8-part structure.
+ *
+ * No LLM call: validates headings against FormatSection in eval-schema.ts.
+ * Same structural contract enforced by cv-prompt.ts in production.
+ */
 import { FormatSection, type FormatScore } from "./eval-schema";
 
 const CANONICAL_SECTIONS = Object.values(FormatSection);
