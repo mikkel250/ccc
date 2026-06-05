@@ -144,6 +144,18 @@ npm run build
 - **Provider-specific call shapes (message formatting, auth, API structure) live in the provider's integration function** behind a stable `dispatchProvider` interface. That `switch` is fine — it dispatches behavior, not routing decisions.
 - **Every tunable parameter must originate from an environment variable.** This includes: default models per provider, API base URLs, max tokens, temperature, OpenRouter service tier, and model resolution cache TTLs. Per-function hardcoded fallbacks (e.g. `"gpt-4o-mini"` inside `callOpenAI`) are prohibited — each function receives its model from the caller, which resolves it from `process.env`.
 
+### Testing Philosophy
+
+**Test behavior, not prose.** Tests assert what the code does — inputs, outputs, side effects, error paths. Do not write tests that assert documentation content, heading names, or the presence of strings in markdown files. Those tests are fragile (fail on reorganization), slow to maintain, and catch no real bugs.
+
+**Cross-file contracts are the exception.** The only legitimate doc-touching test is one that enforces a cross-file invariant with a real runtime consequence — e.g. the documented `TAILOR_MODEL` default must match `.env.example` because a mismatch would silently misconfigure production. Write one targeted assertion for the invariant, not a suite of prose checks.
+
+**Tests should survive refactoring.** If renaming a markdown heading or restructuring a doc file breaks a test, the test was testing the wrong thing. Ask: "would this failure indicate a real bug?" If not, delete the test.
+
+**Don't test the framework or language.** No tests for `typeof x === "string"`, that a required function exists by name, or that a module can be imported. Trust TypeScript for structural contracts.
+
+**One test file per production module.** `foo.ts` → `tests/foo.test.ts`. Integration tests that span multiple modules live in `tests/` with a name that describes the scenario, not a module (`e2e-tailor-cv.ts`, not `route-plus-llm-plus-docx.test.ts`).
+
 ### Senior Engineer Heuristics
 
 **Configuration vs. behavior — classify before coding.** Before adding a conditional, ask: is this configuration or behavior? If configuration — a new model, provider name, threshold, or URL — it belongs in an env var or config object, not an `if` branch. If it is genuinely different behavior (Anthropic's message format vs. OpenAI's), it belongs in code behind an existing interface. Misclassifying configuration as code is the single most common mistake.
@@ -159,6 +171,12 @@ npm run build
 **External data is `unknown` until validated.** `request.json()`, `process.env`, API responses — type them through a validation function before they touch business logic. Never `as`-cast external data.
 
 **`.env.example` is the canonical env var catalog.** Every new environment variable must appear in `.env.example` with a comment describing its purpose and default. The file is the single source of truth for what the application needs at runtime.
+
+**Read the target module before touching it.** Before writing any function, grep the module's directory for similar function signatures or names. Declare the finding explicitly — "existing function `X` does 80% of this; extending with parameter `Y`" or "no overlap found; creating from scratch" — before writing the first line of code. Skipping this step is how duplication happens.
+
+**Write the type signature first.** A function's signature (parameter types + explicit return type) is its contract with the rest of the system. Write the signature before the body. If the signature cannot be written without `any` or a type assertion, the design is wrong — stop and reconsider the interface, don't paper over it with a cast.
+
+**Internal critic before declaring done.** Before emitting any "implementation complete" signal, run this checklist against every file you touched: (1) Any hardcoded string, number, URL, or timeout that belongs in `process.env`? (2) Any `as SomeType` cast on external data instead of a validation function? (3) Any `try/catch` in a `lib/` function that returns an HTTP-shaped object? (4) Any function that is a near-duplicate of one already in the module? If yes to any, fix first.
 
 ## Documentation Map
 
