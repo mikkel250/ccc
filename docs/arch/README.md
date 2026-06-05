@@ -34,7 +34,7 @@ The project was cloned from `portfolio-react-ts` and stripped of all portfolio p
 
 ## Architecture
 
-```
+```text
 POST /api/tailor-cv
   {
     jobDescription: string
