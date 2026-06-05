@@ -4,14 +4,34 @@
  * Protects LLM API spend from rapid retries; not a durable per-user quota.
  * `sessionId` is accepted for API compatibility but limiting is keyed on IP.
  * State resets on deploy (stateless MVP). See RATE_LIMIT_* env vars.
+ *
+ * **Known race (accepted MVP limitation):** check-and-update on `requestLog` is
+ * not atomic. Concurrent requests for the same IP can both read the same
+ * timestamps array and pass the remaining check before either writes back —
+ * e.g. 4 existing timestamps + 2 concurrent requests can yield 6 total,
+ * exceeding BURST_MAX. TODO: make atomic (Redis INCR/EXPIRE or per-IP mutex).
  */
 // Simple IP-based rate limiting — burst detection only.
 // Prevents a single IP from hammering the LLM endpoint.
 
+import { getEnvNumber } from "../../../lib/env";
+
 const requestLog = new Map<string, number[]>();
 
-const BURST_MAX = parseInt(process.env.RATE_LIMIT_MAX || "5");
-const BURST_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW || "60000"); // 1 minute
+const BURST_MAX = getEnvNumber("RATE_LIMIT_MAX", 5);
+const BURST_WINDOW_MS = getEnvNumber("RATE_LIMIT_WINDOW", 60000); // 1 minute
+
+function pruneExpiredEntries(): void {
+  const cutoff = Date.now() - BURST_WINDOW_MS;
+  for (const [ip, stamps] of requestLog) {
+    const filtered = stamps.filter((t) => t > cutoff);
+    if (filtered.length === 0) {
+      requestLog.delete(ip);
+    } else {
+      requestLog.set(ip, filtered);
+    }
+  }
+}
 
 export interface RateLimitResult {
   allowed: boolean;
@@ -24,6 +44,8 @@ export function checkRateLimit(
   _sessionId: string,
   ipAddress: string
 ): RateLimitResult {
+  pruneExpiredEntries();
+
   const now = Date.now();
   const windowStart = now - BURST_WINDOW_MS;
 
@@ -44,17 +66,6 @@ export function checkRateLimit(
 
   timestamps.push(now);
   requestLog.set(ipAddress, timestamps);
-
-  // Periodic cleanup to prevent unbounded memory growth
-  if (requestLog.size > 1000) {
-    const cutoff = Date.now() - BURST_WINDOW_MS;
-    for (const [ip, stamps] of requestLog) {
-      const filtered = stamps.filter((t) => t > cutoff);
-      if (filtered.length === 0) {
-        requestLog.delete(ip);
-      }
-    }
-  }
 
   return {
     allowed: true,
