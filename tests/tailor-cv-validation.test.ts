@@ -38,4 +38,42 @@ describe("validateTailorCvBody", () => {
       assert.equal(result.sessionId, "sess-abc");
     }
   });
+
+  it("returns error for null jobDescription", () => {
+    const result = validateTailorCvBody({ jobDescription: null }, "fallback");
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.error, /required/i);
+  });
+
+  it("returns error for non-string jobDescription (number)", () => {
+    const result = validateTailorCvBody({ jobDescription: 42 }, "fallback");
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.ok(typeof result.error === "string");
+  });
+
+  it("returns error for non-string jobDescription (object)", () => {
+    const result = validateTailorCvBody(
+      { jobDescription: { text: "jd" } },
+      "fallback"
+    );
+    assert.equal(result.ok, false);
+  });
+
+  it("trims leading and trailing whitespace from jobDescription", () => {
+    const result = validateTailorCvBody(
+      { jobDescription: "  Senior engineer role  " },
+      "fallback"
+    );
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.jobDescription, "Senior engineer role");
+  });
+
+  it("uses fallbackSessionId when sessionId is whitespace-only", () => {
+    const result = validateTailorCvBody(
+      { jobDescription: "JD text", sessionId: "   " },
+      "ip:fallback"
+    );
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.sessionId, "ip:fallback");
+  });
 });

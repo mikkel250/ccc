@@ -27,10 +27,13 @@ The project was cloned from `portfolio-react-ts` and stripped of all portfolio p
 | Auth | None | MVP is single-user, no auth layer |
 | Database | SQLite (MVP), PostgreSQL + pgvector (future) | Learning system stores feedback, few-shot examples, and hallucination corrections. Not needed for MVP (single-pass, stateless). |
 | Storage | None | CV .docx is generated in-memory per request, returned as base64 |
-| Testing | node:test + node:assert/strict | Zero dependency, no config drift. Test-only injection via optional function parameters. |
+| Testing (unit) | node:test + node:assert/strict | Zero dependency, no config drift. Test-only injection via optional function parameters. Run: `npm test`. |
+| Testing (E2E) | @playwright/test | HTTP-level API tests in `tests/e2e/`. Requires a running dev server (`npm run dev`). Run: `npm run test:e2e`. Set `RUN_E2E_LLM_TESTS=true` to include the full LLM call test. |
 | Observability | LangFuse + LangSmith | Dual tracing on all LLM calls |
 | Deployment | Railway (Hobby) | No function timeout ceiling. Deployed as a standard Node.js app. |
 | Package manager | npm | |
+
+> **Data Access Layer tests:** Not applicable in MVP (stateless, no database). DAL test coverage is deferred to the SQLite learning-system phase (post-MVP). See `docs/arch/LEARNING_SYSTEM.md` for the planned data model.
 
 ## Architecture
 

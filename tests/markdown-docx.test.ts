@@ -40,4 +40,24 @@ describe("markdown-docx", () => {
     );
     assert.ok(isValidDocxBase64(base64));
   });
+
+  it("handles empty markdown without throwing", async () => {
+    const base64 = await markdownToDocxBase64("");
+    assert.ok(typeof base64 === "string" && base64.length > 0);
+    assert.ok(isValidDocxBase64(base64));
+  });
+
+  it("handles whitespace-only markdown without throwing", async () => {
+    const base64 = await markdownToDocxBase64("   \n\t  ");
+    assert.ok(typeof base64 === "string" && base64.length > 0);
+    assert.ok(isValidDocxBase64(base64));
+  });
+
+  it("isValidDocxBase64 returns false for empty string", () => {
+    assert.equal(isValidDocxBase64(""), false);
+  });
+
+  it("isValidDocxBase64 returns false for non-base64 input", () => {
+    assert.equal(isValidDocxBase64("this is not base64!!!"), false);
+  });
 });

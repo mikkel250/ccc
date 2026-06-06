@@ -49,6 +49,7 @@ describe("detectProvider + dispatchProvider", () => {
   const originalOpenRouterKey = process.env.OPENROUTER_API_KEY;
   const originalDeepSeekKey = process.env.DEEPSEEK_API_KEY;
   const originalGoogleKey = process.env.GOOGLE_API_KEY;
+  const originalOpenAiKey = process.env.OPENAI_API_KEY;
 
   afterEach(() => {
     if (originalOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
@@ -57,6 +58,8 @@ describe("detectProvider + dispatchProvider", () => {
     else process.env.DEEPSEEK_API_KEY = originalDeepSeekKey;
     if (originalGoogleKey === undefined) delete process.env.GOOGLE_API_KEY;
     else process.env.GOOGLE_API_KEY = originalGoogleKey;
+    if (originalOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = originalOpenAiKey;
   });
 
   it('maps deepseek/deepseek-v4-pro to "deepseek" provider', () => {
@@ -157,6 +160,51 @@ describe("detectProvider + dispatchProvider", () => {
           { model: "google/gemini-2.5-pro" }
         ),
       /GOOGLE_API_KEY is not configured/
+    );
+  });
+
+  it("dispatchProvider routes openai through callOpenAI and strips prefix", async () => {
+    let capturedModel: string | undefined;
+    const mockClient = {
+      chat: {
+        completions: {
+          create: async (params: { model: string; messages: unknown[] }) => {
+            capturedModel = params.model;
+            return mockOpenAiChatResponse("openai response", params.model);
+          },
+        },
+      },
+    } as unknown as OpenAI;
+
+    process.env.OPENAI_API_KEY = "test-key";
+    const response = await dispatchProvider(
+      "openai",
+      [{ role: "user", content: "Hi" }],
+      "System",
+      { model: "openai/gpt-4o", openaiClient: mockClient }
+    );
+    assert.equal(response.content, "openai response");
+    assert.equal(capturedModel, "gpt-4o");
+  });
+
+  it("detectProvider throws on model string with no provider prefix", () => {
+    assert.throws(
+      () => detectProvider("gpt-4o"),
+      /Invalid model string|unknown provider|invalid|provider/i
+    );
+  });
+
+  it("dispatchProvider throws when OPENROUTER_API_KEY is missing", async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    await assert.rejects(
+      () =>
+        dispatchProvider(
+          "openrouter",
+          [{ role: "user", content: "Hi" }],
+          "System",
+          { model: "openrouter/openai/gpt-4o" }
+        ),
+      /OPENROUTER_API_KEY is not configured/
     );
   });
 });
