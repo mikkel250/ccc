@@ -15,8 +15,8 @@ export function validateTailorCvBody(
   body: unknown,
   fallbackSessionId: string
 ): ValidateTailorCvResult {
-  if (typeof body !== "object" || body === null) {
-    return { ok: false, error: "jobDescription is required." };
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return { ok: false, error: "Request body must be an object" };
   }
 
   const record = body as TailorCvRequestBody;

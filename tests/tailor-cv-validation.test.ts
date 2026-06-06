@@ -3,6 +3,16 @@ import assert from "node:assert/strict";
 import { validateTailorCvBody } from "../app/api/lib/tailor-cv-validation";
 
 describe("validateTailorCvBody", () => {
+  it("returns clear error when body is not an object", () => {
+    for (const invalid of [null, "string", 42, true, []] as const) {
+      const result = validateTailorCvBody(invalid, "fallback");
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.equal(result.error, "Request body must be an object");
+      }
+    }
+  });
+
   it("returns 400 error shape for missing jobDescription", () => {
     const result = validateTailorCvBody({}, "fallback");
     assert.equal(result.ok, false);
