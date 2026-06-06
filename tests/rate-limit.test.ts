@@ -1,6 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { checkRateLimit, getRateLimitConfig } from "../app/api/lib/rate-limit";
+import {
+  checkRateLimit,
+  getRateLimitConfig,
+  resetStore,
+} from "../app/api/lib/rate-limit";
 
 describe("checkRateLimit", () => {
   it("allows first request", () => {
@@ -53,5 +57,39 @@ describe("checkRateLimit", () => {
     const config = getRateLimitConfig();
     assert.ok(config.maxRequests > 0);
     assert.ok(config.windowMs > 0);
+  });
+
+  it("allows requests again after resetStore clears expired state", () => {
+    const ip = `reset-${Date.now()}`;
+    const config = getRateLimitConfig();
+
+    for (let i = 0; i < config.maxRequests; i++) {
+      checkRateLimit("any-session", ip);
+    }
+    const blocked = checkRateLimit("any-session", ip);
+    assert.equal(blocked.allowed, false);
+
+    resetStore();
+
+    const allowed = checkRateLimit("any-session", ip);
+    assert.equal(allowed.allowed, true);
+  });
+
+  it("rate limits by IP regardless of sessionId", () => {
+    const ip = `session-ip-${Date.now()}`;
+    const config = getRateLimitConfig();
+
+    const first = checkRateLimit("session-A", ip);
+    assert.equal(first.allowed, true);
+
+    const second = checkRateLimit("session-B", ip);
+    assert.equal(second.allowed, true);
+
+    for (let i = 2; i < config.maxRequests; i++) {
+      checkRateLimit(`session-${i}`, ip);
+    }
+
+    const blocked = checkRateLimit("session-Z", ip);
+    assert.equal(blocked.allowed, false);
   });
 });

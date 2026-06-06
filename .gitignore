@@ -72,3 +72,6 @@ docs/archive
 
 # eval
 eval-results/
+
+/test-results/
+/playwright-report/

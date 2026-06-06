@@ -1,10 +1,47 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { getEvalJudgeModel, getEvalModels, getTailorModel } from "../lib/env";
+import {
+  getDeepSeekBaseUrl,
+  getEnvString,
+  getEvalExtractionModel,
+  getEvalJudgeModel,
+  getEvalModels,
+  getTailorModel,
+} from "../lib/env";
 import {
   CANDIDATE_GENERATION_MODELS,
+  DEFAULT_EVAL_EXTRACTION_MODEL,
+  DEFAULT_EVAL_JUDGE_MODEL,
   DEFAULT_EVAL_MODELS_CSV,
 } from "../app/api/lib/eval-schema";
+
+describe("getEnvString", () => {
+  const key = "TEST_ENV_STRING_KEY";
+
+  afterEach(() => {
+    delete process.env[key];
+  });
+
+  it("returns default when env var is unset", () => {
+    delete process.env[key];
+    assert.equal(getEnvString(key, "fallback"), "fallback");
+  });
+
+  it("returns default when env var is empty string", () => {
+    process.env[key] = "";
+    assert.equal(getEnvString(key, "fallback"), "fallback");
+  });
+
+  it("returns default when env var is whitespace only", () => {
+    process.env[key] = "   ";
+    assert.equal(getEnvString(key, "fallback"), "fallback");
+  });
+
+  it("returns env value when non-empty", () => {
+    process.env[key] = "custom-value";
+    assert.equal(getEnvString(key, "fallback"), "custom-value");
+  });
+});
 
 describe("getTailorModel", () => {
   const originalTailorModel = process.env.TAILOR_MODEL;
@@ -51,7 +88,12 @@ describe("getEvalJudgeModel", () => {
 
   it("uses default when EVAL_JUDGE_MODEL is unset", () => {
     delete process.env.EVAL_JUDGE_MODEL;
-    assert.equal(getEvalJudgeModel(), "anthropic/sonnet");
+    assert.equal(getEvalJudgeModel(), DEFAULT_EVAL_JUDGE_MODEL);
+  });
+
+  it("uses default when EVAL_JUDGE_MODEL is empty string", () => {
+    process.env.EVAL_JUDGE_MODEL = "";
+    assert.equal(getEvalJudgeModel(), DEFAULT_EVAL_JUDGE_MODEL);
   });
 });
 
@@ -70,5 +112,38 @@ describe("getEvalModels", () => {
       getEvalModels().split(","),
       [...CANDIDATE_GENERATION_MODELS]
     );
+  });
+
+  it("defaults when EVAL_MODELS is empty string", () => {
+    process.env.EVAL_MODELS = "";
+    assert.equal(getEvalModels(), DEFAULT_EVAL_MODELS_CSV);
+  });
+});
+
+describe("getEvalExtractionModel", () => {
+  const original = process.env.EVAL_EXTRACTION_MODEL;
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.EVAL_EXTRACTION_MODEL;
+    else process.env.EVAL_EXTRACTION_MODEL = original;
+  });
+
+  it("defaults when EVAL_EXTRACTION_MODEL is empty string", () => {
+    process.env.EVAL_EXTRACTION_MODEL = "";
+    assert.equal(getEvalExtractionModel(), DEFAULT_EVAL_EXTRACTION_MODEL);
+  });
+});
+
+describe("getDeepSeekBaseUrl", () => {
+  const original = process.env.DEEPSEEK_BASE_URL;
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.DEEPSEEK_BASE_URL;
+    else process.env.DEEPSEEK_BASE_URL = original;
+  });
+
+  it("defaults when DEEPSEEK_BASE_URL is empty string", () => {
+    process.env.DEEPSEEK_BASE_URL = "";
+    assert.equal(getDeepSeekBaseUrl(), "https://api.deepseek.com");
   });
 });

@@ -65,9 +65,9 @@ function parseRequirements(value: unknown): JdRequirement[] {
   if (!Array.isArray(value)) return [];
   return value
     .filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
-    .map((item) => ({
+    .map((item): JdRequirement => ({
       statement: typeof item.statement === "string" ? item.statement : "",
-      weight: item.weight === "Nice-to-Have" ? "Nice-to-Have" : "Must-Have",
+      weight: item.weight === "Nice-to-Have" ? ("Nice-to-Have" as const) : ("Must-Have" as const),
       keywords: Array.isArray(item.keywords)
         ? item.keywords.filter((k): k is string => typeof k === "string")
         : [],
