@@ -1,9 +1,11 @@
-import { describe, it } from "node:test";
+import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import {
   EvalDimension,
   FormatSection,
   JUDGE_MAP,
+  getJudgeMap,
+  resetJudgeMapCache,
   RELEVANCE_JUDGE_PROMPT,
   HALLUCINATION_JUDGE_PROMPT,
   EXTRACTION_JUDGE_PROMPT,
@@ -79,6 +81,7 @@ describe("eval-schema — score type interfaces", () => {
     const sample = {
       score: 4,
       reasoning: "Strong alignment with extracted requirements.",
+      parseFailed: false,
     } satisfies RelevanceScore;
     assert.ok(sample.score >= 1 && sample.score <= 5);
     assert.equal(typeof sample.reasoning, "string");
@@ -88,6 +91,7 @@ describe("eval-schema — score type interfaces", () => {
     const sample = {
       score: 0.0,
       flaggedClaims: ["Invented revenue figure"],
+      parseFailed: false,
     } satisfies HallucinationScore;
     assert.ok(sample.score >= 0 && sample.score <= 1);
     assert.ok(Array.isArray(sample.flaggedClaims));
@@ -98,6 +102,7 @@ describe("eval-schema — score type interfaces", () => {
       score: 0.85,
       reasoning: "Requirements captured with minor keyword gaps.",
       gaps: ["Missing certification keyword"],
+      parseFailed: false,
     } satisfies ExtractionScore;
     assert.ok(sample.score >= 0 && sample.score <= 1);
     assert.equal(typeof sample.reasoning, "string");
@@ -146,6 +151,7 @@ describe("eval-schema — JdExtraction and JdRequirement types", () => {
         verbs: ["build", "deploy", "optimize"],
       },
       rawJd: "We are hiring a senior full-stack engineer with React experience.",
+      parseFailed: false,
     } satisfies JdExtraction;
 
     assert.ok(extraction.requirements.length >= 2);
@@ -229,6 +235,57 @@ describe("eval-schema — judge prompt templates", () => {
     assert.match(prompt, /(requirements|keywords|implicit success|hallucinat|fabricat)/i);
     assert.match(prompt, /gaps/i);
     assert.match(prompt, /reasoning/i);
+  });
+});
+
+describe("eval-schema — lazy getJudgeMap", () => {
+  const originalMapJson = process.env.EVAL_JUDGE_MAP_JSON;
+
+  afterEach(() => {
+    if (originalMapJson === undefined) delete process.env.EVAL_JUDGE_MAP_JSON;
+    else process.env.EVAL_JUDGE_MAP_JSON = originalMapJson;
+    resetJudgeMapCache();
+  });
+
+  it("reflects valid EVAL_JUDGE_MAP_JSON override", () => {
+    process.env.EVAL_JUDGE_MAP_JSON = JSON.stringify({
+      "deepseek/deepseek-v4-pro": "anthropic/claude",
+    });
+    resetJudgeMapCache();
+    const map = getJudgeMap();
+    assert.equal(map["deepseek/deepseek-v4-pro"], "anthropic/claude");
+  });
+
+  it("falls back to defaults when EVAL_JUDGE_MAP_JSON is invalid JSON", () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (msg: unknown) => warnings.push(String(msg));
+    try {
+      process.env.EVAL_JUDGE_MAP_JSON = "{not-json";
+      resetJudgeMapCache();
+      const map = getJudgeMap();
+      assert.equal(map["deepseek/deepseek-v4-pro"], JUDGE_MAP["deepseek/deepseek-v4-pro"]);
+      assert.ok(warnings.some((w) => /EVAL_JUDGE_MAP_JSON/i.test(w)));
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  it("rejects same-provider override with warning and does not merge entry", () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (msg: unknown) => warnings.push(String(msg));
+    try {
+      process.env.EVAL_JUDGE_MAP_JSON = JSON.stringify({
+        "anthropic/sonnet": "anthropic/claude",
+      });
+      resetJudgeMapCache();
+      const map = getJudgeMap();
+      assert.notEqual(map["anthropic/sonnet"], "anthropic/claude");
+      assert.ok(warnings.some((w) => /same-provider|Rejected/i.test(w)));
+    } finally {
+      console.warn = originalWarn;
+    }
   });
 });
 

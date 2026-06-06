@@ -25,7 +25,7 @@ import {
   DEFAULT_EVAL_EXTRACTION_MODEL,
   DEFAULT_EVAL_JUDGE_MODEL,
   DEFAULT_EVAL_MODELS_CSV,
-} from '../app/api/lib/eval-schema';
+} from '../app/api/lib/eval-defaults';
 
 export function getEnvBoolean(key: string, defaultValue: boolean): boolean {
   const raw = process.env[key];
@@ -98,11 +98,13 @@ export function getDefaultLlmModel(): string {
 }
 
 export function getTailorModel(): string {
-  return process.env.TAILOR_MODEL || DEFAULT_TAILOR_MODEL;
+  return validateDefaultModel(process.env.TAILOR_MODEL || DEFAULT_TAILOR_MODEL);
 }
 
 export function getEvalJudgeModel(): string {
-  return getEnvString('EVAL_JUDGE_MODEL', DEFAULT_EVAL_JUDGE_MODEL)!;
+  return validateDefaultModel(
+    getEnvString('EVAL_JUDGE_MODEL', DEFAULT_EVAL_JUDGE_MODEL)!
+  );
 }
 
 export function getEvalModels(): string {
@@ -110,7 +112,9 @@ export function getEvalModels(): string {
 }
 
 export function getEvalExtractionModel(): string {
-  return getEnvString('EVAL_EXTRACTION_MODEL', DEFAULT_EVAL_EXTRACTION_MODEL)!;
+  return validateDefaultModel(
+    getEnvString('EVAL_EXTRACTION_MODEL', DEFAULT_EVAL_EXTRACTION_MODEL)!
+  );
 }
 
 export function getEvalExtractionMinScore(): number {
