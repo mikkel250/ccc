@@ -53,6 +53,32 @@ describe("getAllContext — KB fail-fast", () => {
     });
   }
 
+  it("throws ServiceError with empty-specific message when file is whitespace-only", () => {
+    mockKbFiles({ "skills.md": "   \n\t  " });
+    assert.throws(
+      () => getAllContext(),
+      (error: unknown) => {
+        assert.equal(error instanceof ServiceError, true);
+        assert.match(String((error as Error).message), /skills\.md is empty/);
+        assert.doesNotMatch(String((error as Error).message), /missing or unreadable/);
+        return true;
+      }
+    );
+  });
+
+  it("throws ServiceError with missing-specific message when file is unreadable", () => {
+    mockKbFiles({ "skills.md": "ENOENT" });
+    assert.throws(
+      () => getAllContext(),
+      (error: unknown) => {
+        assert.equal(error instanceof ServiceError, true);
+        assert.match(String((error as Error).message), /skills\.md is missing or unreadable/);
+        assert.doesNotMatch(String((error as Error).message), /is empty/);
+        return true;
+      }
+    );
+  });
+
   it("throws ServiceError (not generic Error) when a required file is unreadable", () => {
     mockKbFiles({ "skills.md": "ENOENT" });
     assert.throws(() => getAllContext(), ServiceError);

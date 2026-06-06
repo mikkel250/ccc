@@ -46,14 +46,17 @@ function loadKBFileStrict(fileName: string): string {
     const kbPath = path.join(process.cwd(), KB_CONFIG.basePath, fileName);
     const content = fs.readFileSync(kbPath, 'utf-8');
     if (!content.trim()) {
-      throw new ServiceError(`Knowledge base file ${fileName} is missing or unreadable`);
+      throw new ServiceError(`Knowledge base file ${fileName} is empty`);
     }
     return content;
   } catch (error) {
     if (error instanceof ServiceError) {
       throw error;
     }
-    throw new ServiceError(`Knowledge base file ${fileName} is missing or unreadable`);
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new ServiceError(
+      `Knowledge base file ${fileName} is missing or unreadable: ${detail}`
+    );
   }
 }
 
