@@ -13,7 +13,10 @@ export function getEnvNumber(key: string, defaultValue: number): number {
 }
 
 export function getEnvString(key: string, defaultValue?: string): string | undefined {
-  return process.env[key] ?? defaultValue;
+  const value = process.env[key];
+  return value === undefined || value === null || value.trim() === ''
+    ? defaultValue
+    : value;
 }
 
 import {
