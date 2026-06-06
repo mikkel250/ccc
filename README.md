@@ -114,7 +114,7 @@ npx tsx scripts/e2e-tailor-cv.ts http://localhost:3000
 npx tsx scripts/e2e-tailor-cv.ts http://localhost:3000 ai-ml
 ```
 
-See [`docs/workingDocs/TESTING.md`](docs/workingDocs/TESTING.md) for the full test reference (unit test table, rate-limit troubleshooting, Langfuse trace setup, Gemini free-tier workarounds).
+See [`docs/test/TESTING.md`](docs/test/TESTING.md) for the full test reference (unit test table, rate-limit troubleshooting, Langfuse trace setup, Gemini free-tier workarounds).
 
 ---
 
@@ -148,4 +148,4 @@ Results written to `eval-results/`. See [`docs/arch/MODEL_SELECTION.md`](docs/ar
 | [`docs/arch/FILE_LAYOUT.md`](docs/arch/FILE_LAYOUT.md) | Canonical project tree |
 | [`docs/arch/MODEL_SELECTION.md`](docs/arch/MODEL_SELECTION.md) | Provider routing, model defaults, eval results |
 | [`docs/api/API.md`](docs/api/API.md) | Full API reference |
-| [`docs/workingDocs/TESTING.md`](docs/workingDocs/TESTING.md) | Test strategy, rate-limit troubleshooting, Langfuse setup |
+| [`docs/test/TESTING.md`](docs/test/TESTING.md) | Test strategy, rate-limit troubleshooting, Langfuse setup |
