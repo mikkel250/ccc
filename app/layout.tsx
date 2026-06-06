@@ -1,3 +1,4 @@
+/** Minimal shell required by Next.js App Router. No UI components or styles. */
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {

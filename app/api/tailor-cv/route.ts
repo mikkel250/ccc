@@ -1,3 +1,10 @@
+/**
+ * Production CV tailoring endpoint — orchestrates the full request pipeline.
+ *
+ * Flow: validate → rate-limit → load KB → compile prompt → LLM → DOCX → JSON.
+ * Called by the CCC consumer app; see docs/arch/APP_WALKTHROUGH.md for the
+ * step-by-step map of every function involved.
+ */
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
@@ -16,6 +23,8 @@ export async function POST(request: NextRequest) {
       request.headers.get("x-forwarded-for") ||
       request.headers.get("x-real-ip") ||
       "unknown";
+
+    // --- Pipeline: validate → rate limit → context → prompt → LLM → DOCX ---
 
     const validated = validateTailorCvBody(body, `ip:${ipAddress}`);
     if (!validated.ok) {

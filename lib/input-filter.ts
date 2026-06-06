@@ -1,3 +1,10 @@
+/**
+ * Client-side input guard for the legacy portfolio chat bot.
+ *
+ * Short-circuits common recruiter questions (salary, location, work auth) without
+ * an LLM call. Lives in lib/ (not app/api/lib/) so it can run in the browser
+ * without Node fs imports. Not used by POST /api/tailor-cv.
+ */
 // Input validation and filtering to prevent BS being sent to the AI
 // Client-safe job filtering functions (without fs imports)
 

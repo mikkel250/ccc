@@ -1,3 +1,4 @@
+/** Fallback when no page route matches — directs callers to the API endpoints. */
 export default function NotFound() {
   return (
     <main>

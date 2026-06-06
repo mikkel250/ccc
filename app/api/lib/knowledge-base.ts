@@ -1,3 +1,10 @@
+/**
+ * Candidate knowledge base — read-only markdown on disk.
+ *
+ * Production tailor-cv uses `getAllContext()` (full injection, no retrieval).
+ * `getRelevantContext()` supports the legacy chat bot's keyword-based RAG and is
+ * intentionally unused by POST /api/tailor-cv. See docs/arch/README.md.
+ */
 import fs from 'fs';
 import path from 'path';
 
@@ -87,6 +94,10 @@ function isJobDescriptionQuery(query: string): boolean {
   return query.length > 150 && matchCount >= 2;
 }
 
+/**
+ * Legacy chat-bot RAG: pick KB files by query keywords. Not used by tailor-cv.
+ * Kept for a future /api/chat route that shares this knowledge base.
+ */
 export function getRelevantContext(query: string): string {
   const contexts: string[] = [];
 
@@ -126,6 +137,7 @@ export function getRelevantContext(query: string): string {
   return contexts.filter(context => context.length > 0).join('\n\n--\n\n');
 }
 
+/** MVP path: load every KB file into the CV prompt. ~50–60k tokens, no selective RAG. */
 export function getAllContext(): string {
   const contexts = [
     loadKBFile(KB_CONFIG.files.experience),
