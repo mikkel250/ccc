@@ -7,6 +7,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { ServiceError } from './errors';
 
 interface KnowledgeBaseConfig {
   basePath: string;
@@ -37,6 +38,22 @@ function loadKBFile(fileName: string): string {
   } catch (error) {
     console.error(`Error loading KB file ${fileName}:`, error);
     return '';
+  }
+}
+
+function loadKBFileStrict(fileName: string): string {
+  try {
+    const kbPath = path.join(process.cwd(), KB_CONFIG.basePath, fileName);
+    const content = fs.readFileSync(kbPath, 'utf-8');
+    if (!content.trim()) {
+      throw new ServiceError(`Knowledge base file ${fileName} is missing or unreadable`);
+    }
+    return content;
+  } catch (error) {
+    if (error instanceof ServiceError) {
+      throw error;
+    }
+    throw new ServiceError(`Knowledge base file ${fileName} is missing or unreadable`);
   }
 }
 
@@ -139,15 +156,16 @@ export function getRelevantContext(query: string): string {
 
 /** MVP path: load every KB file into the CV prompt. ~50–60k tokens, no selective RAG. */
 export function getAllContext(): string {
-  const contexts = [
-    loadKBFile(KB_CONFIG.files.experience),
-    loadKBFile(KB_CONFIG.files.projects),
-    loadKBFile(KB_CONFIG.files.skills),
-    loadKBFile(KB_CONFIG.files.careerStory),
-    loadKBFile(KB_CONFIG.files.metaProject),
+  const fileNames = [
+    KB_CONFIG.files.experience,
+    KB_CONFIG.files.projects,
+    KB_CONFIG.files.skills,
+    KB_CONFIG.files.careerStory,
+    KB_CONFIG.files.metaProject,
   ];
 
-  return contexts.filter(context => context.length > 0).join('\n\n--\n\n');
+  const contexts = fileNames.map((fileName) => loadKBFileStrict(fileName));
+  return contexts.join('\n\n--\n\n');
 }
 
 export function extractJobTitle(query: string): string | null {

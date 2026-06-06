@@ -8,23 +8,32 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { checkRateLimit } from "../lib/rate-limit";
-import { getAllContext } from "../lib/knowledge-base";
-import { getCvPrompt, compileCvPrompt } from "../lib/cv-prompt";
-import { chat, isLlmServiceError } from "../lib/llm";
-import { markdownToDocxBase64 } from "../lib/markdown-docx";
 import { validateTailorCvBody } from "../lib/tailor-cv-validation";
 import { getTailorModel } from "../../../lib/env";
+import { RateLimitError, ServiceError } from "../lib/errors";
+import { tailorCvDeps } from "../lib/tailor-cv-deps";
+
+function parseClientIp(request: NextRequest): string {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (!forwarded?.trim()) {
+    return "unknown";
+  }
+  return forwarded.split(",")[0]!.trim() || "unknown";
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const ipAddress =
-      request.headers.get("x-forwarded-for") ||
-      request.headers.get("x-real-ip") ||
-      "unknown";
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON in request body" },
+        { status: 400 }
+      );
+    }
 
-    // --- Pipeline: validate → rate limit → context → prompt → LLM → DOCX ---
+    const ipAddress = parseClientIp(request);
 
     const validated = validateTailorCvBody(body, `ip:${ipAddress}`);
     if (!validated.ok) {
@@ -33,7 +42,7 @@ export async function POST(request: NextRequest) {
 
     const { jobDescription, sessionId } = validated;
 
-    const rateLimit = checkRateLimit(sessionId, ipAddress);
+    const rateLimit = await tailorCvDeps.checkRateLimit(sessionId, ipAddress);
     if (!rateLimit.allowed) {
       return NextResponse.json(
         {
@@ -45,9 +54,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const context = getAllContext();
-    const { systemPrompt: promptText, langfusePrompt } = await getCvPrompt();
-    const systemPrompt = compileCvPrompt(promptText, context);
+    const context = tailorCvDeps.getAllContext();
+    const { systemPrompt: promptText, langfusePrompt } = await tailorCvDeps.getCvPrompt();
+    const systemPrompt = tailorCvDeps.compileCvPrompt(promptText, context);
 
     const messages = [
       {
@@ -56,13 +65,13 @@ export async function POST(request: NextRequest) {
       },
     ];
 
-    const llmResponse = await chat(messages, systemPrompt, {
+    const llmResponse = await tailorCvDeps.chat(messages, systemPrompt, {
       model: getTailorModel(),
       langfusePrompt: langfusePrompt ?? { name: "cv-tailor-system", version: 0, isFallback: true },
       source: "tailor-cv",
     });
 
-    const cv = await markdownToDocxBase64(llmResponse.content);
+    const cv = await tailorCvDeps.markdownToDocxBase64(llmResponse.content);
 
     return NextResponse.json({
       cv,
@@ -73,17 +82,22 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: unknown) {
     console.error("Tailor CV API error:", error);
+
+    if (error instanceof RateLimitError) {
+      return NextResponse.json({ error: error.message }, { status: 429 });
+    }
+
+    if (error instanceof ServiceError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
+
     const message = error instanceof Error ? error.message : String(error);
 
-    if (isLlmServiceError(message)) {
+    if (tailorCvDeps.isLlmServiceError(message)) {
       return NextResponse.json(
         { error: "AI service error. Please try again." },
         { status: 503 }
       );
-    }
-
-    if (message.includes("Rate limit")) {
-      return NextResponse.json({ error: message }, { status: 429 });
     }
 
     return NextResponse.json(
