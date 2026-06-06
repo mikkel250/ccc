@@ -5,11 +5,16 @@
 export interface TailorCvRequestBody {
   jobDescription?: unknown;
   sessionId?: unknown;
+  [key: string]: unknown;
 }
 
 export type ValidateTailorCvResult =
   | { ok: true; jobDescription: string; sessionId: string }
   | { ok: false; error: string };
+
+function isTailorCvRequestBody(record: Record<string, unknown>): record is TailorCvRequestBody {
+  return true;
+}
 
 export function validateTailorCvBody(
   body: unknown,
@@ -19,7 +24,11 @@ export function validateTailorCvBody(
     return { ok: false, error: "Request body must be an object" };
   }
 
-  const record = body as TailorCvRequestBody;
+  const record = body as Record<string, unknown>;
+  if (!isTailorCvRequestBody(record)) {
+    return { ok: false, error: "Request body must be an object" };
+  }
+
   const jd = record.jobDescription;
 
   if (jd === undefined || jd === null) {

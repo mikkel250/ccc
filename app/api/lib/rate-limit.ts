@@ -14,8 +14,8 @@ const requestLog = new Map<string, number[]>();
 const ipChains = new Map<string, Promise<void>>();
 const pendingTimerByIp = new Map<string, ReturnType<typeof setTimeout>>();
 
-const BURST_MAX = getEnvNumber("RATE_LIMIT_MAX", 5);
-const BURST_WINDOW_MS = getEnvNumber("RATE_LIMIT_WINDOW", 60000);
+const BURST_MAX = Math.max(1, Math.floor(getEnvNumber("RATE_LIMIT_MAX", 5)));
+const BURST_WINDOW_MS = Math.max(1, Math.floor(getEnvNumber("RATE_LIMIT_WINDOW", 60000)));
 
 export interface RateLimitResult {
   allowed: boolean;

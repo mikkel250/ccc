@@ -9,16 +9,36 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { validateTailorCvBody } from "../lib/tailor-cv-validation";
-import { getTailorModel } from "../../../lib/env";
+import { getTailorModel, getEnvString } from "../../../lib/env";
 import { RateLimitError, ServiceError } from "../lib/errors";
 import { tailorCvDeps } from "../lib/tailor-cv-deps";
 
+const TRUSTED_PROXIES = new Set(
+  (getEnvString("TRUSTED_PROXIES", "") || "").split(",").map(s => s.trim()).filter(Boolean)
+);
+
+function isValidIp(value: string): boolean {
+  if (value.length > 45) return false;
+  const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+  const ipv6Regex = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/;
+  return ipv4Regex.test(value) || ipv6Regex.test(value);
+}
+
 function parseClientIp(request: NextRequest): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (!forwarded?.trim()) {
-    return "unknown";
+  const realIp = request.headers.get("x-real-ip");
+  if (realIp?.trim() && TRUSTED_PROXIES.size > 0 && isValidIp(realIp.trim())) {
+    return realIp.trim();
   }
-  return forwarded.split(",")[0]!.trim() || "unknown";
+
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded?.trim() && TRUSTED_PROXIES.size > 0) {
+    const leftmost = forwarded.split(",")[0]!.trim();
+    if (leftmost && isValidIp(leftmost)) {
+      return leftmost;
+    }
+  }
+
+  return "unknown";
 }
 
 export async function POST(request: NextRequest) {
@@ -42,7 +62,8 @@ export async function POST(request: NextRequest) {
 
     const { jobDescription, sessionId } = validated;
 
-    const rateLimit = await tailorCvDeps.checkRateLimit(sessionId, ipAddress);
+    const rateLimitKey = `${sessionId}:${ipAddress}`;
+    const rateLimit = await tailorCvDeps.checkRateLimit(rateLimitKey, ipAddress);
     if (!rateLimit.allowed) {
       return NextResponse.json(
         {

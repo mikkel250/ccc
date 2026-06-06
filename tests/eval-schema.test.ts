@@ -264,7 +264,7 @@ describe("eval-schema — lazy getJudgeMap", () => {
       process.env.EVAL_JUDGE_MAP_JSON = "{not-json";
       resetJudgeMapCache();
       const map = getJudgeMap();
-      assert.equal(map["deepseek/deepseek-v4-pro"], JUDGE_MAP["deepseek/deepseek-v4-pro"]);
+      assert.equal(map["deepseek/deepseek-v4-pro"], "anthropic/sonnet");
       assert.ok(warnings.some((w) => /EVAL_JUDGE_MAP_JSON/i.test(w)));
     } finally {
       console.warn = originalWarn;

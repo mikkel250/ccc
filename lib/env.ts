@@ -43,13 +43,16 @@ const DEFAULT_TAILOR_MODEL = 'anthropic/sonnet';
 const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
 const MIN_MAX_TOKENS = 1;
 
-const KNOWN_LLM_PROVIDERS = new Set([
-  'openai',
-  'anthropic',
-  'google',
-  'openrouter',
-  'deepseek',
-]);
+function getProviderRegistry(): Set<string> {
+  let registry: Set<string>;
+  try {
+    const { KNOWN_PROVIDERS } = require('../app/api/lib/llm');
+    registry = KNOWN_PROVIDERS;
+  } catch {
+    registry = new Set(['openai', 'anthropic', 'google', 'openrouter', 'deepseek']);
+  }
+  return registry;
+}
 
 function validateDefaultModel(model: string): string {
   const slash = model.indexOf('/');
@@ -57,7 +60,8 @@ function validateDefaultModel(model: string): string {
     throw new Error(`Invalid AI_MODEL "${model}": must be namespaced as provider/model`);
   }
   const provider = model.slice(0, slash);
-  if (!KNOWN_LLM_PROVIDERS.has(provider)) {
+  const registry = getProviderRegistry();
+  if (!registry.has(provider)) {
     throw new Error(`Unknown provider "${provider}" in AI_MODEL "${model}"`);
   }
   return model;

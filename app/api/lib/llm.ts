@@ -52,7 +52,7 @@ export interface ChatOptions {
 
 export type Provider = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'deepseek';
 
-const KNOWN_PROVIDERS = new Set<Provider>(['openai', 'anthropic', 'google', 'openrouter', 'deepseek']);
+export const KNOWN_PROVIDERS = new Set<Provider>(['openai', 'anthropic', 'google', 'openrouter', 'deepseek']);
 
 let openaiClient: OpenAI | null = null;
 let anthropicClient: Anthropic | null = null;
