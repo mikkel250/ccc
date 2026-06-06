@@ -246,6 +246,10 @@ export async function runEvalCv(options: RunEvalCvOptions): Promise<RunEvalCvSum
 
     writeExtractionArtifact(outputRoot, jd.slug, extraction, extractionScore);
 
+    if (extractionScore.parseFailed) {
+      warnings.push(`parseFailed on extraction score for ${jd.slug}`);
+    }
+
     if (options.langfuseScoreCreate) {
       try {
         await options.langfuseScoreCreate({
@@ -260,7 +264,7 @@ export async function runEvalCv(options: RunEvalCvOptions): Promise<RunEvalCvSum
       }
     }
 
-    if (extractionScore.score < extractionMinScore) {
+    if (!extractionScore.parseFailed && extractionScore.score < extractionMinScore) {
       warnings.push(
         `Skipped all models for ${jd.slug}: extraction score ${extractionScore.score} below threshold ${extractionMinScore}`
       );
@@ -291,9 +295,16 @@ export async function runEvalCv(options: RunEvalCvOptions): Promise<RunEvalCvSum
         const relevanceScore = await scoreRelevance(cvMarkdown, extraction, kbFiles, judgeModel, {
           chat: judgeChatFn,
         });
+        if (relevanceScore.parseFailed) {
+          warnings.push(`parseFailed on relevance score for ${jd.slug} × ${model}`);
+        }
+
         const hallucinationScore = await scoreHallucination(cvMarkdown, extraction, kbFiles, judgeModel, {
           chat: judgeChatFn,
         });
+        if (hallucinationScore.parseFailed) {
+          warnings.push(`parseFailed on hallucination score for ${jd.slug} × ${model}`);
+        }
 
         const scores = buildScoresPayload({
           format: formatScore,

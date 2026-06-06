@@ -28,6 +28,7 @@ const RAW_JD_WITH_INLINE_DASHES =
 
 function buildSampleExtraction(rawJd: string): JdExtraction {
   return {
+    parseFailed: false,
     requirements: [
       {
         statement: "Kubernetes platform experience",
@@ -77,6 +78,12 @@ function mockJudgeJson(
     });
   }
   return JSON.stringify({ score: 0.1, flaggedClaims: [] });
+}
+
+function scoreWithParseFailed<T extends { parseFailed: boolean }>(
+  score: Omit<T, "parseFailed">
+): T {
+  return { ...score, parseFailed: false } as T;
 }
 
 describe("parseEvalModels", () => {
@@ -143,9 +150,13 @@ describe("buildScoresPayload + buildUsagePayload", () => {
   it("scores.json schema includes all four eval dimensions including extraction", () => {
     const payload = buildScoresPayload({
       format: { score: 1.0, breakdown: {}, details: [] },
-      relevance: { score: 4, reasoning: "Aligned." },
-      hallucination: { score: 0.0, flaggedClaims: [] },
-      extraction: { score: 0.85, reasoning: "Complete.", gaps: [] },
+      relevance: scoreWithParseFailed({ score: 4, reasoning: "Aligned." }),
+      hallucination: scoreWithParseFailed({ score: 0.0, flaggedClaims: [] }),
+      extraction: scoreWithParseFailed({
+        score: 0.85,
+        reasoning: "Complete.",
+        gaps: [],
+      }),
       metadata: {
         jdSlug: "test-jd",
         model: "anthropic/sonnet",
@@ -209,11 +220,12 @@ describe("runEvalCv — integration with mocks", () => {
         return mockChatResponse(mockJudgeJson(dimension));
       },
       extractJdMetadata: async (jdContent) => ({ ...extraction, rawJd: jdContent }),
-      scoreExtraction: async () => ({
-        score: 0.9,
-        reasoning: "Good extraction.",
-        gaps: [],
-      }),
+      scoreExtraction: async () =>
+        scoreWithParseFailed({
+          score: 0.9,
+          reasoning: "Good extraction.",
+          gaps: [],
+        }),
       langfuseScoreCreate: async () => {},
       getAllContext: async () => ({ "experience.md": "Example experience" }),
     });
@@ -248,11 +260,12 @@ describe("runEvalCv — integration with mocks", () => {
           )
         ),
       extractJdMetadata: async () => extraction,
-      scoreExtraction: async () => ({
-        score: 0.88,
-        reasoning: "Captured requirements.",
-        gaps: [],
-      }),
+      scoreExtraction: async () =>
+        scoreWithParseFailed({
+          score: 0.88,
+          reasoning: "Captured requirements.",
+          gaps: [],
+        }),
       langfuseScoreCreate: async () => {},
       getAllContext: async () => ({}),
     });
@@ -287,11 +300,12 @@ describe("runEvalCv — integration with mocks", () => {
         extractCalls++;
         return extraction;
       },
-      scoreExtraction: async () => ({
-        score: 0.95,
-        reasoning: "Complete.",
-        gaps: [],
-      }),
+      scoreExtraction: async () =>
+        scoreWithParseFailed({
+          score: 0.95,
+          reasoning: "Complete.",
+          gaps: [],
+        }),
       langfuseScoreCreate: async () => {},
       getAllContext: async () => ({}),
     });
@@ -316,11 +330,12 @@ describe("runEvalCv — integration with mocks", () => {
         extractCalls++;
         return cached;
       },
-      scoreExtraction: async () => ({
-        score: 0.9,
-        reasoning: "Cached.",
-        gaps: [],
-      }),
+      scoreExtraction: async () =>
+        scoreWithParseFailed({
+          score: 0.9,
+          reasoning: "Cached.",
+          gaps: [],
+        }),
       langfuseScoreCreate: async () => {},
       getAllContext: async () => ({}),
     });
@@ -344,11 +359,12 @@ describe("runEvalCv — integration with mocks", () => {
         },
         judgeChat: async () => mockChatResponse(mockJudgeJson("relevance")),
         extractJdMetadata: async (jd) => buildSampleExtraction(jd),
-        scoreExtraction: async (): Promise<ExtractionScore> => ({
-          score: 0.4,
-          reasoning: "Incomplete extraction.",
-          gaps: ["Missing requirements"],
-        }),
+        scoreExtraction: async (): Promise<ExtractionScore> =>
+          scoreWithParseFailed({
+            score: 0.4,
+            reasoning: "Incomplete extraction.",
+            gaps: ["Missing requirements"],
+          }),
         langfuseScoreCreate: async () => {},
         getAllContext: async () => ({}),
       });
@@ -380,11 +396,12 @@ describe("runEvalCv — integration with mocks", () => {
       },
       judgeChat: async () => mockChatResponse(mockJudgeJson("relevance")),
       extractJdMetadata: async (jd) => ({ ...extraction, rawJd: jd }),
-      scoreExtraction: async () => ({
-        score: 0.9,
-        reasoning: "OK.",
-        gaps: [],
-      }),
+      scoreExtraction: async () =>
+        scoreWithParseFailed({
+          score: 0.9,
+          reasoning: "OK.",
+          gaps: [],
+        }),
       langfuseScoreCreate: async () => {},
       getAllContext: async () => ({}),
     });
@@ -412,11 +429,12 @@ describe("runEvalCv — integration with mocks", () => {
         }
         return buildSampleExtraction(jd);
       },
-      scoreExtraction: async () => ({
-        score: 0.9,
-        reasoning: "OK.",
-        gaps: [],
-      }),
+      scoreExtraction: async () =>
+        scoreWithParseFailed({
+          score: 0.9,
+          reasoning: "OK.",
+          gaps: [],
+        }),
       langfuseScoreCreate: async () => {},
       getAllContext: async () => ({}),
     });
@@ -442,11 +460,12 @@ describe("runEvalCv — integration with mocks", () => {
           )
         ),
       extractJdMetadata: async (jd) => buildSampleExtraction(jd),
-      scoreExtraction: async () => ({
-        score: 0.92,
-        reasoning: "Complete.",
-        gaps: [],
-      }),
+      scoreExtraction: async () =>
+        scoreWithParseFailed({
+          score: 0.92,
+          reasoning: "Complete.",
+          gaps: [],
+        }),
       langfuseScoreCreate: async (params) => {
         scoreCalls.push(String(params.name));
       },
@@ -489,11 +508,12 @@ describe("runEvalCv — integration with mocks", () => {
       },
       judgeChat: async () => mockChatResponse(mockJudgeJson("relevance")),
       extractJdMetadata: async (jd) => buildSampleExtraction(jd),
-      scoreExtraction: async () => ({
-        score: 0.9,
-        reasoning: "OK.",
-        gaps: [],
-      }),
+      scoreExtraction: async () =>
+        scoreWithParseFailed({
+          score: 0.9,
+          reasoning: "OK.",
+          gaps: [],
+        }),
       langfuseScoreCreate: async () => {},
       getAllContext: async () => ({}),
     });
@@ -509,11 +529,12 @@ describe("runEvalCv — integration with mocks", () => {
       chat: async () => mockChatResponse(MOCK_CV),
       judgeChat: async () => mockChatResponse(mockJudgeJson("relevance")),
       extractJdMetadata: async (jd) => buildSampleExtraction(jd),
-      scoreExtraction: async () => ({
-        score: 0.9,
-        reasoning: "OK.",
-        gaps: [],
-      }),
+      scoreExtraction: async () =>
+        scoreWithParseFailed({
+          score: 0.9,
+          reasoning: "OK.",
+          gaps: [],
+        }),
       langfuseScoreCreate: async () => {
         throw new Error("Langfuse unavailable");
       },
@@ -523,5 +544,122 @@ describe("runEvalCv — integration with mocks", () => {
     assert.ok(summary.warnings.some((w) => /langfuse/i.test(w)));
     const artifactDir = path.join(tempRoot, "no-langfuse", "anthropic", "sonnet");
     assert.ok(fs.existsSync(path.join(artifactDir, "scores.json")));
+  });
+
+  it("surfaces parseFailed warning for extraction score but still writes scores.json", async () => {
+    const summary = await runEvalCv({
+      outputRoot: tempRoot,
+      jdFiles: [{ slug: "parse-fail-extract", content: "Platform engineer role." }],
+      models: ["anthropic/sonnet"],
+      chat: async () => mockChatResponse(MOCK_CV),
+      judgeChat: async () => mockChatResponse(mockJudgeJson("relevance")),
+      extractJdMetadata: async (jd) => buildSampleExtraction(jd),
+      scoreExtraction: async () => ({
+        score: 0.5,
+        reasoning: "Parse failure: invalid JSON",
+        gaps: [],
+        parseFailed: true,
+      }),
+      langfuseScoreCreate: async () => {},
+      getAllContext: async () => ({}),
+    });
+
+    assert.ok(
+      summary.warnings.some((w) => /parseFailed on extraction score for parse-fail-extract/i.test(w))
+    );
+    const scoresPath = path.join(
+      tempRoot,
+      "parse-fail-extract",
+      "anthropic",
+      "sonnet",
+      "scores.json"
+    );
+    assert.ok(fs.existsSync(scoresPath));
+    const scores = JSON.parse(fs.readFileSync(scoresPath, "utf-8"));
+    assert.equal(scores.extraction.parseFailed, true);
+  });
+
+  it("surfaces parseFailed warning for relevance score", async () => {
+    const summary = await runEvalCv({
+      outputRoot: tempRoot,
+      jdFiles: [{ slug: "parse-fail-relevance", content: "Backend engineer role." }],
+      models: ["anthropic/sonnet"],
+      chat: async () => mockChatResponse(MOCK_CV),
+      judgeChat: async (_m, _s, opts) => {
+        const source = String(opts?.source ?? "");
+        if (source.includes("relevance")) {
+          return mockChatResponse("not valid json");
+        }
+        return mockChatResponse(mockJudgeJson("hallucination"));
+      },
+      extractJdMetadata: async (jd) => buildSampleExtraction(jd),
+      scoreExtraction: async () =>
+        scoreWithParseFailed({
+          score: 0.9,
+          reasoning: "OK.",
+          gaps: [],
+        }),
+      langfuseScoreCreate: async () => {},
+      getAllContext: async () => ({}),
+    });
+
+    assert.ok(
+      summary.warnings.some((w) =>
+        /parseFailed on relevance score for parse-fail-relevance × anthropic\/sonnet/i.test(w)
+      )
+    );
+    const scores = JSON.parse(
+      fs.readFileSync(
+        path.join(tempRoot, "parse-fail-relevance", "anthropic", "sonnet", "scores.json"),
+        "utf-8"
+      )
+    );
+    assert.equal(scores.relevance.parseFailed, true);
+  });
+
+  it("surfaces parseFailed warning for hallucination score", async () => {
+    const summary = await runEvalCv({
+      outputRoot: tempRoot,
+      jdFiles: [{ slug: "parse-fail-hallucination", content: "Data engineer role." }],
+      models: ["deepseek/deepseek-v4-pro"],
+      chat: async () => mockChatResponse(MOCK_CV),
+      judgeChat: async (_m, _s, opts) => {
+        const source = String(opts?.source ?? "");
+        if (source.includes("hallucination")) {
+          return mockChatResponse("```broken```");
+        }
+        return mockChatResponse(mockJudgeJson("relevance"));
+      },
+      extractJdMetadata: async (jd) => buildSampleExtraction(jd),
+      scoreExtraction: async () =>
+        scoreWithParseFailed({
+          score: 0.9,
+          reasoning: "OK.",
+          gaps: [],
+        }),
+      langfuseScoreCreate: async () => {},
+      getAllContext: async () => ({}),
+    });
+
+    assert.ok(
+      summary.warnings.some((w) =>
+        /parseFailed on hallucination score for parse-fail-hallucination × deepseek\/deepseek-v4-pro/i.test(
+          w
+        )
+      )
+    );
+    const scores = JSON.parse(
+      fs.readFileSync(
+        path.join(
+          tempRoot,
+          "parse-fail-hallucination",
+          "deepseek",
+          "deepseek-v4-pro",
+          "scores.json"
+        ),
+        "utf-8"
+      )
+    );
+    assert.equal(scores.hallucination.parseFailed, true);
   });
 });
