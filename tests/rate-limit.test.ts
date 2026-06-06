@@ -1,4 +1,4 @@
-import { describe, it, mock } from "node:test";
+import { afterEach, describe, it, mock } from "node:test";
 import assert from "node:assert/strict";
 import {
   checkRateLimit,
@@ -8,7 +8,12 @@ import {
   seedBucketForTest,
   hasRequestLogEntryForTest,
   hasIpChainEntryForTest,
+  getPendingPruneTimerCountForTest,
 } from "../app/api/lib/rate-limit";
+
+afterEach(() => {
+  resetStore();
+});
 
 describe("checkRateLimit", () => {
   it("allows first request", async () => {
@@ -113,6 +118,18 @@ describe("checkRateLimit — idle map pruning", () => {
     assert.equal(result.allowed, true);
     assert.equal(getBucketLengthForTest(ip), 1);
     assert.ok(getBucketLengthForTest(ip) > 0);
+  });
+
+  it("keeps at most one pending prune timer per IP across burst requests", async () => {
+    resetStore();
+    const ip = `dedup-${Date.now()}`;
+    const config = getRateLimitConfig();
+
+    for (let i = 0; i < config.maxRequests; i++) {
+      await checkRateLimit("session", ip);
+    }
+
+    assert.equal(getPendingPruneTimerCountForTest(ip), 1);
   });
 
   it("prunes requestLog and ipChains after the burst window expires without revisit", async () => {

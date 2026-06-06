@@ -12,6 +12,7 @@ import { getEnvNumber } from "../../../lib/env";
 
 const requestLog = new Map<string, number[]>();
 const ipChains = new Map<string, Promise<void>>();
+const pendingTimerByIp = new Map<string, ReturnType<typeof setTimeout>>();
 
 const BURST_MAX = getEnvNumber("RATE_LIMIT_MAX", 5);
 const BURST_WINDOW_MS = getEnvNumber("RATE_LIMIT_WINDOW", 60000);
@@ -28,8 +29,18 @@ function activeTimestamps(ipAddress: string, now: number): number[] {
   return (requestLog.get(ipAddress) ?? []).filter((t) => t > windowStart);
 }
 
+function clearPendingPruneTimer(ipAddress: string): void {
+  const timerId = pendingTimerByIp.get(ipAddress);
+  if (timerId !== undefined) {
+    clearTimeout(timerId);
+    pendingTimerByIp.delete(ipAddress);
+  }
+}
+
 // [SHARED-STATE] Drops expired per-IP bucket and chain entries to avoid unbounded map growth.
 function pruneIdleIpState(ipAddress: string, now = Date.now()): void {
+  clearPendingPruneTimer(ipAddress);
+
   const timestamps = activeTimestamps(ipAddress, now);
   if (timestamps.length === 0) {
     if (requestLog.has(ipAddress)) {
@@ -43,10 +54,16 @@ function pruneIdleIpState(ipAddress: string, now = Date.now()): void {
   if (stored && stored.length !== timestamps.length) {
     requestLog.set(ipAddress, timestamps);
   }
+
+  scheduleIdlePrune(ipAddress);
 }
 
 // [SHARED-STATE] [SIDE-EFFECT] Schedules in-process cleanup when the current bucket fully expires.
 function scheduleIdlePrune(ipAddress: string): void {
+  if (pendingTimerByIp.has(ipAddress)) {
+    return;
+  }
+
   const timestamps = requestLog.get(ipAddress);
   if (!timestamps?.length) {
     return;
@@ -59,9 +76,11 @@ function scheduleIdlePrune(ipAddress: string): void {
     return;
   }
 
-  setTimeout(() => {
+  const timerId = setTimeout(() => {
+    pendingTimerByIp.delete(ipAddress);
     pruneIdleIpState(ipAddress);
   }, delay);
+  pendingTimerByIp.set(ipAddress, timerId);
 }
 
 function checkRateLimitSync(ipAddress: string): RateLimitResult {
@@ -123,6 +142,10 @@ export function getRateLimitConfig() {
 
 /** For tests only — resets the in-memory store */
 export function resetStore(): void {
+  for (const timerId of pendingTimerByIp.values()) {
+    clearTimeout(timerId);
+  }
+  pendingTimerByIp.clear();
   requestLog.clear();
   ipChains.clear();
 }
@@ -145,4 +168,9 @@ export function hasRequestLogEntryForTest(ipAddress: string): boolean {
 /** For tests only — whether ipChains still tracks an IP */
 export function hasIpChainEntryForTest(ipAddress: string): boolean {
   return ipChains.has(ipAddress);
+}
+
+/** For tests only — whether a prune timer is pending for an IP */
+export function getPendingPruneTimerCountForTest(ipAddress: string): number {
+  return pendingTimerByIp.has(ipAddress) ? 1 : 0;
 }
