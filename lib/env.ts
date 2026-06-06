@@ -43,15 +43,75 @@ const DEFAULT_TAILOR_MODEL = 'anthropic/sonnet';
 const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
 const MIN_MAX_TOKENS = 1;
 
-function getProviderRegistry(): Set<string> {
-  let registry: Set<string>;
-  try {
-    const { KNOWN_PROVIDERS } = require('../app/api/lib/llm');
-    registry = KNOWN_PROVIDERS;
-  } catch {
-    registry = new Set(['openai', 'anthropic', 'google', 'openrouter', 'deepseek']);
+function sanitizeProviderRegistry(value: unknown): Set<string> | null {
+  if (value instanceof Set) {
+    const providers = [...value].filter(
+      (entry): entry is string => typeof entry === 'string' && entry.length > 0
+    );
+    return providers.length > 0 ? new Set(providers) : null;
   }
-  return registry;
+  if (Array.isArray(value)) {
+    const providers = value.filter(
+      (entry): entry is string => typeof entry === 'string' && entry.length > 0
+    );
+    return providers.length > 0 ? new Set(providers) : null;
+  }
+  return null;
+}
+
+function addProviderFromModel(providers: Set<string>, model: string | undefined): void {
+  if (!model) return;
+  const slash = model.trim().indexOf('/');
+  if (slash > 0) {
+    providers.add(model.trim().slice(0, slash));
+  }
+}
+
+function getConfiguredProviderFallback(): Set<string> {
+  const providers = new Set<string>();
+  addProviderFromModel(providers, DEFAULT_LLM_MODEL);
+  addProviderFromModel(providers, DEFAULT_TAILOR_MODEL);
+  addProviderFromModel(providers, DEFAULT_EVAL_JUDGE_MODEL);
+  addProviderFromModel(providers, DEFAULT_EVAL_EXTRACTION_MODEL);
+  addProviderFromModel(providers, process.env.AI_MODEL);
+  addProviderFromModel(providers, process.env.TAILOR_MODEL);
+  addProviderFromModel(providers, process.env.EVAL_JUDGE_MODEL);
+  addProviderFromModel(providers, process.env.EVAL_EXTRACTION_MODEL);
+
+  const evalModels = getEnvString('EVAL_MODELS', DEFAULT_EVAL_MODELS_CSV);
+  if (evalModels) {
+    for (const model of evalModels.split(',')) {
+      addProviderFromModel(providers, model);
+    }
+  }
+
+  return providers;
+}
+
+let cachedProviderRegistry: Set<string> | null = null;
+
+/** Clears cached provider registry (for tests). */
+export function resetProviderRegistryCache(): void {
+  cachedProviderRegistry = null;
+}
+
+function getProviderRegistry(): Set<string> {
+  if (cachedProviderRegistry) {
+    return cachedProviderRegistry;
+  }
+
+  let registry: Set<string> | null = null;
+  try {
+    const llmModule = require('../app/api/lib/llm') as { KNOWN_PROVIDERS?: unknown };
+    registry = sanitizeProviderRegistry(llmModule?.KNOWN_PROVIDERS);
+  } catch {
+    registry = null;
+  }
+
+  cachedProviderRegistry = registry && registry.size > 0
+    ? registry
+    : getConfiguredProviderFallback();
+  return cachedProviderRegistry;
 }
 
 function validateDefaultModel(model: string): string {
