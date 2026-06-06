@@ -12,8 +12,8 @@ import {
   scoreHallucination,
   scoreExtraction,
   resolveJudgeModel,
-  extractStructuredJson,
 } from "../app/api/lib/eval-judge";
+import { extractStructuredJson } from "../app/api/lib/eval-parse";
 import {
   CANDIDATE_GENERATION_MODELS,
   DEFAULT_EVAL_EXTRACTION_MODEL,
@@ -36,6 +36,7 @@ const SAMPLE_KB: Record<string, string> = {
 
 function buildSampleExtraction(overrides: Partial<JdExtraction> = {}): JdExtraction {
   return {
+    parseFailed: false,
     requirements: [
       {
         statement: "React and Node.js proficiency",
@@ -199,6 +200,7 @@ describe("scoreExtraction — mock chat()", () => {
     assert.equal(result.score, 0.85);
     assert.match(result.reasoning, /accurate/i);
     assert.deepEqual(result.gaps, ["Minor keyword omission"]);
+    assert.equal(result.parseFailed, false);
   });
 
   it("clamps scores below 0.0 and above 1.0", async () => {
@@ -217,14 +219,31 @@ describe("scoreExtraction — mock chat()", () => {
     }
   });
 
-  it("returns safe default with error reasoning when LLM returns malformed JSON", async () => {
+  it("returns parseFailed true when LLM returns malformed JSON", async () => {
     const extraction = buildSampleExtraction();
     const result = await scoreExtraction(extraction, SAMPLE_RAW_JD, "anthropic/sonnet", {
       chat: async () => mockChatResponse("not valid json {{{"),
     });
+    assert.equal(result.parseFailed, true);
     assert.ok(result.score >= 0 && result.score <= 1);
     assert.match(result.reasoning, /error|parse|fail/i);
     assert.ok(Array.isArray(result.gaps));
+  });
+
+  it("does not include duplicate ## Raw Job Description block in user message", async () => {
+    const extraction = buildSampleExtraction();
+    let userMessage = "";
+    await scoreExtraction(extraction, SAMPLE_RAW_JD, "anthropic/sonnet", {
+      chat: async (messages) => {
+        userMessage = String(messages[0]?.content ?? "");
+        return mockChatResponse(
+          JSON.stringify({ score: 0.9, reasoning: "Complete.", gaps: [] })
+        );
+      },
+    });
+    assert.doesNotMatch(userMessage, /## Raw Job Description/);
+    assert.match(userMessage, /Structured Extraction/i);
+    assert.ok(userMessage.includes(SAMPLE_RAW_JD));
   });
 
   it("scores empty extraction at or near 0.0", async () => {
@@ -330,6 +349,7 @@ describe("scoreRelevance — mock chat() with JdExtraction", () => {
     });
     assert.equal(result.score, 4);
     assert.match(result.reasoning, /alignment/i);
+    assert.equal(result.parseFailed, false);
   });
 
   it("includes extracted requirements in judge user message", async () => {
@@ -359,11 +379,12 @@ describe("scoreRelevance — mock chat() with JdExtraction", () => {
     }
   });
 
-  it("returns safe default with error reasoning when LLM returns malformed JSON", async () => {
+  it("returns parseFailed true when LLM returns malformed JSON", async () => {
     const extraction = buildSampleExtraction();
     const result = await scoreRelevance(SAMPLE_CV, extraction, SAMPLE_KB, "anthropic/sonnet", {
       chat: async () => mockChatResponse("not valid json {{{"),
     });
+    assert.equal(result.parseFailed, true);
     assert.ok(result.score >= 1 && result.score <= 5);
     assert.match(result.reasoning, /error|parse|fail/i);
   });
@@ -408,6 +429,7 @@ describe("scoreHallucination — mock chat() with JdExtraction", () => {
     assert.equal(result.score, 0.25);
     assert.ok(Array.isArray(result.flaggedClaims));
     assert.equal(result.flaggedClaims.length, 1);
+    assert.equal(result.parseFailed, false);
   });
 
   it("includes extraction context in judge user message while KB remains ground truth", async () => {
@@ -443,7 +465,7 @@ describe("scoreHallucination — mock chat() with JdExtraction", () => {
     }
   });
 
-  it("returns safe default when LLM returns malformed JSON", async () => {
+  it("returns parseFailed true when LLM returns malformed JSON", async () => {
     const extraction = buildSampleExtraction();
     const result = await scoreHallucination(
       SAMPLE_CV,
@@ -454,6 +476,7 @@ describe("scoreHallucination — mock chat() with JdExtraction", () => {
         chat: async () => mockChatResponse("```\nbroken\n```"),
       }
     );
+    assert.equal(result.parseFailed, true);
     assert.ok(result.score >= 0 && result.score <= 1);
     assert.ok(Array.isArray(result.flaggedClaims));
   });

@@ -50,6 +50,7 @@ function mockChatResponse(content: string, model = "openrouter/openai/gpt-4o-min
 }
 
 function assertJdExtractionShape(extraction: JdExtraction): void {
+  assert.equal(typeof extraction.parseFailed, "boolean");
   assert.ok(Array.isArray(extraction.requirements));
   assert.equal(typeof extraction.hiringContext, "string");
   assert.equal(typeof extraction.roleType, "string");
@@ -74,15 +75,18 @@ describe("extractJdMetadata — mock chat()", () => {
     assert.equal(result.requirements[0]!.weight, "Must-Have");
     assert.equal(result.title, "Senior Full-Stack Engineer");
     assert.ok(result.keywordBank.mustHaves!.includes("TypeScript"));
+    assert.equal(result.parseFailed, false);
   });
 
-  it("returns partial extraction with empty fields on malformed JSON", async () => {
+  it("returns parseFailed true with emptyExtraction fields on malformed JSON", async () => {
     const result = await extractJdMetadata(SAMPLE_JD, {
       chat: async () => mockChatResponse("not valid json {{{"),
     });
     assertJdExtractionShape(result);
+    assert.equal(result.parseFailed, true);
     assert.equal(result.requirements.length, 0);
     assert.equal(result.rawJd, SAMPLE_JD);
+    assert.equal(result.title, "Unknown");
   });
 
   it("handles empty JD input without throwing", async () => {

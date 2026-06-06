@@ -3,7 +3,7 @@
  *
  * scoreExtraction — validates Stage 1 JD parsing
  * scoreRelevance / scoreHallucination — judge generated CVs against KB + extraction
- * resolveJudgeModel — maps generator model → judge model via JUDGE_MAP (eval-schema.ts)
+ * resolveJudgeModel — maps generator model → judge model via getJudgeMap() (eval-schema.ts)
  *
  * Not invoked by POST /api/tailor-cv; used only to pick TAILOR_MODEL.
  */
@@ -12,7 +12,7 @@ import { getEvalJudgeModel } from "../../../lib/env";
 import {
   EXTRACTION_JUDGE_PROMPT,
   HALLUCINATION_JUDGE_PROMPT,
-  JUDGE_MAP,
+  getJudgeMap,
   warnUnmappedJudgeModels,
   RELEVANCE_JUDGE_PROMPT,
   type ExtractionScore,
@@ -20,6 +20,9 @@ import {
   type JdExtraction,
   type RelevanceScore,
 } from "./eval-schema";
+import { extractStructuredJson, parseStringArray } from "./eval-parse";
+
+export { extractStructuredJson } from "./eval-parse";
 
 type ChatFn = (
   messages: ChatMessage[] | Omit<ChatMessage, "role">[],
@@ -57,30 +60,11 @@ function formatExtractionContext(extraction: JdExtraction): string {
   return `## Extracted Requirements\n${formatRequirements(extraction) || "None"}\n\n## Keywords\n${formatKeywordBank(extraction)}\n\n## Hiring Context\n${extraction.hiringContext}`;
 }
 
-/** Extract JSON object from LLM output (plain JSON, code fences, or trailing text). */
-export function extractStructuredJson(llmResponse: string): unknown {
-  const trimmed = llmResponse.trim();
-  if (!trimmed) {
-    throw new Error("empty response — cannot parse JSON");
-  }
-
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = fenceMatch ? fenceMatch[1]!.trim() : trimmed;
-
-  const jsonStart = candidate.indexOf("{");
-  const jsonEnd = candidate.lastIndexOf("}");
-  if (jsonStart >= 0 && jsonEnd > jsonStart) {
-    const jsonSlice = candidate.slice(jsonStart, jsonEnd + 1);
-    return JSON.parse(jsonSlice);
-  }
-
-  return JSON.parse(candidate);
-}
-
 /** Resolve cross-provider judge model for a generator model. */
 export function resolveJudgeModel(generatorModel: string): string {
-  if (generatorModel in JUDGE_MAP) {
-    return JUDGE_MAP[generatorModel]!;
+  const judgeMap = getJudgeMap();
+  if (generatorModel in judgeMap) {
+    return judgeMap[generatorModel]!;
   }
   warnUnmappedJudgeModels([generatorModel]);
   return getEvalJudgeModel();
@@ -98,20 +82,15 @@ function clampUnitScore(value: unknown, fallback = 0.5): number {
   return Math.min(1, Math.max(0, num));
 }
 
-function parseStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((v): v is string => typeof v === "string");
-}
-
 export async function scoreExtraction(
   extraction: JdExtraction,
-  rawJd: string,
+  _rawJd: string,
   judgeModel: string,
   options: JudgeScoreOptions = {}
 ): Promise<ExtractionScore> {
   const chatFn = options.chat ?? chat;
 
-  const userContent = `## Raw Job Description\n${rawJd}\n\n## Structured Extraction\n${JSON.stringify(extraction, null, 2)}`;
+  const userContent = `## Structured Extraction\n${JSON.stringify(extraction, null, 2)}`;
 
   try {
     const response = await chatFn(
@@ -133,6 +112,7 @@ export async function scoreExtraction(
           ? parsed.reasoning
           : "No reasoning provided",
       gaps: parseStringArray(parsed.gaps),
+      parseFailed: false,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -141,6 +121,7 @@ export async function scoreExtraction(
       score: 0.5,
       reasoning: `Parse failure: ${message}`,
       gaps: [],
+      parseFailed: true,
     };
   }
 }
@@ -176,6 +157,7 @@ export async function scoreRelevance(
         typeof parsed.reasoning === "string"
           ? parsed.reasoning
           : "No reasoning provided",
+      parseFailed: false,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -183,6 +165,7 @@ export async function scoreRelevance(
     return {
       score: 3,
       reasoning: `Parse failure: ${message}`,
+      parseFailed: true,
     };
   }
 }
@@ -212,13 +195,12 @@ export async function scoreHallucination(
       flaggedClaims?: unknown;
     };
 
-    const flaggedClaims = Array.isArray(parsed.flaggedClaims)
-      ? parsed.flaggedClaims.filter((c): c is string => typeof c === "string")
-      : [];
+    const flaggedClaims = parseStringArray(parsed.flaggedClaims);
 
     return {
       score: clampUnitScore(parsed.score, 0.5),
       flaggedClaims,
+      parseFailed: false,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -226,6 +208,7 @@ export async function scoreHallucination(
     return {
       score: 0.5,
       flaggedClaims: [],
+      parseFailed: true,
     };
   }
 }
