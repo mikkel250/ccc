@@ -125,12 +125,13 @@ function main(): void {
           breakdown: {},
           details: ["Seeded eval artifact"],
         },
-        relevance: { score: scores.relevance, reasoning: "Seeded eval score." },
-        hallucination: { score: scores.hallucination, flaggedClaims: [] },
+        relevance: { score: scores.relevance, reasoning: "Seeded eval score.", parseFailed: false },
+        hallucination: { score: scores.hallucination, flaggedClaims: [], parseFailed: false },
         extraction: {
           score: scores.extraction,
           reasoning: "Seeded extraction score.",
           gaps: [],
+          parseFailed: false,
         },
         metadata: {
           jdSlug: slug,

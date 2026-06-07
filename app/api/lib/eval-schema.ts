@@ -6,6 +6,18 @@
  */
 
 import { getEnvString } from "../../../lib/env";
+import {
+  DEFAULT_EVAL_EXTRACTION_MODEL,
+  DEFAULT_EVAL_JUDGE_MODEL,
+  DEFAULT_EVAL_MODELS_CSV,
+} from "./eval-defaults";
+
+export {
+  DEFAULT_EVAL_EXTRACTION_MIN_SCORE,
+  DEFAULT_EVAL_EXTRACTION_MODEL,
+  DEFAULT_EVAL_JUDGE_MODEL,
+  DEFAULT_EVAL_MODELS_CSV,
+} from "./eval-defaults";
 
 export enum EvalDimension {
   FORMAT = "format",
@@ -34,17 +46,20 @@ export interface FormatScore {
 export interface RelevanceScore {
   score: number;
   reasoning: string;
+  parseFailed: boolean;
 }
 
 export interface HallucinationScore {
   score: number;
   flaggedClaims: string[];
+  parseFailed: boolean;
 }
 
 export interface ExtractionScore {
   score: number;
   reasoning: string;
   gaps: string[];
+  parseFailed: boolean;
 }
 
 export type JdRequirementWeight = "Must-Have" | "Nice-to-Have";
@@ -75,6 +90,7 @@ export interface JdExtraction {
   implicitSuccessSignals: string[];
   keywordBank: JdKeywordBank;
   rawJd: string;
+  parseFailed: boolean;
 }
 
 export const CANDIDATE_GENERATION_MODELS = [
@@ -86,13 +102,6 @@ export const CANDIDATE_GENERATION_MODELS = [
 
 export type CandidateGenerationModel = (typeof CANDIDATE_GENERATION_MODELS)[number];
 
-export const DEFAULT_EVAL_JUDGE_MODEL = "anthropic/sonnet";
-export const DEFAULT_EVAL_EXTRACTION_MIN_SCORE = 0.7;
-export const DEFAULT_EVAL_EXTRACTION_MODEL = "openrouter/openai/gpt-4o-mini";
-
-/** Canonical comma-separated default for `EVAL_MODELS` (derived from candidate list). */
-export const DEFAULT_EVAL_MODELS_CSV = CANDIDATE_GENERATION_MODELS.join(",");
-
 const DEFAULT_JUDGE_MAP: Record<string, string> = {
   "deepseek/deepseek-v4-pro": "anthropic/sonnet",
   "anthropic/sonnet": "deepseek/deepseek-v4-pro",
@@ -100,6 +109,10 @@ const DEFAULT_JUDGE_MAP: Record<string, string> = {
   "openrouter/google/gemini-2.5-pro": "deepseek/deepseek-v4-pro",
   [DEFAULT_EVAL_EXTRACTION_MODEL]: "anthropic/sonnet",
 };
+
+function providerOf(model: string): string {
+  return model.split("/")[0]!;
+}
 
 function isNamespacedModelString(value: unknown): value is string {
   return typeof value === "string" && /^[^/\s]+\/.+/.test(value);
@@ -133,6 +146,12 @@ function buildJudgeMap(): Record<string, string> {
     if (!isNamespacedModelString(generator) || !isNamespacedModelString(judge)) {
       continue;
     }
+    if (providerOf(generator) === providerOf(judge)) {
+      console.warn(
+        `[eval] Rejected same-provider override: ${generator} → ${judge}`
+      );
+      continue;
+    }
     map[generator] = judge;
   }
 
@@ -150,12 +169,26 @@ function buildJudgeMap(): Record<string, string> {
   return map;
 }
 
-/** Cross-provider judge mapping: generator model → judge model (different provider). */
+let _judgeMap: Record<string, string> | null = null;
+
+export function getJudgeMap(): Record<string, string> {
+  if (!_judgeMap) {
+    _judgeMap = buildJudgeMap();
+  }
+  return _judgeMap;
+}
+
+export function resetJudgeMapCache(): void {
+  _judgeMap = null;
+}
+
+/** @deprecated Use getJudgeMap() for lazy initialization and testable env overrides. */
 export const JUDGE_MAP: Record<string, string> = buildJudgeMap();
 
 export function warnUnmappedJudgeModels(models: readonly string[]): void {
+  const judgeMap = getJudgeMap();
   for (const model of models) {
-    if (!(model in JUDGE_MAP)) {
+    if (!(model in judgeMap)) {
       // [SIDE-EFFECT] stderr warning when eval model lacks cross-provider judge mapping
       console.warn(
         `[eval] No JUDGE_MAP entry for "${model}" — judge will fall back to EVAL_JUDGE_MODEL (${DEFAULT_EVAL_JUDGE_MODEL}); cross-provider constraint may be violated`

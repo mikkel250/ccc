@@ -5,17 +5,31 @@
 export interface TailorCvRequestBody {
   jobDescription?: unknown;
   sessionId?: unknown;
+  [key: string]: unknown;
 }
 
 export type ValidateTailorCvResult =
   | { ok: true; jobDescription: string; sessionId: string }
   | { ok: false; error: string };
 
+function isTailorCvRequestBody(record: Record<string, unknown>): record is TailorCvRequestBody {
+  return true;
+}
+
 export function validateTailorCvBody(
-  body: TailorCvRequestBody,
+  body: unknown,
   fallbackSessionId: string
 ): ValidateTailorCvResult {
-  const jd = body.jobDescription;
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return { ok: false, error: "Request body must be an object" };
+  }
+
+  const record = body as Record<string, unknown>;
+  if (!isTailorCvRequestBody(record)) {
+    return { ok: false, error: "Request body must be an object" };
+  }
+
+  const jd = record.jobDescription;
 
   if (jd === undefined || jd === null) {
     return { ok: false, error: "jobDescription is required." };
@@ -26,8 +40,8 @@ export function validateTailorCvBody(
   }
 
   const sessionId =
-    typeof body.sessionId === "string" && body.sessionId.trim().length > 0
-      ? body.sessionId.trim()
+    typeof record.sessionId === "string" && record.sessionId.trim().length > 0
+      ? record.sessionId.trim()
       : fallbackSessionId;
 
   return { ok: true, jobDescription: jd.trim(), sessionId };

@@ -25,7 +25,7 @@ import {
   DEFAULT_EVAL_EXTRACTION_MODEL,
   DEFAULT_EVAL_JUDGE_MODEL,
   DEFAULT_EVAL_MODELS_CSV,
-} from '../app/api/lib/eval-schema';
+} from '../app/api/lib/eval-defaults';
 
 export function getEnvBoolean(key: string, defaultValue: boolean): boolean {
   const raw = process.env[key];
@@ -43,13 +43,76 @@ const DEFAULT_TAILOR_MODEL = 'anthropic/sonnet';
 const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
 const MIN_MAX_TOKENS = 1;
 
-const KNOWN_LLM_PROVIDERS = new Set([
-  'openai',
-  'anthropic',
-  'google',
-  'openrouter',
-  'deepseek',
-]);
+function sanitizeProviderRegistry(value: unknown): Set<string> | null {
+  if (value instanceof Set) {
+    const providers = [...value].filter(
+      (entry): entry is string => typeof entry === 'string' && entry.length > 0
+    );
+    return providers.length > 0 ? new Set(providers) : null;
+  }
+  if (Array.isArray(value)) {
+    const providers = value.filter(
+      (entry): entry is string => typeof entry === 'string' && entry.length > 0
+    );
+    return providers.length > 0 ? new Set(providers) : null;
+  }
+  return null;
+}
+
+function addProviderFromModel(providers: Set<string>, model: string | undefined): void {
+  if (!model) return;
+  const slash = model.trim().indexOf('/');
+  if (slash > 0) {
+    providers.add(model.trim().slice(0, slash));
+  }
+}
+
+function getConfiguredProviderFallback(): Set<string> {
+  const providers = new Set<string>();
+  addProviderFromModel(providers, DEFAULT_LLM_MODEL);
+  addProviderFromModel(providers, DEFAULT_TAILOR_MODEL);
+  addProviderFromModel(providers, DEFAULT_EVAL_JUDGE_MODEL);
+  addProviderFromModel(providers, DEFAULT_EVAL_EXTRACTION_MODEL);
+  addProviderFromModel(providers, process.env.AI_MODEL);
+  addProviderFromModel(providers, process.env.TAILOR_MODEL);
+  addProviderFromModel(providers, process.env.EVAL_JUDGE_MODEL);
+  addProviderFromModel(providers, process.env.EVAL_EXTRACTION_MODEL);
+
+  const evalModels = getEnvString('EVAL_MODELS', DEFAULT_EVAL_MODELS_CSV);
+  if (evalModels) {
+    for (const model of evalModels.split(',')) {
+      addProviderFromModel(providers, model);
+    }
+  }
+
+  return providers;
+}
+
+let cachedProviderRegistry: Set<string> | null = null;
+
+/** Clears cached provider registry (for tests). */
+export function resetProviderRegistryCache(): void {
+  cachedProviderRegistry = null;
+}
+
+function getProviderRegistry(): Set<string> {
+  if (cachedProviderRegistry) {
+    return cachedProviderRegistry;
+  }
+
+  let registry: Set<string> | null = null;
+  try {
+    const llmModule = require('../app/api/lib/llm') as { KNOWN_PROVIDERS?: unknown };
+    registry = sanitizeProviderRegistry(llmModule?.KNOWN_PROVIDERS);
+  } catch {
+    registry = null;
+  }
+
+  cachedProviderRegistry = registry && registry.size > 0
+    ? registry
+    : getConfiguredProviderFallback();
+  return cachedProviderRegistry;
+}
 
 function validateDefaultModel(model: string): string {
   const slash = model.indexOf('/');
@@ -57,7 +120,8 @@ function validateDefaultModel(model: string): string {
     throw new Error(`Invalid AI_MODEL "${model}": must be namespaced as provider/model`);
   }
   const provider = model.slice(0, slash);
-  if (!KNOWN_LLM_PROVIDERS.has(provider)) {
+  const registry = getProviderRegistry();
+  if (!registry.has(provider)) {
     throw new Error(`Unknown provider "${provider}" in AI_MODEL "${model}"`);
   }
   return model;
@@ -98,11 +162,13 @@ export function getDefaultLlmModel(): string {
 }
 
 export function getTailorModel(): string {
-  return process.env.TAILOR_MODEL || DEFAULT_TAILOR_MODEL;
+  return validateDefaultModel(process.env.TAILOR_MODEL || DEFAULT_TAILOR_MODEL);
 }
 
 export function getEvalJudgeModel(): string {
-  return getEnvString('EVAL_JUDGE_MODEL', DEFAULT_EVAL_JUDGE_MODEL)!;
+  return validateDefaultModel(
+    getEnvString('EVAL_JUDGE_MODEL', DEFAULT_EVAL_JUDGE_MODEL)!
+  );
 }
 
 export function getEvalModels(): string {
@@ -110,7 +176,9 @@ export function getEvalModels(): string {
 }
 
 export function getEvalExtractionModel(): string {
-  return getEnvString('EVAL_EXTRACTION_MODEL', DEFAULT_EVAL_EXTRACTION_MODEL)!;
+  return validateDefaultModel(
+    getEnvString('EVAL_EXTRACTION_MODEL', DEFAULT_EVAL_EXTRACTION_MODEL)!
+  );
 }
 
 export function getEvalExtractionMinScore(): number {

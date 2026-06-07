@@ -8,7 +8,7 @@
 import { chat, type ChatMessage, type ChatResponse } from "./llm";
 import { getEvalExtractionModel } from "../../../lib/env";
 import type { JdExtraction, JdKeywordBank, JdRequirement } from "./eval-schema";
-import { extractStructuredJson } from "./eval-judge";
+import { extractStructuredJson, parseStringArray } from "./eval-parse";
 
 type ChatFn = (
   messages: ChatMessage[] | Omit<ChatMessage, "role">[],
@@ -58,6 +58,7 @@ function emptyExtraction(rawJd: string): JdExtraction {
     implicitSuccessSignals: [],
     keywordBank: { mustHaves: [], tools: [], certifications: [], verbs: [] },
     rawJd,
+    parseFailed: false,
   };
 }
 
@@ -73,11 +74,6 @@ function parseRequirements(value: unknown): JdRequirement[] {
         : [],
     }))
     .filter((r) => r.statement.length > 0);
-}
-
-function parseStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((v): v is string => typeof v === "string");
 }
 
 function parseKeywordBank(value: unknown): JdKeywordBank {
@@ -111,6 +107,7 @@ function parseExtractionPayload(raw: unknown, rawJd: string): JdExtraction {
     implicitSuccessSignals: parseStringArray(data.implicitSuccessSignals),
     keywordBank: parseKeywordBank(data.keywordBank),
     rawJd,
+    parseFailed: false,
   };
 }
 
@@ -137,6 +134,6 @@ export async function extractJdMetadata(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn("extractJdMetadata parse failure:", message);
-    return emptyExtraction(jdContent);
+    return { ...emptyExtraction(jdContent), parseFailed: true };
   }
 }
