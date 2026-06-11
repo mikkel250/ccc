@@ -14,6 +14,7 @@ import {
   DEFAULT_EVAL_EXTRACTION_MODEL,
   DEFAULT_EVAL_MODELS_CSV,
   CANDIDATE_GENERATION_MODELS,
+  providerOf,
   type FormatScore,
   type RelevanceScore,
   type HallucinationScore,
@@ -35,14 +36,15 @@ const STRUAN_EIGHT_PART_SECTIONS = [
 
 const EXPECTED_CANDIDATE_MODELS = [
   "deepseek/deepseek-v4-pro",
+  "openrouter/qwen/qwen3.7-max",
+  "openrouter/xiaomi/mimo-v2.5-pro",
+  "openrouter/minimax/minimax-m3",
+  "openrouter/google/gemini-3.1-pro-preview",
+  "openrouter/openai/gpt-5.4",
+  "openrouter/openai/gpt-5.5",
   "anthropic/sonnet",
-  "openrouter/openai/gpt-5.4-mini",
-  "openrouter/google/gemini-2.5-pro",
+  "anthropic/opus",
 ] as const;
-
-function providerOf(model: string): string {
-  return model.split("/")[0]!;
-}
 
 describe("eval-schema — FormatSection enum", () => {
   it("values match the 8 canonical Struan sections in correct order", () => {
@@ -264,7 +266,7 @@ describe("eval-schema — lazy getJudgeMap", () => {
       process.env.EVAL_JUDGE_MAP_JSON = "{not-json";
       resetJudgeMapCache();
       const map = getJudgeMap();
-      assert.equal(map["deepseek/deepseek-v4-pro"], "anthropic/sonnet");
+      assert.equal(map["deepseek/deepseek-v4-pro"], "openrouter/google/gemini-3.1-pro-preview");
       assert.ok(warnings.some((w) => /EVAL_JUDGE_MAP_JSON/i.test(w)));
     } finally {
       console.warn = originalWarn;
@@ -292,7 +294,7 @@ describe("eval-schema — lazy getJudgeMap", () => {
 describe("eval-schema — env var defaults", () => {
   it("DEFAULT_EVAL_JUDGE_MODEL is a valid namespaced model string", () => {
     assert.match(DEFAULT_EVAL_JUDGE_MODEL, /^[a-z]+\/.+/);
-    assert.equal(DEFAULT_EVAL_JUDGE_MODEL, "anthropic/sonnet");
+    assert.equal(DEFAULT_EVAL_JUDGE_MODEL, "openrouter/google/gemini-3.1-pro-preview");
   });
 
   it("DEFAULT_EVAL_EXTRACTION_MIN_SCORE defaults to 0.7 and is parseable as float", () => {

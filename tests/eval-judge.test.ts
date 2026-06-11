@@ -18,6 +18,7 @@ import {
   CANDIDATE_GENERATION_MODELS,
   DEFAULT_EVAL_EXTRACTION_MODEL,
   JUDGE_MAP,
+  providerOf,
   warnUnmappedJudgeModels,
 } from "../app/api/lib/eval-schema";
 
@@ -127,14 +128,14 @@ describe("resolveJudgeModel", () => {
     assert.notEqual(judge.split("/")[0], "anthropic");
   });
 
-  it("returns a different-provider judge for openrouter/openai/gpt-5.4-mini", () => {
-    const judge = resolveJudgeModel("openrouter/openai/gpt-5.4-mini");
-    assert.notEqual(judge.split("/")[0], "openrouter");
+  it("returns a different-provider judge for openrouter/qwen/qwen3.7-max", () => {
+    const judge = resolveJudgeModel("openrouter/qwen/qwen3.7-max");
+    assert.notEqual(judge.split("/")[0], "qwen");
   });
 
-  it("returns a different-provider judge for openrouter/google/gemini-2.5-pro", () => {
-    const judge = resolveJudgeModel("openrouter/google/gemini-2.5-pro");
-    assert.notEqual(judge.split("/")[0], "openrouter");
+  it("returns a different-provider judge for openrouter/minimax/minimax-m3", () => {
+    const judge = resolveJudgeModel("openrouter/minimax/minimax-m3");
+    assert.notEqual(judge.split("/")[0], "minimax");
   });
 
   it("falls back to EVAL_JUDGE_MODEL env var for unknown generator", () => {
@@ -146,7 +147,7 @@ describe("resolveJudgeModel", () => {
     delete process.env.EVAL_JUDGE_MODEL;
     const judge = resolveJudgeModel(DEFAULT_EVAL_EXTRACTION_MODEL);
     assert.equal(judge, JUDGE_MAP[DEFAULT_EVAL_EXTRACTION_MODEL as keyof typeof JUDGE_MAP]);
-    assert.notEqual(judge.split("/")[0], "openrouter");
+    assert.notEqual(providerOf(judge), "openai");
   });
 
   it("covers every candidate generation model from eval schema", () => {

@@ -11,6 +11,7 @@ import { chat, type ChatMessage, type ChatResponse } from "../app/api/lib/llm";
 import { initLangFuse } from "../app/api/lib/langfuse";
 import type { Evaluation } from "@langfuse/client";
 import { flushLangfuseTraces } from "../app/api/lib/langfuse-otel";
+import { validateGenerationModels } from "../app/api/lib/eval-model-validation";
 import {
   CANDIDATE_GENERATION_MODELS,
   EvalDimension,
@@ -108,6 +109,7 @@ export function parseEvalModels(): string[] {
         .split(",")
         .map((m) => m.trim())
         .filter(Boolean);
+  validateGenerationModels(models);
   warnUnmappedJudgeModels(models);
   return models;
 }
