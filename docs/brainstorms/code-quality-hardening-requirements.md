@@ -53,6 +53,7 @@ Harden the CV Tailoring API production path and offline eval pipeline against si
 - Concurrency tests require mock clock or `setImmediate` yields
 - KB fail-fast gated to required MVP files only (not all files)
 - Eval result consumers may assume scores always present — check before changing schema
+- **ipChains / requestLog memory leaks intentionally deferred** to a follow-up hardening PR (not in this sprint). Tracking: prune resolved `ipChains` Promise entries with TTL or bounded map; add TTL/eviction and size cap for `requestLog` plus cleanup job; unit/integration tests and monitoring alerts when implemented.
 
 ## Risks & Unknowns
 

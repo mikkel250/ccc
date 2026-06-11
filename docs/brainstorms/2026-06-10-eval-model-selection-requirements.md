@@ -22,8 +22,8 @@ Eval runs are judge-heavy: relevance and hallucination scorers send the full kno
 
 ### Stage 1 — JD extraction
 
-- **EVAL_EXTRACTION_MODEL:** `deepseek/deepseek-v4-flash`
-- Rationale: Structured JSON extraction from raw JD text; Flash ($0.14/$0.28 per 1M) is sufficient and ~3× cheaper than V4 Pro. Upgrade to `deepseek/deepseek-v4-pro` only if extraction gate scores fall below `EVAL_EXTRACTION_MIN_SCORE` (0.7).
+- **EVAL_EXTRACTION_MODEL (primary):** `openrouter/openai/gpt-5.4-mini` — matches `.env.example` and the Key Decisions table; proven for structured JSON extraction.
+- **EVAL_EXTRACTION_MODEL (budget alternative):** `deepseek/deepseek-v4-flash` — ~5× cheaper ($0.098/$0.197 per 1M). Use when calibration shows Flash passes the extraction gate; if judge scores fall below `EVAL_EXTRACTION_MIN_SCORE` (0.7), escalate to `deepseek/deepseek-v4-pro` or switch primary back to GPT-5.4-mini.
 - **Extraction judge:** `openrouter/openai/gpt-5.4-mini` (cross-provider; lightweight — judges structured JSON only, not raw JD + KB).
 
 ### Stage 2 — CV judges (relevance + hallucination)
@@ -48,7 +48,7 @@ Eval runs are judge-heavy: relevance and hallucination scorers send the full kno
 
 | Priority | Model | Rationale |
 |----------|-------|-----------|
-| Control | `anthropic/claude-opus-4.8` | Quality ceiling — what does "best possible" look like? |
+| Control | `anthropic/opus` | Quality ceiling — what does "best possible" look like? |
 | Control | `anthropic/sonnet` | Current winner (0.958 composite). The bar to beat. |
 | Big 3 | `openrouter/openai/gpt-5.5` | OpenAI's best. Most likely Sonnet-competitor. |
 | Big 3 | `openrouter/openai/gpt-5.4` | Proven all-rounder. Flex makes it cost-competitive. |
@@ -58,7 +58,7 @@ Eval runs are judge-heavy: relevance and hallucination scorers send the full kno
 | Non-big-3 | `openrouter/xiaomi/mimo-v2.5-pro` | Xiaomi's best — claims DeepSeek-class. $0.435/$0.87. |
 | Non-big-3 | `openrouter/minimax/minimax-m3` | Their latest generation. $0.30/$1.20. Dark horse. |
 
-- **EVAL_MODELS:** `deepseek/deepseek-v4-pro,openrouter/qwen/qwen3.7-max,openrouter/xiaomi/mimo-v2.5-pro,openrouter/minimax/minimax-m3,openrouter/google/gemini-3.1-pro-preview,openrouter/openai/gpt-5.4,openrouter/openai/gpt-5.5,anthropic/sonnet,anthropic/claude-opus-4.8`
+- **EVAL_MODELS:** `deepseek/deepseek-v4-pro,openrouter/qwen/qwen3.7-max,openrouter/xiaomi/mimo-v2.5-pro,openrouter/minimax/minimax-m3,openrouter/google/gemini-3.1-pro-preview,openrouter/openai/gpt-5.4,openrouter/openai/gpt-5.5,anthropic/sonnet,anthropic/opus`
 - Anthropic models are **generators only**, not judges — they're the quality controls.
 - Deferred (low probability of top-3): `openrouter/moonshotai/kimi-k2.6`, `openrouter/mistralai/mistral-large-2512`, `openrouter/z-ai/glm-5.1`. Add in follow-up if no clear winner emerges from the primary field.
 - **GPT-5.4-mini** and **gemini-2.5-pro** retired from generator list — replaced by current-generation GPT-5.4/5.5 and Gemini 3.1 Pro.
@@ -89,7 +89,7 @@ Sources: [OpenRouter service tiers](https://openrouter.ai/docs/guides/features/s
 | Role | Model | Input / Output ($/1M) | Notes |
 |------|-------|----------------------|-------|
 | Tailor (production) | TBD after eval | — | Current: `deepseek/deepseek-v4-pro`. Re-evaluating. |
-| Tailor controls | `anthropic/sonnet`, `anthropic/claude-opus-4.8` | $3/$15, $5/$25 | Quality baseline and ceiling. Direct API only. |
+| Tailor controls | `anthropic/sonnet`, `anthropic/opus` | $3/$15, $5/$25 | Quality baseline and ceiling. Direct API only. |
 | Extraction | `openrouter/openai/gpt-5.4-mini` | $0.375 / $2.25 (flex) | Proven at structured JSON. |
 | Extraction (budget) | `deepseek/deepseek-v4-flash` | $0.098 / $0.197 | 5× cheaper. Test if reliable enough. |
 | CV judges (primary) | `openrouter/google/gemini-3.1-pro-preview` | $1.00 / $6.00 (flex) | Strong nuance, cost-effective for input-heavy calls. |
@@ -188,7 +188,7 @@ Grouped by role; quality-first within DeepSeek / OpenAI / Google, then stretch o
 TAILOR_MODEL=deepseek/deepseek-v4-pro
 
 # Phase 1 generator field (9 candidates + 2 Anthropic controls)
-EVAL_MODELS=deepseek/deepseek-v4-pro,openrouter/qwen/qwen3.7-max,openrouter/xiaomi/mimo-v2.5-pro,openrouter/minimax/minimax-m3,openrouter/google/gemini-3.1-pro-preview,openrouter/openai/gpt-5.4,openrouter/openai/gpt-5.5,anthropic/sonnet,anthropic/claude-opus-4.8
+EVAL_MODELS=deepseek/deepseek-v4-pro,openrouter/qwen/qwen3.7-max,openrouter/xiaomi/mimo-v2.5-pro,openrouter/minimax/minimax-m3,openrouter/google/gemini-3.1-pro-preview,openrouter/openai/gpt-5.4,openrouter/openai/gpt-5.5,anthropic/sonnet,anthropic/opus
 
 # Judge defaults
 EVAL_JUDGE_MODEL=openrouter/google/gemini-3.1-pro-preview
@@ -197,7 +197,7 @@ EVAL_JUDGE_MODEL=openrouter/google/gemini-3.1-pro-preview
 EVAL_EXTRACTION_MODEL=openrouter/openai/gpt-5.4-mini
 
 # Cross-provider judge map (generator → judge)
-EVAL_JUDGE_MAP_JSON={"deepseek/deepseek-v4-pro":"openrouter/google/gemini-3.1-pro-preview","openrouter/qwen/qwen3.7-max":"openrouter/google/gemini-3.1-pro-preview","openrouter/xiaomi/mimo-v2.5-pro":"openrouter/google/gemini-3.1-pro-preview","openrouter/minimax/minimax-m3":"openrouter/google/gemini-3.1-pro-preview","anthropic/sonnet":"openrouter/openai/gpt-5.4","anthropic/claude-opus-4.8":"openrouter/openai/gpt-5.4","openrouter/google/gemini-3.1-pro-preview":"openrouter/openai/gpt-5.4","openrouter/openai/gpt-5.4":"openrouter/google/gemini-3.1-pro-preview","openrouter/openai/gpt-5.5":"openrouter/google/gemini-3.1-pro-preview"}
+EVAL_JUDGE_MAP_JSON={"deepseek/deepseek-v4-pro":"openrouter/google/gemini-3.1-pro-preview","openrouter/qwen/qwen3.7-max":"openrouter/google/gemini-3.1-pro-preview","openrouter/xiaomi/mimo-v2.5-pro":"openrouter/google/gemini-3.1-pro-preview","openrouter/minimax/minimax-m3":"openrouter/google/gemini-3.1-pro-preview","anthropic/sonnet":"openrouter/openai/gpt-5.4","anthropic/opus":"openrouter/openai/gpt-5.4","openrouter/google/gemini-3.1-pro-preview":"openrouter/openai/gpt-5.4","openrouter/openai/gpt-5.4":"openrouter/google/gemini-3.1-pro-preview","openrouter/openai/gpt-5.5":"openrouter/google/gemini-3.1-pro-preview"}
 
 EVAL_EXTRACTION_MIN_SCORE=0.7
 ```
