@@ -95,23 +95,42 @@ export interface JdExtraction {
 
 export const CANDIDATE_GENERATION_MODELS = [
   "deepseek/deepseek-v4-pro",
+  "openrouter/qwen/qwen3.7-max",
+  "openrouter/xiaomi/mimo-v2.5-pro",
+  "openrouter/minimax/minimax-m3",
+  "openrouter/google/gemini-3.1-pro-preview",
+  "openrouter/openai/gpt-5.4",
+  "openrouter/openai/gpt-5.5",
   "anthropic/sonnet",
-  "openrouter/openai/gpt-5.4-mini",
-  "openrouter/google/gemini-2.5-pro",
+  "anthropic/claude-opus-4.8",
 ] as const;
 
 export type CandidateGenerationModel = (typeof CANDIDATE_GENERATION_MODELS)[number];
 
 const DEFAULT_JUDGE_MAP: Record<string, string> = {
-  "deepseek/deepseek-v4-pro": "anthropic/sonnet",
-  "anthropic/sonnet": "deepseek/deepseek-v4-pro",
-  "openrouter/openai/gpt-5.4-mini": "anthropic/sonnet",
-  "openrouter/google/gemini-2.5-pro": "deepseek/deepseek-v4-pro",
-  [DEFAULT_EVAL_EXTRACTION_MODEL]: "anthropic/sonnet",
+  "deepseek/deepseek-v4-pro": "openrouter/google/gemini-3.1-pro-preview",
+  "openrouter/qwen/qwen3.7-max": "openrouter/google/gemini-3.1-pro-preview",
+  "openrouter/xiaomi/mimo-v2.5-pro": "openrouter/google/gemini-3.1-pro-preview",
+  "openrouter/minimax/minimax-m3": "openrouter/google/gemini-3.1-pro-preview",
+  "anthropic/sonnet": "openrouter/openai/gpt-5.4",
+  "anthropic/claude-opus-4.8": "openrouter/openai/gpt-5.4",
+  "openrouter/google/gemini-3.1-pro-preview": "openrouter/openai/gpt-5.4",
+  "openrouter/openai/gpt-5.4": "openrouter/google/gemini-3.1-pro-preview",
+  "openrouter/openai/gpt-5.5": "openrouter/google/gemini-3.1-pro-preview",
+  [DEFAULT_EVAL_EXTRACTION_MODEL]: "openrouter/google/gemini-3.1-pro-preview",
 };
 
-function providerOf(model: string): string {
-  return model.split("/")[0]!;
+export function providerOf(model: string): string {
+  const firstSlash = model.indexOf("/");
+  const gateway = model.slice(0, firstSlash);
+  // For OpenRouter-prefixed models, resolve the underlying vendor
+  // (e.g. openrouter/openai/gpt-5.4 → openai, openrouter/qwen/qwen3.7-max → qwen)
+  if (gateway === "openrouter") {
+    const rest = model.slice(firstSlash + 1);
+    const secondSlash = rest.indexOf("/");
+    return secondSlash > 0 ? rest.slice(0, secondSlash) : rest;
+  }
+  return gateway;
 }
 
 function isNamespacedModelString(value: unknown): value is string {
