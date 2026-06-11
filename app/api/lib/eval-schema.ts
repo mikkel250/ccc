@@ -102,7 +102,7 @@ export const CANDIDATE_GENERATION_MODELS = [
   "openrouter/openai/gpt-5.4",
   "openrouter/openai/gpt-5.5",
   "anthropic/sonnet",
-  "anthropic/claude-opus-4.8",
+  "anthropic/opus",
 ] as const;
 
 export type CandidateGenerationModel = (typeof CANDIDATE_GENERATION_MODELS)[number];
@@ -113,7 +113,7 @@ const DEFAULT_JUDGE_MAP: Record<string, string> = {
   "openrouter/xiaomi/mimo-v2.5-pro": "openrouter/google/gemini-3.1-pro-preview",
   "openrouter/minimax/minimax-m3": "openrouter/google/gemini-3.1-pro-preview",
   "anthropic/sonnet": "openrouter/openai/gpt-5.4",
-  "anthropic/claude-opus-4.8": "openrouter/openai/gpt-5.4",
+  "anthropic/opus": "openrouter/openai/gpt-5.4",
   "openrouter/google/gemini-3.1-pro-preview": "openrouter/openai/gpt-5.4",
   "openrouter/openai/gpt-5.4": "openrouter/google/gemini-3.1-pro-preview",
   "openrouter/openai/gpt-5.5": "openrouter/google/gemini-3.1-pro-preview",
