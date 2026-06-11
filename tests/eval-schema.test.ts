@@ -14,6 +14,7 @@ import {
   DEFAULT_EVAL_EXTRACTION_MODEL,
   DEFAULT_EVAL_MODELS_CSV,
   CANDIDATE_GENERATION_MODELS,
+  providerOf,
   type FormatScore,
   type RelevanceScore,
   type HallucinationScore,
@@ -42,19 +43,8 @@ const EXPECTED_CANDIDATE_MODELS = [
   "openrouter/openai/gpt-5.4",
   "openrouter/openai/gpt-5.5",
   "anthropic/sonnet",
-  "anthropic/claude-opus-4.8",
+  "anthropic/opus",
 ] as const;
-
-function providerOf(model: string): string {
-  const firstSlash = model.indexOf("/");
-  const gateway = model.slice(0, firstSlash);
-  if (gateway === "openrouter") {
-    const rest = model.slice(firstSlash + 1);
-    const secondSlash = rest.indexOf("/");
-    return secondSlash > 0 ? rest.slice(0, secondSlash) : rest;
-  }
-  return gateway;
-}
 
 describe("eval-schema — FormatSection enum", () => {
   it("values match the 8 canonical Struan sections in correct order", () => {

@@ -125,11 +125,18 @@ describe("parseEvalModels", () => {
     const original = console.warn;
     console.warn = (msg: unknown) => warnings.push(String(msg));
     try {
-      parseEvalModels();
+      assert.throws(() => parseEvalModels(), /confirmed catalog|Invalid eval generation model/);
     } finally {
       console.warn = original;
     }
-    assert.ok(warnings.some((w) => /unknown\/provider-model/.test(w) && /JUDGE_MAP/i.test(w)));
+  });
+
+  it("throws when EVAL_MODELS includes a model not in the confirmed catalog", () => {
+    process.env.EVAL_MODELS = "openrouter/openai/gpt-5.4,openrouter/fake/nonexistent-model";
+    assert.throws(
+      () => parseEvalModels(),
+      /nonexistent-model|confirmed catalog/
+    );
   });
 });
 

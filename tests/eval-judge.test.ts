@@ -18,6 +18,7 @@ import {
   CANDIDATE_GENERATION_MODELS,
   DEFAULT_EVAL_EXTRACTION_MODEL,
   JUDGE_MAP,
+  providerOf,
   warnUnmappedJudgeModels,
 } from "../app/api/lib/eval-schema";
 
@@ -146,9 +147,7 @@ describe("resolveJudgeModel", () => {
     delete process.env.EVAL_JUDGE_MODEL;
     const judge = resolveJudgeModel(DEFAULT_EVAL_EXTRACTION_MODEL);
     assert.equal(judge, JUDGE_MAP[DEFAULT_EVAL_EXTRACTION_MODEL as keyof typeof JUDGE_MAP]);
-    // Extraction model is openrouter/openai/gpt-5.4-mini; judge should be from different underlying vendor
-    const judgeProvider = judge.split("/").length > 2 ? judge.split("/")[1] : judge.split("/")[0];
-    assert.notEqual(judgeProvider, "openai");
+    assert.notEqual(providerOf(judge), "openai");
   });
 
   it("covers every candidate generation model from eval schema", () => {

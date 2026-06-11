@@ -1,4 +1,4 @@
-import { describe, it } from "node:test";
+import { describe, it, skip } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -85,7 +85,7 @@ describe("eval-results — post-evaluation artifacts", () => {
       }
     }
     if (checked === 0) {
-      console.log("eval-results/ is empty or stale — run `npx tsx scripts/eval-cv.ts` to populate");
+      skip("eval-results/ is empty or stale — run `npx tsx scripts/eval-cv.ts` to populate");
     }
   });
 
