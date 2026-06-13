@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import { NextRequest } from "next/server";
 import { POST, GET } from "../app/api/tailor-cv/route";
 import { RateLimitError, ServiceError } from "../app/api/lib/errors";
-import { resetStore, getRateLimitConfig } from "../app/api/lib/rate-limit";
+import { __injectRatelimitForTest, getRateLimitConfig } from "../app/api/lib/rate-limit";
+import { resetRedisClientForTest } from "../app/api/lib/redis";
 import { tailorCvDeps } from "../app/api/lib/tailor-cv-deps";
+import { createSlidingWindowMock } from "../tests/helpers/rate-limit-mock";
 
 function buildPostRequest(
   body: string | undefined,
@@ -25,10 +27,34 @@ const VALID_BODY = JSON.stringify({
   sessionId: "test-session",
 });
 
+function injectSlidingWindowMock() {
+  const cfg = getRateLimitConfig();
+  __injectRatelimitForTest(
+    createSlidingWindowMock({
+      maxRequests: cfg.maxRequests,
+      windowMs: cfg.windowMs,
+    }) as any,
+  );
+}
+
+function ensureEnv() {
+  process.env.UPSTASH_REDIS_REST_URL =
+    process.env.UPSTASH_REDIS_REST_URL || "https://test.upstash.io";
+  process.env.UPSTASH_REDIS_REST_TOKEN =
+    process.env.UPSTASH_REDIS_REST_TOKEN || "test-token";
+}
+
 describe("POST /api/tailor-cv — request hardening", () => {
+  beforeEach(() => {
+    process.env.UPSTASH_REDIS_REST_URL = "https://test.upstash.io";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+    resetRedisClientForTest();
+    injectSlidingWindowMock();
+  });
+
   afterEach(() => {
     mock.restoreAll();
-    resetStore();
+    resetRedisClientForTest();
   });
 
   it("returns 400 with structured error for empty body", async () => {
@@ -90,6 +116,19 @@ describe("POST /api/tailor-cv — request hardening", () => {
     assert.match(json.error, /too many requests/i);
   });
 
+  it("returns 503 when rate limit ServiceError is thrown", async () => {
+    __injectRatelimitForTest({
+      limit: async () => {
+        throw new Error("Connection refused");
+      },
+    } as any);
+
+    const response = await POST(buildPostRequest(VALID_BODY));
+    assert.equal(response.status, 503);
+    const json = (await response.json()) as { error: string };
+    assert.match(json.error, /rate limit service unavailable/i);
+  });
+
   it("returns 503 when ServiceError is thrown", async () => {
     mock.method(tailorCvDeps, "getAllContext", () => {
       throw new ServiceError("Knowledge base file experience.md is missing or unreadable");
@@ -142,7 +181,6 @@ describe("POST /api/tailor-cv — request hardening", () => {
     });
 
     it("returns 200 with base64 CV, remaining, and resetTime", async () => {
-      resetStore();
       const response = await POST(
         buildPostRequest(VALID_BODY, { "x-forwarded-for": "198.51.100.99" })
       );

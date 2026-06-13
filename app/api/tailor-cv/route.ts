@@ -62,8 +62,7 @@ export async function POST(request: NextRequest) {
 
     const { jobDescription, sessionId } = validated;
 
-    const rateLimitKey = `${sessionId}:${ipAddress}`;
-    const rateLimit = await tailorCvDeps.checkRateLimit(rateLimitKey, ipAddress);
+    const rateLimit = await tailorCvDeps.checkRateLimit(sessionId, ipAddress);
     if (!rateLimit.allowed) {
       return NextResponse.json(
         {
