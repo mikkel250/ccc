@@ -27,6 +27,9 @@ export function createSlidingWindowMock(config: SlidingWindowConfig) {
     limit: async function mockLimit(
       identifier: string,
     ): Promise<RatelimitResponse> {
+      // Simulate network latency so concurrent calls interleave
+      await new Promise(resolve => setImmediate(resolve));
+
       const now = Date.now();
       const windowStart = now - config.windowMs;
 

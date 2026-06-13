@@ -96,6 +96,6 @@ export async function checkRateLimit(
     if (error instanceof ServiceError) {
       throw error;
     }
-    throw new ServiceError("Rate limit service unavailable");
+    throw new ServiceError("Rate limit service unavailable", { cause: error });
   }
 }

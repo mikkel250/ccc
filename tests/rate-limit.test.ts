@@ -166,10 +166,11 @@ describe("checkRateLimit — error paths", () => {
 
     await assert.rejects(
       () => checkRateLimit("s", `fail-${Date.now()}`),
-      (err: unknown) =>
-        err instanceof Error &&
-        err.name === "ServiceError" &&
-        err.message === "Rate limit service unavailable"
+      (err: unknown) => {
+        return err instanceof Error &&
+               err.name === "ServiceError" &&
+               err.message === "Rate limit service unavailable";
+      }
     );
   });
 
@@ -183,14 +184,15 @@ describe("checkRateLimit — error paths", () => {
         pending: Promise.resolve(),
         reason: "timeout" as const,
       }),
-    });
+    } as any);
 
     await assert.rejects(
       () => checkRateLimit("s", `timeout-${Date.now()}`),
-      (err: unknown) =>
-        err instanceof Error &&
-        err.name === "ServiceError" &&
-        err.message === "Rate limit service unavailable"
+      (err: unknown) => {
+        return err instanceof Error &&
+               err.name === "ServiceError" &&
+               err.message === "Rate limit service unavailable";
+      }
     );
   });
 });
