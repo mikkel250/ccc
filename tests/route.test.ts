@@ -6,7 +6,7 @@ import { RateLimitError, ServiceError } from "../app/api/lib/errors";
 import { __injectRatelimitForTest, getRateLimitConfig } from "../app/api/lib/rate-limit";
 import { resetRedisClientForTest } from "../app/api/lib/redis";
 import { tailorCvDeps } from "../app/api/lib/tailor-cv-deps";
-import { createSlidingWindowMock } from "../tests/helpers/rate-limit-mock";
+import { createSlidingWindowMock, createFailingMock } from "../tests/helpers/rate-limit-mock";
 
 function buildPostRequest(
   body: string | undefined,
@@ -33,7 +33,7 @@ function injectSlidingWindowMock() {
     createSlidingWindowMock({
       maxRequests: cfg.maxRequests,
       windowMs: cfg.windowMs,
-    }) as any,
+    }),
   );
 }
 
@@ -117,11 +117,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
   });
 
   it("returns 503 when rate limit ServiceError is thrown", async () => {
-    __injectRatelimitForTest({
-      limit: async () => {
-        throw new Error("Connection refused");
-      },
-    } as any);
+    __injectRatelimitForTest(createFailingMock());
 
     const response = await POST(buildPostRequest(VALID_BODY));
     assert.equal(response.status, 503);

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 priority: p3
 issue_id: "006"
 tags: [code-review, typescript, testing, quality]
@@ -151,3 +151,13 @@ mock.method(rl, "limit", mockLimitFn);
 **Learnings:**
 - The `RatelimitLike` type (`Pick<Ratelimit, "limit">`) should be sufficient but class method signatures vs plain function signatures differ in TypeScript
 - The real solution is defining a proper mock interface that satisfies structural typing
+
+### 2026-07-02 - Resolved (Option 1, derived-type variant)
+
+**By:** Work execution agent
+
+**Actions:**
+- `tests/helpers/rate-limit-mock.ts` now exports `RatelimitResponse`/`RatelimitLike` derived via `Awaited<ReturnType<Ratelimit["limit"]>>` and `Pick<Ratelimit, "limit">` from the real SDK type — no hand-duplicated shape to drift.
+- `createSlidingWindowMock`, `createFailingMock` now return `RatelimitLike` directly; added `createTimeoutMock()` factory (dedupes the third inline mock, addressing overlap with #005).
+- Removed all 5 `as any` casts across `tests/rate-limit.test.ts` and `tests/route.test.ts` — mocks are structurally assignable to `__injectRatelimitForTest`'s parameter with zero casts.
+- `npm test` (292 tests, 288 pass / 4 pre-existing skips) and `npm run lint` both pass.

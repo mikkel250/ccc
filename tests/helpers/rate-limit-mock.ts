@@ -4,15 +4,15 @@
  * Imported by tests/rate-limit.test.ts and tests/route.test.ts to eliminate
  * duplicate sliding-window simulator implementations (see AGENTS.md:
  * "80% overlap means extend, don't copy").
+ *
+ * `RatelimitResponse`/`RatelimitLike` are derived from the real SDK type
+ * (`Ratelimit["limit"]`) rather than hand-duplicated, so mocks stay
+ * structurally compatible with `__injectRatelimitForTest` without `as any`.
  */
+import type { Ratelimit } from "@upstash/ratelimit";
 
-type RatelimitResponse = {
-  success: boolean;
-  limit: number;
-  remaining: number;
-  reset: number;
-  pending: Promise<unknown>;
-};
+export type RatelimitResponse = Awaited<ReturnType<Ratelimit["limit"]>>;
+export type RatelimitLike = Pick<Ratelimit, "limit">;
 
 export interface SlidingWindowConfig {
   maxRequests: number;
@@ -20,7 +20,7 @@ export interface SlidingWindowConfig {
 }
 
 /** In-memory sliding-window simulator matching @upstash/ratelimit SDK shape. */
-export function createSlidingWindowMock(config: SlidingWindowConfig) {
+export function createSlidingWindowMock(config: SlidingWindowConfig): RatelimitLike {
   const buckets = new Map<string, number[]>();
 
   return {
@@ -65,10 +65,26 @@ export function createSlidingWindowMock(config: SlidingWindowConfig) {
 }
 
 /** Mock that always throws — simulates Upstash Redis connection failure. */
-export function createFailingMock() {
+export function createFailingMock(): RatelimitLike {
   return {
     limit: async function mockLimit(): Promise<RatelimitResponse> {
       throw new Error("Connection refused");
+    },
+  };
+}
+
+/** Mock that resolves with the SDK's fail-open timeout shape (`reason: "timeout"`). */
+export function createTimeoutMock(): RatelimitLike {
+  return {
+    limit: async function mockLimit(): Promise<RatelimitResponse> {
+      return {
+        success: true,
+        remaining: 0,
+        reset: 0,
+        limit: 5,
+        pending: Promise.resolve(),
+        reason: "timeout",
+      };
     },
   };
 }

@@ -10,18 +10,15 @@ import { resetRedisClientForTest } from "../app/api/lib/redis";
 import {
   createSlidingWindowMock,
   createFailingMock,
+  createTimeoutMock,
 } from "../tests/helpers/rate-limit-mock";
 
 // ---- Helpers ----
 
-const config = {
-  get maxRequests() {
-    return parseInt(process.env.RATE_LIMIT_MAX || "5", 10);
-  },
-  get windowMs() {
-    return parseInt(process.env.RATE_LIMIT_WINDOW || "60000", 10);
-  },
-};
+// Single source of truth for expected config — avoids duplicating env parsing
+// (see getEnvNumber in lib/env.ts). RATE_LIMIT_MAX/WINDOW are read once at
+// module load in rate-limit.ts, so this reflects the same fixed values.
+const config = getRateLimitConfig();
 
 function ensureEnv() {
   process.env.UPSTASH_REDIS_REST_URL =
@@ -40,7 +37,7 @@ describe("checkRateLimit", () => {
       createSlidingWindowMock({
         maxRequests: config.maxRequests,
         windowMs: config.windowMs,
-      }) as any
+      })
     );
   });
 
@@ -162,7 +159,7 @@ describe("checkRateLimit — error paths", () => {
   });
 
   it("throws ServiceError when Ratelimit.limit() rejects", async () => {
-    __injectRatelimitForTest(createFailingMock() as any);
+    __injectRatelimitForTest(createFailingMock());
 
     await assert.rejects(
       () => checkRateLimit("s", `fail-${Date.now()}`),
@@ -175,16 +172,7 @@ describe("checkRateLimit — error paths", () => {
   });
 
   it("throws ServiceError when limit returns timeout reason", async () => {
-    __injectRatelimitForTest({
-      limit: async () => ({
-        success: true,
-        remaining: 0,
-        reset: 0,
-        limit: 5,
-        pending: Promise.resolve(),
-        reason: "timeout" as const,
-      }),
-    } as any);
+    __injectRatelimitForTest(createTimeoutMock());
 
     await assert.rejects(
       () => checkRateLimit("s", `timeout-${Date.now()}`),

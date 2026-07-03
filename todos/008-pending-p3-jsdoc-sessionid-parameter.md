@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 priority: p3
 issue_id: "008"
 tags: [code-review, documentation, api-design]
@@ -85,3 +85,11 @@ export async function checkRateLimit(
 
 **Learnings:**
 - The file header JSDoc at lines 1-9 already documents this, but it's not visible in IDE tooltips at call sites
+
+### 2026-07-02 - Resolved (Option 1)
+
+**By:** Work execution agent
+
+**Actions:**
+- Added `@param`/`@returns` JSDoc to `checkRateLimit` in `app/api/lib/rate-limit.ts` per the proposed solution.
+- `npm run lint` passes.

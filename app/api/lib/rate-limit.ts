@@ -71,6 +71,14 @@ export function __injectRatelimitForTest(r: RatelimitLike | null): void {
 
 // ---- Public API ----
 
+/**
+ * Check if a request should be rate-limited.
+ *
+ * @param _sessionId Reserved for future per-user rate limiting when auth is added.
+ *                    Currently unused — rate limiting is keyed on `identifier` only.
+ * @param identifier The rate-limit key (currently IP address from x-forwarded-for/x-real-ip).
+ * @returns Rate limit result with allowed/remaining/resetTime.
+ */
 export async function checkRateLimit(
   _sessionId: string,
   identifier: string

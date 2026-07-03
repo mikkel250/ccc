@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 priority: p3
 issue_id: "007"
 tags: [code-review, testing, quality]
@@ -121,3 +121,12 @@ And update the `config.maxRequests` / `config.windowMs` references in test bodie
 **Learnings:**
 - The cross-check test at line 293 mitigates but doesn't eliminate the risk
 - The `config` object pattern is common in test files — it's not necessarily wrong, just duplication-prone
+
+### 2026-07-02 - Resolved (Option 1)
+
+**By:** Work execution agent
+
+**Actions:**
+- Replaced the getter-based `config` object in `tests/rate-limit.test.ts` with `const config = getRateLimitConfig();` — single source of truth, no `parseInt`/env duplication.
+- Safe because `RATE_LIMIT_MAX`/`RATE_LIMIT_WINDOW` are read once at module load in `rate-limit.ts`; no test overrides these vars, so behavior is unchanged.
+- `npm test` passes with identical assertions.
