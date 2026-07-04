@@ -158,7 +158,7 @@ describe("checkRateLimit — error paths", () => {
     resetRedisClientForTest();
   });
 
-  it("throws ServiceError when Ratelimit.limit() rejects", async () => {
+  it("throws ServiceError when Ratelimit.limit() rejects, preserving cause", async () => {
     __injectRatelimitForTest(createFailingMock());
 
     await assert.rejects(
@@ -166,7 +166,9 @@ describe("checkRateLimit — error paths", () => {
       (err: unknown) => {
         return err instanceof Error &&
                err.name === "ServiceError" &&
-               err.message === "Rate limit service unavailable";
+               err.message === "Rate limit service unavailable" &&
+               (err as Error).cause instanceof Error &&
+               ((err as Error).cause as Error).message === "Connection refused";
       }
     );
   });

@@ -28,4 +28,15 @@ describe("ServiceError", () => {
     assert.equal(error.message, message);
     assert.equal(Object.getPrototypeOf(error), ServiceError.prototype);
   });
+
+  it("preserves cause when passed via options", () => {
+    const original = new Error("Connection refused");
+    const error = new ServiceError("Rate limit service unavailable", { cause: original });
+    assert.equal(error.cause, original);
+  });
+
+  it("leaves cause undefined when no options are passed", () => {
+    const error = new ServiceError("Knowledge base file experience.md is empty");
+    assert.equal(error.cause, undefined);
+  });
 });
