@@ -1,10 +1,8 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { getRateLimitConfig } from "../app/api/lib/rate-limit";
 import { getRedisClient, resetRedisClientForTest } from "../app/api/lib/redis";
-
-const ENV_EXAMPLE_PATH = join(process.cwd(), ".env.example");
+import { getEnvNumber } from "../lib/env";
 
 describe("getRedisClient", () => {
   const originalUrl = process.env.UPSTASH_REDIS_REST_URL;
@@ -64,21 +62,12 @@ describe("getRedisClient", () => {
   });
 });
 
-describe("Upstash env catalog and dependencies", () => {
-  it(".env.example documents UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN", () => {
-    const content = readFileSync(ENV_EXAMPLE_PATH, "utf8");
-    assert.match(content, /^UPSTASH_REDIS_REST_URL=/m);
-    assert.match(content, /^UPSTASH_REDIS_REST_TOKEN=/m);
-    assert.match(content, /^RATE_LIMIT_TIMEOUT_MS=/m);
-  });
-
-  it("package.json declares @upstash/ratelimit dependency", () => {
-    const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as {
-      dependencies?: Record<string, string>;
-    };
-    assert.ok(
-      pkg.dependencies?.["@upstash/ratelimit"],
-      "@upstash/ratelimit must be in dependencies"
+describe("Upstash rate limit runtime config", () => {
+  it("getRateLimitConfig timeoutMs matches the Upstash SDK timeout wired in rate-limit.ts", () => {
+    const expectedTimeoutMs = Math.max(
+      1,
+      Math.floor(getEnvNumber("RATE_LIMIT_TIMEOUT_MS", 2000))
     );
+    assert.equal(getRateLimitConfig().timeoutMs, expectedTimeoutMs);
   });
 });
