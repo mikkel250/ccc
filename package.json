@@ -11,7 +11,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "node --import tsx --test tests/**/*.test.ts",
+    "test": "NODE_ENV=test node --import tsx --test tests/**/*.test.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {
@@ -22,6 +22,8 @@
     "@langfuse/tracing": "^5.3.0",
     "@opentelemetry/sdk-node": "^0.217.0",
     "@types/node": "^22.15.0",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.38.0",
     "docx": "^9.5.0",
     "langsmith": "0.6.3",
     "next": "^15.5.7",

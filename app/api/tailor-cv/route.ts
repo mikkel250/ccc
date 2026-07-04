@@ -25,17 +25,25 @@ function isValidIp(value: string): boolean {
 }
 
 function parseClientIp(request: NextRequest): string {
-  const realIp = request.headers.get("x-real-ip");
-  if (realIp?.trim() && TRUSTED_PROXIES.size > 0 && isValidIp(realIp.trim())) {
-    return realIp.trim();
+  const peerIp = request.ip || "unknown";
+
+  if (TRUSTED_PROXIES.size > 0 && TRUSTED_PROXIES.has(peerIp)) {
+    const realIp = request.headers.get("x-real-ip");
+    if (realIp?.trim() && isValidIp(realIp.trim())) {
+      return realIp.trim();
+    }
+
+    const forwarded = request.headers.get("x-forwarded-for");
+    if (forwarded?.trim()) {
+      const leftmost = forwarded.split(",")[0]!.trim();
+      if (leftmost && isValidIp(leftmost)) {
+        return leftmost;
+      }
+    }
   }
 
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded?.trim() && TRUSTED_PROXIES.size > 0) {
-    const leftmost = forwarded.split(",")[0]!.trim();
-    if (leftmost && isValidIp(leftmost)) {
-      return leftmost;
-    }
+  if (isValidIp(peerIp)) {
+    return peerIp;
   }
 
   return "unknown";
@@ -62,8 +70,7 @@ export async function POST(request: NextRequest) {
 
     const { jobDescription, sessionId } = validated;
 
-    const rateLimitKey = `${sessionId}:${ipAddress}`;
-    const rateLimit = await tailorCvDeps.checkRateLimit(rateLimitKey, ipAddress);
+    const rateLimit = await tailorCvDeps.checkRateLimit(sessionId, ipAddress);
     if (!rateLimit.allowed) {
       return NextResponse.json(
         {

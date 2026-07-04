@@ -1,234 +1,118 @@
-import { afterEach, describe, it, mock } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   checkRateLimit,
   getRateLimitConfig,
-  resetStore,
-  getBucketLengthForTest,
-  seedBucketForTest,
-  hasRequestLogEntryForTest,
-  hasIpChainEntryForTest,
-  getPendingPruneTimerCountForTest,
+  __injectRatelimitForTest,
 } from "../app/api/lib/rate-limit";
+import { resetRedisClientForTest } from "../app/api/lib/redis";
 
-afterEach(() => {
-  resetStore();
-});
+import {
+  createSlidingWindowMock,
+  createFailingMock,
+  createTimeoutMock,
+} from "../tests/helpers/rate-limit-mock";
+
+// ---- Helpers ----
+
+// Single source of truth for expected config — avoids duplicating env parsing
+// (see getEnvNumber in lib/env.ts). RATE_LIMIT_MAX/WINDOW are read once at
+// module load in rate-limit.ts, so this reflects the same fixed values.
+const config = getRateLimitConfig();
+
+function ensureEnv() {
+  process.env.UPSTASH_REDIS_REST_URL =
+    process.env.UPSTASH_REDIS_REST_URL || "https://test.upstash.io";
+  process.env.UPSTASH_REDIS_REST_TOKEN =
+    process.env.UPSTASH_REDIS_REST_TOKEN || "test-token";
+}
+
+// ---- Tests ----
 
 describe("checkRateLimit", () => {
+  beforeEach(() => {
+    ensureEnv();
+    resetRedisClientForTest();
+    __injectRatelimitForTest(
+      createSlidingWindowMock({
+        maxRequests: config.maxRequests,
+        windowMs: config.windowMs,
+      })
+    );
+  });
+
+  afterEach(() => {
+    resetRedisClientForTest();
+  });
+
   it("allows first request", async () => {
-    const ip = `first-${Date.now()}`;
-    const result = await checkRateLimit("any-session", ip);
+    const result = await checkRateLimit("any-session", `first-${Date.now()}`);
     assert.equal(result.allowed, true);
     assert.ok(result.remaining > 0);
   });
 
   it("blocks when burst count exceeded", async () => {
-    const ip = `burst-${Date.now()}`;
-    const config = getRateLimitConfig();
+    const identifier = `burst-${Date.now()}`;
     for (let i = 0; i < config.maxRequests; i++) {
-      const r = await checkRateLimit("any-session", ip);
+      const r = await checkRateLimit("any-session", identifier);
       assert.equal(r.allowed, true, `request ${i + 1} should be allowed`);
     }
-    const blocked = await checkRateLimit("any-session", ip);
+    const blocked = await checkRateLimit("any-session", identifier);
     assert.equal(blocked.allowed, false);
     assert.equal(blocked.remaining, 0);
   });
 
-  it("tracks per-IP independently", async () => {
-    const ipA = `ip-a-${Date.now()}`;
-    const ipB = `ip-b-${Date.now()}`;
-    const config = getRateLimitConfig();
+  it("tracks per-identifier independently", async () => {
+    const idA = `ip-a-${Date.now()}`;
+    const idB = `ip-b-${Date.now()}`;
 
     for (let i = 0; i < config.maxRequests; i++) {
-      await checkRateLimit("a", ipA);
+      await checkRateLimit("a", idA);
     }
-    const blockedA = await checkRateLimit("a", ipA);
+    const blockedA = await checkRateLimit("a", idA);
     assert.equal(blockedA.allowed, false);
 
-    const allowedB = await checkRateLimit("b", ipB);
+    const allowedB = await checkRateLimit("b", idB);
     assert.equal(allowedB.allowed, true);
   });
 
-  it("returns a resetTime and message when blocked", async () => {
-    const ip = `blocked-${Date.now()}`;
-    const config = getRateLimitConfig();
+  it("returns resetTime when blocked", async () => {
+    const identifier = `blocked-${Date.now()}`;
     for (let i = 0; i < config.maxRequests; i++) {
-      await checkRateLimit("s", ip);
+      await checkRateLimit("s", identifier);
     }
-    const blocked = await checkRateLimit("s", ip);
+    const blocked = await checkRateLimit("s", identifier);
     assert.equal(blocked.allowed, false);
+    assert.equal(
+      blocked.message,
+      "Too many requests. Please wait before trying again."
+    );
     assert.ok(typeof blocked.resetTime === "number");
-    assert.ok(typeof blocked.message === "string");
+    assert.ok(blocked.resetTime! > Date.now());
   });
 
-  it("accepts default burst window config", () => {
-    const config = getRateLimitConfig();
-    assert.ok(config.maxRequests > 0);
-    assert.ok(config.windowMs > 0);
-  });
+  it("rate limits by identifier regardless of sessionId", async () => {
+    const identifier = `session-ip-${Date.now()}`;
 
-  it("allows requests again after resetStore clears expired state", async () => {
-    const ip = `reset-${Date.now()}`;
-    const config = getRateLimitConfig();
-
-    for (let i = 0; i < config.maxRequests; i++) {
-      await checkRateLimit("any-session", ip);
-    }
-    const blocked = await checkRateLimit("any-session", ip);
-    assert.equal(blocked.allowed, false);
-
-    resetStore();
-
-    const allowed = await checkRateLimit("any-session", ip);
-    assert.equal(allowed.allowed, true);
-  });
-
-  it("rate limits by IP regardless of sessionId", async () => {
-    const ip = `session-ip-${Date.now()}`;
-    const config = getRateLimitConfig();
-
-    const first = await checkRateLimit("session-A", ip);
-    assert.equal(first.allowed, true);
-
-    const second = await checkRateLimit("session-B", ip);
-    assert.equal(second.allowed, true);
+    await checkRateLimit("session-A", identifier);
+    await checkRateLimit("session-B", identifier);
 
     for (let i = 2; i < config.maxRequests; i++) {
-      await checkRateLimit(`session-${i}`, ip);
+      await checkRateLimit(`session-${i}`, identifier);
     }
 
-    const blocked = await checkRateLimit("session-Z", ip);
+    const blocked = await checkRateLimit("session-Z", identifier);
     assert.equal(blocked.allowed, false);
   });
-});
 
-describe("checkRateLimit — idle map pruning", () => {
-  it("drops expired-only requestLog entry when the same IP returns", async () => {
-    resetStore();
-    const config = getRateLimitConfig();
-    const ip = `revisit-${Date.now()}`;
-    const expiredTimestamp = Date.now() - config.windowMs - 1000;
-
-    seedBucketForTest(ip, [expiredTimestamp, expiredTimestamp]);
-    assert.equal(hasRequestLogEntryForTest(ip), true);
-
-    const result = await checkRateLimit("session", ip);
-
-    assert.equal(result.allowed, true);
-    assert.equal(getBucketLengthForTest(ip), 1);
-    assert.ok(getBucketLengthForTest(ip) > 0);
-  });
-
-  it("keeps at most one pending prune timer per IP across burst requests", async () => {
-    resetStore();
-    const ip = `dedup-${Date.now()}`;
-    const config = getRateLimitConfig();
-
-    for (let i = 0; i < config.maxRequests; i++) {
-      await checkRateLimit("session", ip);
-    }
-
-    assert.equal(getPendingPruneTimerCountForTest(ip), 1);
-  });
-
-  it("prunes requestLog and ipChains after the burst window expires without revisit", async () => {
-    resetStore();
-    mock.timers.enable({ apis: ["setTimeout", "Date"] });
-    try {
-      const ip = `idle-${Date.now()}`;
-      const config = getRateLimitConfig();
-
-      await checkRateLimit("session", ip);
-      assert.equal(hasRequestLogEntryForTest(ip), true);
-      assert.equal(hasIpChainEntryForTest(ip), true);
-
-      mock.timers.tick(config.windowMs + 1);
-
-      assert.equal(hasRequestLogEntryForTest(ip), false);
-      assert.equal(hasIpChainEntryForTest(ip), false);
-    } finally {
-      mock.timers.reset();
-    }
-  });
-});
-
-describe("checkRateLimit — per-IP pruning", () => {
-  it("does not prune another IP's expired bucket entries", async () => {
-    resetStore();
-    const config = getRateLimitConfig();
-    const ipA = `prune-a-${Date.now()}`;
-    const ipB = `prune-b-${Date.now()}`;
-    const expiredTimestamp = Date.now() - config.windowMs - 1000;
-
-    seedBucketForTest(ipB, [expiredTimestamp, expiredTimestamp]);
-    const ipBLengthBefore = getBucketLengthForTest(ipB);
-
-    for (let i = 0; i < config.maxRequests; i++) {
-      await checkRateLimit("session", ipA);
-    }
-
-    await checkRateLimit("session", ipA);
-
-    assert.equal(getBucketLengthForTest(ipB), ipBLengthBefore);
-  });
-});
-
-describe("checkRateLimit — accurate resetTime", () => {
-  it("first allowed request: resetTime equals only timestamp + window", async () => {
-    resetStore();
-    const ip = `reset-first-${Date.now()}`;
-    const config = getRateLimitConfig();
-    const before = Date.now();
-
-    const result = await checkRateLimit("s", ip);
-
-    const after = Date.now();
-    assert.equal(result.allowed, true);
-    assert.ok(result.resetTime! >= before + config.windowMs);
-    assert.ok(result.resetTime! <= after + config.windowMs);
-  });
-
-  it("mid-burst allowed request: resetTime uses oldest timestamp, not now + window", async () => {
-    resetStore();
-    const ip = `reset-mid-${Date.now()}`;
-    const config = getRateLimitConfig();
-
-    const first = await checkRateLimit("s", ip);
-    await new Promise((resolve) => setTimeout(resolve, 15));
-    const second = await checkRateLimit("s", ip);
-
-    assert.equal(first.allowed, true);
-    assert.equal(second.allowed, true);
-    assert.equal(second.resetTime, first.resetTime);
-    assert.ok(second.resetTime! < Date.now() + config.windowMs - 5);
-  });
-
-  it("blocked request: resetTime uses oldest timestamp + window", async () => {
-    resetStore();
-    const ip = `reset-blocked-${Date.now()}`;
-    const config = getRateLimitConfig();
-
-    for (let i = 0; i < config.maxRequests; i++) {
-      await checkRateLimit("s", ip);
-    }
-
-    const blocked = await checkRateLimit("s", ip);
-    assert.equal(blocked.allowed, false);
-    assert.ok(blocked.resetTime! <= Date.now() + config.windowMs);
-    assert.ok(blocked.resetTime! >= Date.now());
-  });
-});
-
-describe("checkRateLimit — per-IP promise-chain serialization", () => {
-  it("serializes concurrent same-IP burst so allowed count never exceeds maxRequests", async () => {
-    resetStore();
-    const ip = `concurrent-${Date.now()}`;
-    const config = getRateLimitConfig();
+  it("serializes concurrent same-identifier requests so allowed count never exceeds maxRequests", async () => {
+    const identifier = `concurrent-${Date.now()}`;
     const totalCalls = config.maxRequests + 2;
 
     const results = await Promise.all(
-      Array.from({ length: totalCalls }, () => checkRateLimit("session", ip))
+      Array.from({ length: totalCalls }, () =>
+        checkRateLimit("session", identifier)
+      )
     );
 
     const allowedCount = results.filter((r) => r.allowed).length;
@@ -238,17 +122,19 @@ describe("checkRateLimit — per-IP promise-chain serialization", () => {
     assert.equal(blockedCount, 2);
   });
 
-  it("isolates concurrent requests per IP", async () => {
-    resetStore();
-    const config = getRateLimitConfig();
-    const ipA = `iso-a-${Date.now()}`;
-    const ipB = `iso-b-${Date.now()}`;
+  it("isolates concurrent requests per identifier", async () => {
+    const idA = `iso-a-${Date.now()}`;
+    const idB = `iso-b-${Date.now()}`;
 
     const resultsA = await Promise.all(
-      Array.from({ length: config.maxRequests + 1 }, () => checkRateLimit("s", ipA))
+      Array.from({ length: config.maxRequests + 1 }, () =>
+        checkRateLimit("s", idA)
+      )
     );
     const resultsB = await Promise.all(
-      Array.from({ length: config.maxRequests }, () => checkRateLimit("s", ipB))
+      Array.from({ length: config.maxRequests }, () =>
+        checkRateLimit("s", idB)
+      )
     );
 
     assert.equal(
@@ -258,6 +144,114 @@ describe("checkRateLimit — per-IP promise-chain serialization", () => {
     assert.equal(
       resultsB.filter((r) => r.allowed).length,
       config.maxRequests
+    );
+  });
+});
+
+describe("checkRateLimit — error paths", () => {
+  beforeEach(() => {
+    ensureEnv();
+    resetRedisClientForTest();
+  });
+
+  afterEach(() => {
+    resetRedisClientForTest();
+  });
+
+  it("throws ServiceError when Ratelimit.limit() rejects", async () => {
+    __injectRatelimitForTest(createFailingMock());
+
+    await assert.rejects(
+      () => checkRateLimit("s", `fail-${Date.now()}`),
+      (err: unknown) => {
+        return err instanceof Error &&
+               err.name === "ServiceError" &&
+               err.message === "Rate limit service unavailable";
+      }
+    );
+  });
+
+  it("throws ServiceError when limit returns timeout reason", async () => {
+    __injectRatelimitForTest(createTimeoutMock());
+
+    await assert.rejects(
+      () => checkRateLimit("s", `timeout-${Date.now()}`),
+      (err: unknown) => {
+        return err instanceof Error &&
+               err.name === "ServiceError" &&
+               err.message === "Rate limit service unavailable";
+      }
+    );
+  });
+});
+
+describe("checkRateLimit — missing env vars", () => {
+  beforeEach(() => {
+    __injectRatelimitForTest(null); // Force re-creation, no cached mock
+  });
+
+  afterEach(() => {
+    resetRedisClientForTest();
+    ensureEnv();
+  });
+
+  it("throws when UPSTASH_REDIS_REST_URL is missing", async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+    resetRedisClientForTest();
+    __injectRatelimitForTest(null); // Force re-creation on next call
+
+    await assert.rejects(
+      () => checkRateLimit("s", `missing-url-${Date.now()}`),
+      (err: unknown) => /UPSTASH_REDIS_REST_URL/i.test((err as Error).message)
+    );
+  });
+
+  it("throws when UPSTASH_REDIS_REST_TOKEN is missing", async () => {
+    process.env.UPSTASH_REDIS_REST_URL = "https://test.upstash.io";
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    resetRedisClientForTest();
+    __injectRatelimitForTest(null); // Force re-creation on next call
+
+    await assert.rejects(
+      () => checkRateLimit("s", `missing-token-${Date.now()}`),
+      (err: unknown) => /UPSTASH_REDIS_REST_TOKEN/i.test((err as Error).message)
+    );
+  });
+});
+
+describe("getRateLimitConfig", () => {
+  beforeEach(() => {
+    ensureEnv();
+    resetRedisClientForTest();
+  });
+
+  it("returns maxRequests and windowMs from env", () => {
+    const cfg = getRateLimitConfig();
+    assert.ok(cfg.maxRequests > 0);
+    assert.ok(cfg.windowMs > 0);
+    assert.ok(cfg.timeoutMs > 0);
+    assert.equal(cfg.maxRequests, config.maxRequests);
+    assert.equal(cfg.windowMs, config.windowMs);
+  });
+});
+
+describe("test-only exports", () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+
+  afterEach(() => {
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+  });
+
+  it("__injectRatelimitForTest throws outside test environment", () => {
+    process.env.NODE_ENV = "production";
+    assert.throws(
+      () => __injectRatelimitForTest(null),
+      /only available in the test environment/i
     );
   });
 });

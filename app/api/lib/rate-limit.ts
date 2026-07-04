@@ -1,21 +1,23 @@
 /**
- * In-memory IP burst rate limiter for the tailor-cv endpoint.
+ * Rate limiter backed by Upstash Redis via @upstash/ratelimit SDK.
  *
- * Protects LLM API spend from rapid retries; not a durable per-user quota.
- * `sessionId` is accepted for API compatibility but limiting is keyed on IP.
- * State resets on deploy (stateless MVP). See RATE_LIMIT_* env vars.
- *
- * Concurrent same-IP requests are serialized via a per-IP promise chain.
- * Multi-instance deploys still need Redis INCR/EXPIRE for cross-process atomicity.
+ * Sliding-window IP-burst detection — one Redis INCR/Lua eval per check.
+ * sessionId is accepted for future auth integration; limiting is keyed on
+ * the identifier argument (currently IP from x-forwarded-for / x-real-ip).
+ * State is durable across deploys — lives in Upstash Redis, not process memory.
  */
-import { getEnvNumber } from "../../../lib/env";
+import { Ratelimit } from "@upstash/ratelimit";
+import { ServiceError } from "./errors";
+import { getRedisClient } from "./redis";
+import { getEnvNumber, getEnvString } from "../../../lib/env";
 
-const requestLog = new Map<string, number[]>();
-const ipChains = new Map<string, Promise<void>>();
-const pendingTimerByIp = new Map<string, ReturnType<typeof setTimeout>>();
-
-const BURST_MAX = Math.max(1, Math.floor(getEnvNumber("RATE_LIMIT_MAX", 5)));
-const BURST_WINDOW_MS = Math.max(1, Math.floor(getEnvNumber("RATE_LIMIT_WINDOW", 60000)));
+const RATE_LIMIT_MAX = Math.max(1, Math.floor(getEnvNumber("RATE_LIMIT_MAX", 5)));
+const RATE_LIMIT_WINDOW_MS = Math.max(1, Math.floor(getEnvNumber("RATE_LIMIT_WINDOW", 60000)));
+const RATE_LIMIT_REDIS_PREFIX = getEnvString("RATE_LIMIT_REDIS_PREFIX", "ratelimit") ?? "ratelimit";
+const RATE_LIMIT_TIMEOUT_MS = Math.max(
+  1,
+  Math.floor(getEnvNumber("RATE_LIMIT_TIMEOUT_MS", 2000))
+);
 
 export interface RateLimitResult {
   allowed: boolean;
@@ -24,153 +26,84 @@ export interface RateLimitResult {
   message?: string;
 }
 
-function activeTimestamps(ipAddress: string, now: number): number[] {
-  const windowStart = now - BURST_WINDOW_MS;
-  return (requestLog.get(ipAddress) ?? []).filter((t) => t > windowStart);
-}
-
-function clearPendingPruneTimer(ipAddress: string): void {
-  const timerId = pendingTimerByIp.get(ipAddress);
-  if (timerId !== undefined) {
-    clearTimeout(timerId);
-    pendingTimerByIp.delete(ipAddress);
-  }
-}
-
-// [SHARED-STATE] Drops expired per-IP bucket and chain entries to avoid unbounded map growth.
-function pruneIdleIpState(ipAddress: string, now = Date.now()): void {
-  clearPendingPruneTimer(ipAddress);
-
-  const timestamps = activeTimestamps(ipAddress, now);
-  if (timestamps.length === 0) {
-    if (requestLog.has(ipAddress)) {
-      requestLog.delete(ipAddress);
-      ipChains.delete(ipAddress);
-    }
-    return;
-  }
-
-  const stored = requestLog.get(ipAddress);
-  if (stored && stored.length !== timestamps.length) {
-    requestLog.set(ipAddress, timestamps);
-  }
-
-  scheduleIdlePrune(ipAddress);
-}
-
-// [SHARED-STATE] [SIDE-EFFECT] Schedules in-process cleanup when the current bucket fully expires.
-function scheduleIdlePrune(ipAddress: string): void {
-  if (pendingTimerByIp.has(ipAddress)) {
-    return;
-  }
-
-  const timestamps = requestLog.get(ipAddress);
-  if (!timestamps?.length) {
-    return;
-  }
-
-  const expiresAt = timestamps[0]! + BURST_WINDOW_MS;
-  const delay = expiresAt - Date.now();
-  if (delay <= 0) {
-    pruneIdleIpState(ipAddress);
-    return;
-  }
-
-  const timerId = setTimeout(() => {
-    pendingTimerByIp.delete(ipAddress);
-    pruneIdleIpState(ipAddress);
-  }, delay);
-  pendingTimerByIp.set(ipAddress, timerId);
-}
-
-function checkRateLimitSync(ipAddress: string): RateLimitResult {
-  const now = Date.now();
-  pruneIdleIpState(ipAddress, now);
-
-  const timestamps = activeTimestamps(ipAddress, now);
-  const remaining = Math.max(0, BURST_MAX - timestamps.length);
-
-  if (remaining <= 0) {
-    const stored = requestLog.get(ipAddress);
-    if (stored && stored.length !== timestamps.length) {
-      requestLog.set(ipAddress, timestamps);
-    }
-
-    return {
-      allowed: false,
-      remaining: 0,
-      resetTime: timestamps[0]! + BURST_WINDOW_MS,
-      message: "Too many requests. Please wait before trying again.",
-    };
-  }
-
-  timestamps.push(now);
-  requestLog.set(ipAddress, timestamps);
-
-  return {
-    allowed: true,
-    remaining: remaining - 1,
-    resetTime: timestamps[0]! + BURST_WINDOW_MS,
-  };
-}
-
-export function checkRateLimit(
-  _sessionId: string,
-  ipAddress: string
-): Promise<RateLimitResult> {
-  const previous = ipChains.get(ipAddress) ?? Promise.resolve();
-  const result = previous.then(() => checkRateLimitSync(ipAddress));
-  ipChains.set(
-    ipAddress,
-    result.then(
-      () => {},
-      () => {}
-    )
-  );
-  void result.finally(() => {
-    scheduleIdlePrune(ipAddress);
-  });
-  return result;
-}
-
 export function getRateLimitConfig() {
   return {
-    maxRequests: BURST_MAX,
-    windowMs: BURST_WINDOW_MS,
+    maxRequests: RATE_LIMIT_MAX,
+    windowMs: RATE_LIMIT_WINDOW_MS,
+    timeoutMs: RATE_LIMIT_TIMEOUT_MS,
   };
 }
 
-/** For tests only — resets the in-memory store */
-export function resetStore(): void {
-  for (const timerId of pendingTimerByIp.values()) {
-    clearTimeout(timerId);
+// ---- Ratelimit singleton (lazy, same pattern as redis.ts and llm.ts) ----
+
+type RatelimitLike = Pick<Ratelimit, "limit">;
+
+let ratelimit: RatelimitLike | null = null;
+
+function getRatelimit(): RatelimitLike {
+  if (!ratelimit) {
+    // [SHARED-STATE] Lazy singleton — one Ratelimit instance reused across requests.
+    ratelimit = new Ratelimit({
+      redis: getRedisClient(),
+      limiter: Ratelimit.slidingWindow(
+        RATE_LIMIT_MAX,
+        `${RATE_LIMIT_WINDOW_MS} ms`
+      ),
+      prefix: RATE_LIMIT_REDIS_PREFIX,
+      // SDK default 5s fail-opens (success:true). Bounded timeout + reason check below fails closed.
+      timeout: RATE_LIMIT_TIMEOUT_MS,
+    });
   }
-  pendingTimerByIp.clear();
-  requestLog.clear();
-  ipChains.clear();
+  return ratelimit;
 }
 
-/** For tests only — seed a bucket without going through checkRateLimit */
-export function seedBucketForTest(ipAddress: string, timestamps: number[]): void {
-  requestLog.set(ipAddress, [...timestamps]);
+/**
+ * Inject or reset the Ratelimit singleton for tests.
+ * Pass a mock to replace, or null to force re-creation on next call.
+ * Not part of the runtime API.
+ */
+export function __injectRatelimitForTest(r: RatelimitLike | null): void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("__injectRatelimitForTest is only available in the test environment");
+  }
+  ratelimit = r;
 }
 
-/** For tests only — read current bucket length for an IP */
-export function getBucketLengthForTest(ipAddress: string): number {
-  return requestLog.get(ipAddress)?.length ?? 0;
-}
+// ---- Public API ----
 
-/** For tests only — whether requestLog still tracks an IP */
-export function hasRequestLogEntryForTest(ipAddress: string): boolean {
-  return requestLog.has(ipAddress);
-}
-
-/** For tests only — whether ipChains still tracks an IP */
-export function hasIpChainEntryForTest(ipAddress: string): boolean {
-  return ipChains.has(ipAddress);
-}
-
-/** For tests only — whether a prune timer is pending for an IP */
-export function getPendingPruneTimerCountForTest(ipAddress: string): number {
-  return pendingTimerByIp.has(ipAddress) ? 1 : 0;
+/**
+ * Check if a request should be rate-limited.
+ *
+ * @param _sessionId Reserved for future per-user rate limiting when auth is added.
+ *                    Currently unused — rate limiting is keyed on `identifier` only.
+ * @param identifier The rate-limit key (currently IP address from x-forwarded-for/x-real-ip).
+ * @returns Rate limit result with allowed/remaining/resetTime.
+ */
+export async function checkRateLimit(
+  _sessionId: string,
+  identifier: string
+): Promise<RateLimitResult> {
+  // getRatelimit() is outside the try block — config errors (missing env vars,
+  // invalid SDK parameters) propagate with clear messages rather than being
+  // swallowed by the ServiceError wrapper.
+  const rl = getRatelimit();
+  try {
+    const result = await rl.limit(identifier);
+    if (result.reason === "timeout") {
+      throw new ServiceError("Rate limit service unavailable");
+    }
+    return {
+      allowed: result.success,
+      remaining: result.remaining,
+      resetTime: result.reset,
+      ...(result.success
+        ? {}
+        : { message: "Too many requests. Please wait before trying again." }),
+    };
+  } catch (error) {
+    if (error instanceof ServiceError) {
+      throw error;
+    }
+    throw new ServiceError("Rate limit service unavailable", { cause: error });
+  }
 }

@@ -26,7 +26,8 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── langsmith.ts      # LangSmith tracing (optional)
 │           ├── knowledge-base.ts # Context retrieval (RAG, file-based)
 │           ├── markdown-docx.ts  # Markdown → .docx conversion
-│           ├── rate-limit.ts     # IP-based burst rate limiter
+│           ├── redis.ts          # Shared Upstash Redis client singleton
+│           ├── rate-limit.ts     # IP-based burst rate limiter (Upstash Redis-backed)
 │           ├── tailor-cv-validation.ts  # Request body validation
 │           ├── eval-schema.ts     # Eval scoring dimensions, judge prompts, JUDGE_MAP
 │           ├── eval-extract.ts    # JD metadata extraction for eval stage 1
@@ -54,7 +55,8 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── llm-chat-dispatch.test.ts          # LLM provider routing tests
 │   ├── llm-openrouter.test.ts             # OpenRouter-specific tests
 │   ├── llm-provider-detection.test.ts     # detectProvider() tests
-│   ├── rate-limit.test.ts                 # Rate limiter tests
+│   ├── redis.test.ts                      # Upstash Redis client tests
+│   ├── rate-limit.test.ts                 # Rate limiter tests (mock-based)
 │   ├── markdown-docx.test.ts              # DOCX conversion tests
 │   ├── eslint-config.test.ts              # ESLint config tests
 │   ├── eval-architecture-docs.test.ts     # MODEL_SELECTION.md / .env.example contract tests
