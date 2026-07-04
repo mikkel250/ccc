@@ -79,10 +79,10 @@ describe("POST /api/tailor-cv — request hardening", () => {
     assert.match(json.error, /method not allowed/i);
   });
 
-  it("parses x-forwarded-for to leftmost IP before rate limiting", async () => {
+  it("parses x-forwarded-for using the single entry before rate limiting", async () => {
     const ip = "203.0.113.1";
     const config = getRateLimitConfig();
-    const header = { "x-forwarded-for": `${ip}, 10.0.0.1` };
+    const header = { "x-forwarded-for": ip };
 
     for (let i = 0; i < config.maxRequests; i++) {
       const response = await POST(buildPostRequest(VALID_BODY, header));
@@ -93,23 +93,64 @@ describe("POST /api/tailor-cv — request hardening", () => {
     assert.equal(blocked.status, 429);
   });
 
-  it('uses "unknown" IP when forwarding headers are missing', async () => {
+  it("trusts the rightmost x-forwarded-for entry, not a client-spoofed leftmost value", async () => {
+    const spoofedIp = "10.0.0.1";
+    const realIp = "203.0.113.9";
     const config = getRateLimitConfig();
+    const header = { "x-forwarded-for": `${spoofedIp}, ${realIp}` };
 
     for (let i = 0; i < config.maxRequests; i++) {
-      await POST(buildPostRequest(VALID_BODY));
+      const response = await POST(buildPostRequest(VALID_BODY, header));
+      assert.notEqual(response.status, 429, `request ${i + 1} should not be rate limited yet`);
     }
 
-    const blocked = await POST(buildPostRequest(VALID_BODY));
+    // Exhaust the real (rightmost) identifier's bucket directly to prove
+    // the route keyed on it, not on the spoofed leftmost entry.
+    const blocked = await POST(buildPostRequest(VALID_BODY, header));
     assert.equal(blocked.status, 429);
+
+    // A fresh request claiming the spoofed IP as its *only* entry still has
+    // its own untouched bucket — proving the earlier requests were never
+    // keyed on the spoofed value.
+    const spoofedAlone = await POST(
+      buildPostRequest(VALID_BODY, { "x-forwarded-for": spoofedIp })
+    );
+    assert.notEqual(spoofedAlone.status, 429);
   });
+
+  it("returns 400 when x-forwarded-for is missing", async () => {
+    const response = await POST(buildPostRequest(VALID_BODY));
+    assert.equal(response.status, 400);
+    const json = (await response.json()) as { error: string };
+    assert.equal(json.error, "Cannot determine client IP");
+  });
+
+  it("returns 400 when x-forwarded-for contains no valid IP", async () => {
+    const response = await POST(
+      buildPostRequest(VALID_BODY, { "x-forwarded-for": "not-an-ip" })
+    );
+    assert.equal(response.status, 400);
+    const json = (await response.json()) as { error: string };
+    assert.equal(json.error, "Cannot determine client IP");
+  });
+
+  it("does not consume a rate-limit check when the IP cannot be determined", async () => {
+    const checkRateLimitSpy = mock.method(tailorCvDeps, "checkRateLimit");
+
+    const response = await POST(buildPostRequest(VALID_BODY));
+
+    assert.equal(response.status, 400);
+    assert.equal(checkRateLimitSpy.mock.callCount(), 0);
+  });
+
+  const XFF = { "x-forwarded-for": "198.51.100.42" };
 
   it("returns 429 when RateLimitError is thrown", async () => {
     mock.method(tailorCvDeps, "checkRateLimit", async () => {
       throw new RateLimitError("Too many requests. Please wait before trying again.");
     });
 
-    const response = await POST(buildPostRequest(VALID_BODY));
+    const response = await POST(buildPostRequest(VALID_BODY, XFF));
     assert.equal(response.status, 429);
     const json = (await response.json()) as { error: string };
     assert.match(json.error, /too many requests/i);
@@ -118,7 +159,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
   it("returns 503 when rate limit ServiceError is thrown", async () => {
     __injectRatelimitForTest(createFailingMock());
 
-    const response = await POST(buildPostRequest(VALID_BODY));
+    const response = await POST(buildPostRequest(VALID_BODY, XFF));
     assert.equal(response.status, 503);
     const json = (await response.json()) as { error: string };
     assert.match(json.error, /rate limit service unavailable/i);
@@ -129,7 +170,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
       throw new ServiceError("Knowledge base file experience.md is missing or unreadable");
     });
 
-    const response = await POST(buildPostRequest(VALID_BODY));
+    const response = await POST(buildPostRequest(VALID_BODY, XFF));
     assert.equal(response.status, 503);
     const json = (await response.json()) as { error: string };
     assert.match(json.error, /knowledge base|unavailable|service/i);
@@ -140,7 +181,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
       throw new Error("Rate limit policy document is outdated");
     });
 
-    const response = await POST(buildPostRequest(VALID_BODY));
+    const response = await POST(buildPostRequest(VALID_BODY, XFF));
     assert.equal(response.status, 500);
     const json = (await response.json()) as { error: string };
     assert.match(json.error, /internal server error/i);
@@ -151,7 +192,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
       throw new Error("unexpected failure");
     });
 
-    const response = await POST(buildPostRequest(VALID_BODY));
+    const response = await POST(buildPostRequest(VALID_BODY, XFF));
     assert.equal(response.status, 500);
   });
 
