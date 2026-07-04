@@ -46,8 +46,7 @@ function ensureEnv() {
 
 describe("POST /api/tailor-cv — request hardening", () => {
   beforeEach(() => {
-    process.env.UPSTASH_REDIS_REST_URL = "https://test.upstash.io";
-    process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+    ensureEnv();
     resetRedisClientForTest();
     injectSlidingWindowMock();
   });

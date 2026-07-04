@@ -11,7 +11,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "NODE_ENV=test node --import tsx --test tests/**/*.test.ts",
+    "test": "node --import ./tests/set-node-env-test.mjs --import tsx --test tests/**/*.test.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {
