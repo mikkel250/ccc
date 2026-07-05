@@ -242,6 +242,20 @@ describe("POST /api/tailor-cv — request hardening", () => {
     assert.equal(response.status, 500);
   });
 
+  it("ServiceError takes precedence over the generic LLM-service mask even when its message would also match isLlmServiceError", async () => {
+    // Table-ordering regression: ServiceError is checked before the generic
+    // isLlmServiceError branch, so its raw message must still surface even
+    // when the message text itself contains an LLM-service keyword.
+    mock.method(tailorCvDeps, "getAllContext", () => {
+      throw new ServiceError("openai knowledge base sync unavailable");
+    });
+
+    const response = await POST(buildPostRequest(VALID_BODY, XFF));
+    assert.equal(response.status, 503);
+    const json = (await response.json()) as { error: string };
+    assert.equal(json.error, "openai knowledge base sync unavailable");
+  });
+
   describe("happy path with mocked pipeline", () => {
     beforeEach(() => {
       mockTailorPipelineSuccess();

@@ -123,28 +123,50 @@ export async function POST(request: NextRequest) {
       console.error("Tailor CV API error (non-Error thrown):", String(error));
     }
 
-    if (error instanceof RateLimitError) {
-      return NextResponse.json({ error: error.message }, { status: 429 });
-    }
-
-    if (error instanceof ServiceError) {
-      return NextResponse.json({ error: error.message }, { status: 503 });
-    }
-
-    const message = error instanceof Error ? error.message : String(error);
-
-    if (tailorCvDeps.isLlmServiceError(message)) {
-      return NextResponse.json(
-        { error: "AI service error. Please try again." },
-        { status: 503 }
-      );
-    }
-
-    return NextResponse.json(
-      { error: "Internal server error. Please try again later." },
-      { status: 500 }
-    );
+    return mapErrorToResponse(error);
   }
+}
+
+/**
+ * Maps a caught error to its HTTP response. Table-driven (checked top to
+ * bottom, first match wins) so the security-sensitive decision — which
+ * errors get their raw `.message` forwarded to the client vs. masked with a
+ * generic string — is auditable in one place instead of interleaved `if`s.
+ */
+const ERROR_RESPONSES: Array<{
+  matches: (error: unknown) => boolean;
+  status: number;
+  body: (error: unknown) => { error: string };
+}> = [
+  {
+    matches: (error) => error instanceof RateLimitError,
+    status: 429,
+    body: (error) => ({ error: (error as Error).message }),
+  },
+  {
+    matches: (error) => error instanceof ServiceError,
+    status: 503,
+    body: (error) => ({ error: (error as Error).message }),
+  },
+  {
+    matches: (error) =>
+      tailorCvDeps.isLlmServiceError(
+        error instanceof Error ? error.message : String(error)
+      ),
+    status: 503,
+    body: () => ({ error: "AI service error. Please try again." }),
+  },
+];
+
+function mapErrorToResponse(error: unknown) {
+  const entry = ERROR_RESPONSES.find((candidate) => candidate.matches(error));
+  if (entry) {
+    return NextResponse.json(entry.body(error), { status: entry.status });
+  }
+  return NextResponse.json(
+    { error: "Internal server error. Please try again later." },
+    { status: 500 }
+  );
 }
 
 export async function GET() {
