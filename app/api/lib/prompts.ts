@@ -1,7 +1,6 @@
 /**
  * Shared prompt utilities for the legacy chat bot.
  *
- * Query classifiers (isSkillQuery, etc.) drive getRelevantContext() file selection.
  * buildChatSystemPrompt() compiles Langfuse or fallback chat prompts with KB context.
  * Not on the tailor-cv production path — see docs/arch/APP_WALKTHROUGH.md.
  */

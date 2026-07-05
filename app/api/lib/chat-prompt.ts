@@ -1,8 +1,7 @@
 /**
  * Legacy chat system prompt for the portfolio recruiting assistant.
  * Not used by POST /api/tailor-cv. Would back a future /api/chat route together
- * with prompts.ts (query classification) and getRelevantContext() (RAG).
- * This specific prompt is for the Gemini 2.5 Pro model
+ * with prompts.ts. This specific prompt is for the Gemini 2.5 Pro model.
  */
 
 export const CHAT_SYSTEM_PROMPT = `# Internal Reasoning Chain [PROCESS SILENTLY BEFORE EACH RESPONSE]
