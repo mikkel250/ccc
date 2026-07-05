@@ -7,6 +7,7 @@
  */
 export const runtime = "nodejs";
 
+import { isIP } from "node:net";
 import { NextRequest, NextResponse } from "next/server";
 import { validateTailorCvBody } from "../lib/tailor-cv-validation";
 import { getTailorModel } from "../../../lib/env";
@@ -15,9 +16,7 @@ import { tailorCvDeps } from "../lib/tailor-cv-deps";
 
 function isValidIp(value: string): boolean {
   if (value.length > 45) return false;
-  const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
-  const ipv6Regex = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/;
-  return ipv4Regex.test(value) || ipv6Regex.test(value);
+  return isIP(value) !== 0;
 }
 
 /**
@@ -33,14 +32,14 @@ function isValidIp(value: string): boolean {
  */
 function parseClientIp(request: NextRequest): string {
   const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded?.trim()) {
-    const entries = forwarded.split(",").map(s => s.trim()).filter(Boolean);
-    const rightmost = entries[entries.length - 1];
-    if (rightmost && isValidIp(rightmost)) {
-      return rightmost;
-    }
-  }
+  if (!forwarded?.trim()) return "unknown";
 
+  const entries = forwarded.split(",");
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i]!.trim();
+    if (!entry) continue;
+    return isValidIp(entry) ? entry : "unknown";
+  }
   return "unknown";
 }
 

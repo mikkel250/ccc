@@ -37,6 +37,25 @@ function injectSlidingWindowMock() {
   );
 }
 
+function mockTailorPipelineSuccess() {
+  mock.method(tailorCvDeps, "getAllContext", () => "KB context for tailoring.");
+  mock.method(tailorCvDeps, "getCvPrompt", async () => ({
+    systemPrompt: "Tailor CV with {{CONTEXT}}",
+    langfusePrompt: { name: "cv-tailor-system", version: 1, isFallback: true },
+  }));
+  mock.method(tailorCvDeps, "compileCvPrompt", (prompt: string, context: string) =>
+    prompt.replace("{{CONTEXT}}", context)
+  );
+  mock.method(tailorCvDeps, "chat", async () => ({
+    content: "# Contact Information\nTest\n\n# Relevant Accomplishments\n- Built apps",
+    usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+    model: "anthropic/sonnet",
+    finishReason: "stop",
+  }));
+  mock.method(tailorCvDeps, "isLlmServiceError", () => false);
+  mock.method(tailorCvDeps, "markdownToDocxBase64", async () => "dGVzdC1jdg==");
+}
+
 function ensureEnv() {
   process.env.UPSTASH_REDIS_REST_URL =
     process.env.UPSTASH_REDIS_REST_URL || "https://test.upstash.io";
@@ -87,13 +106,14 @@ describe("POST /api/tailor-cv — request hardening", () => {
   });
 
   it("parses x-forwarded-for using the single entry before rate limiting", async () => {
+    mockTailorPipelineSuccess();
     const ip = "203.0.113.1";
     const config = getRateLimitConfig();
     const header = { "x-forwarded-for": ip };
 
     for (let i = 0; i < config.maxRequests; i++) {
       const response = await POST(buildPostRequest(VALID_BODY, header));
-      assert.notEqual(response.status, 429, `request ${i + 1} should not be rate limited yet`);
+      assert.equal(response.status, 200, `request ${i + 1} should succeed before limit`);
     }
 
     const blocked = await POST(buildPostRequest(VALID_BODY, header));
@@ -101,6 +121,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
   });
 
   it("trusts the rightmost x-forwarded-for entry, not a client-spoofed leftmost value", async () => {
+    mockTailorPipelineSuccess();
     const spoofedIp = "10.0.0.1";
     const realIp = "203.0.113.9";
     const config = getRateLimitConfig();
@@ -108,7 +129,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
 
     for (let i = 0; i < config.maxRequests; i++) {
       const response = await POST(buildPostRequest(VALID_BODY, header));
-      assert.notEqual(response.status, 429, `request ${i + 1} should not be rate limited yet`);
+      assert.equal(response.status, 200, `request ${i + 1} should succeed before limit`);
     }
 
     // Exhaust the real (rightmost) identifier's bucket directly to prove
@@ -122,7 +143,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
     const spoofedAlone = await POST(
       buildPostRequest(VALID_BODY, { "x-forwarded-for": spoofedIp })
     );
-    assert.notEqual(spoofedAlone.status, 429);
+    assert.equal(spoofedAlone.status, 200);
   });
 
   it("returns 400 when x-forwarded-for is missing", async () => {
@@ -135,6 +156,24 @@ describe("POST /api/tailor-cv — request hardening", () => {
   it("returns 400 when x-forwarded-for contains no valid IP", async () => {
     const response = await POST(
       buildPostRequest(VALID_BODY, { "x-forwarded-for": "not-an-ip" })
+    );
+    assert.equal(response.status, 400);
+    const json = (await response.json()) as { error: string };
+    assert.equal(json.error, "Cannot determine client IP");
+  });
+
+  it("returns 400 when x-forwarded-for has out-of-range IPv4 octets", async () => {
+    const response = await POST(
+      buildPostRequest(VALID_BODY, { "x-forwarded-for": "999.999.999.999" })
+    );
+    assert.equal(response.status, 400);
+    const json = (await response.json()) as { error: string };
+    assert.equal(json.error, "Cannot determine client IP");
+  });
+
+  it("returns 400 when the rightmost x-forwarded-for entry is invalid even if an earlier hop is valid", async () => {
+    const response = await POST(
+      buildPostRequest(VALID_BODY, { "x-forwarded-for": "198.51.100.42, not-an-ip" })
     );
     assert.equal(response.status, 400);
     const json = (await response.json()) as { error: string };
@@ -205,22 +244,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
 
   describe("happy path with mocked pipeline", () => {
     beforeEach(() => {
-      mock.method(tailorCvDeps, "getAllContext", () => "KB context for tailoring.");
-      mock.method(tailorCvDeps, "getCvPrompt", async () => ({
-        systemPrompt: "Tailor CV with {{CONTEXT}}",
-        langfusePrompt: { name: "cv-tailor-system", version: 1, isFallback: true },
-      }));
-      mock.method(tailorCvDeps, "compileCvPrompt", (prompt: string, context: string) =>
-        prompt.replace("{{CONTEXT}}", context)
-      );
-      mock.method(tailorCvDeps, "chat", async () => ({
-        content: "# Contact Information\nTest\n\n# Relevant Accomplishments\n- Built apps",
-        usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-        model: "anthropic/sonnet",
-        finishReason: "stop",
-      }));
-      mock.method(tailorCvDeps, "isLlmServiceError", () => false);
-      mock.method(tailorCvDeps, "markdownToDocxBase64", async () => "dGVzdC1jdg==");
+      mockTailorPipelineSuccess();
     });
 
     it("returns 200 with base64 CV, remaining, and resetTime", async () => {
