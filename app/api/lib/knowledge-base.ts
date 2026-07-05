@@ -157,8 +157,16 @@ export function getRelevantContext(query: string): string {
   return contexts.filter(context => context.length > 0).join('\n\n--\n\n');
 }
 
+// KB files are static markdown that never change at runtime. Cache the joined
+// result to eliminate 5 sync fs.readFileSync calls per POST /api/tailor-cv.
+// The cache is invalidated only by resetKnowledgeBaseCacheForTest() (tests) or
+// by container recycle (deploy) — the same lifetime as the file contents.
+let cachedAllContext: string | null = null;
+
 /** MVP path: load every KB file into the CV prompt. ~50–60k tokens, no selective RAG. */
 export function getAllContext(): string {
+  if (cachedAllContext !== null) return cachedAllContext;
+
   const fileNames = [
     KB_CONFIG.files.experience,
     KB_CONFIG.files.projects,
@@ -168,7 +176,20 @@ export function getAllContext(): string {
   ];
 
   const contexts = fileNames.map((fileName) => loadKBFileStrict(fileName));
-  return contexts.join('\n\n--\n\n');
+  const joined = contexts.join('\n\n--\n\n');
+  cachedAllContext = joined;
+  return joined;
+}
+
+/**
+ * Clears the in-memory KB cache. Test-only — production callers must not use this;
+ * the cache lifetime is intentionally tied to the container lifetime.
+ */
+export function resetKnowledgeBaseCacheForTest(): void {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error('resetKnowledgeBaseCacheForTest is only available in the test environment');
+  }
+  cachedAllContext = null;
 }
 
 export function extractJobTitle(query: string): string | null {

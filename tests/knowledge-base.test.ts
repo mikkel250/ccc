@@ -1,7 +1,7 @@
-import { describe, it, mock, afterEach } from "node:test";
+import { describe, it, mock, afterEach, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { getAllContext } from "../app/api/lib/knowledge-base";
+import { getAllContext, resetKnowledgeBaseCacheForTest } from "../app/api/lib/knowledge-base";
 import { ServiceError } from "../app/api/lib/errors";
 
 const REQUIRED_FILES = [
@@ -35,8 +35,13 @@ function mockKbFiles(
 }
 
 describe("getAllContext — KB fail-fast", () => {
+  beforeEach(() => {
+    resetKnowledgeBaseCacheForTest();
+  });
+
   afterEach(() => {
     mock.restoreAll();
+    resetKnowledgeBaseCacheForTest();
   });
 
   for (const missingFile of REQUIRED_FILES) {
@@ -99,5 +104,25 @@ describe("getAllContext — KB fail-fast", () => {
     assert.match(context, /Career pivot/);
     assert.match(context, /This API/);
     assert.ok(context.includes("--"));
+  });
+
+  it("caches the joined KB across repeated calls (no fs reads on the second call)", () => {
+    mockKbFiles({
+      "experience.md": "# Experience\nBuilt platforms.",
+      "projects.md": "# Projects\nSide projects.",
+      "skills.md": "# Skills\nTypeScript.",
+      "career-story.md": "# Story\nCareer pivot.",
+      "meta-project.md": "# Meta\nThis API.",
+    });
+
+    const first = getAllContext();
+    const readMock = fs.readFileSync as unknown as { mock: { callCount: () => number } };
+    const callsAfterFirst = readMock.mock.callCount();
+    assert.ok(callsAfterFirst >= 5, "first call reads every required KB file");
+
+    const second = getAllContext();
+    const callsAfterSecond = readMock.mock.callCount();
+    assert.equal(second, first, "cached context matches");
+    assert.equal(callsAfterSecond, callsAfterFirst, "second call performs zero fs reads");
   });
 });

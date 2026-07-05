@@ -169,6 +169,57 @@ function formatMessages(
   });
 }
 
+/**
+ * Shared OpenAI-compatible call. All three OpenAI-shape providers (OpenAI,
+ * OpenRouter, DeepSeek) hit `client.chat.completions.create` with the same
+ * body shape and normalize the same response fields. The deltas are entirely
+ * (a) which client to use, (b) which label to attach to the "no response"
+ * error message, and (c) whether to append `service_tier`.
+ *
+ * Keeping the three public functions as thin wrappers preserves their
+ * external signatures (used by tests and internal dispatchers).
+ */
+async function callOpenAICompatible(
+  client: OpenAI,
+  providerLabel: string,
+  messages: Omit<ChatMessage, 'role'>[] | ChatMessage[],
+  systemPrompt: string,
+  model: string,
+  temperature: number,
+  maxTokens: number,
+  extraCreateParams?: Record<string, unknown>,
+): Promise<ChatResponse> {
+  const formattedMessages = formatMessages(messages);
+  const fullMessages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    ...formattedMessages,
+  ];
+
+  const response = await client.chat.completions.create({
+    model,
+    messages: fullMessages,
+    temperature,
+    max_tokens: maxTokens,
+    ...extraCreateParams,
+  });
+
+  const choice = response.choices[0];
+  if (!choice || !choice.message) {
+    throw new Error(`No response from ${providerLabel}`);
+  }
+
+  return {
+    content: choice.message.content || '',
+    usage: {
+      promptTokens: response.usage?.prompt_tokens || 0,
+      completionTokens: response.usage?.completion_tokens || 0,
+      totalTokens: response.usage?.total_tokens || 0,
+    },
+    model: response.model,
+    finishReason: choice.finish_reason,
+  };
+}
+
 async function callOpenAI(
   messages: Omit<ChatMessage, 'role'>[] | ChatMessage[],
   systemPrompt: string,
@@ -183,34 +234,15 @@ async function callOpenAI(
 
   if (!model) throw new Error('model is required for callOpenAI');
 
-  const formattedMessages = formatMessages(messages);
-  const fullMessages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt },
-    ...formattedMessages,
-  ];
-
-  const response = await getOpenAI(options).chat.completions.create({
+  return callOpenAICompatible(
+    getOpenAI(options),
+    'OpenAI',
+    messages,
+    systemPrompt,
     model,
-    messages: fullMessages,
     temperature,
-    max_tokens: maxTokens,
-  });
-
-  const choice = response.choices[0];
-  if (!choice || !choice.message) {
-    throw new Error('No response from OpenAI');
-  }
-
-  return {
-    content: choice.message.content || '',
-    usage: {
-      promptTokens: response.usage?.prompt_tokens || 0,
-      completionTokens: response.usage?.completion_tokens || 0,
-      totalTokens: response.usage?.total_tokens || 0,
-    },
-    model: response.model,
-    finishReason: choice.finish_reason,
-  };
+    maxTokens,
+  );
 }
 
 export async function callOpenRouter(
@@ -233,36 +265,16 @@ export async function callOpenRouter(
 
   if (!model) throw new Error('model is required for callOpenRouter');
 
-  const formattedMessages = formatMessages(messages);
-  const fullMessages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt },
-    ...formattedMessages,
-  ];
-
-  const client = clientOverride ?? getOpenRouter(options);
-  const response = await client.chat.completions.create({
+  return callOpenAICompatible(
+    clientOverride ?? getOpenRouter(options),
+    'OpenRouter',
+    messages,
+    systemPrompt,
     model,
-    messages: fullMessages,
     temperature,
-    max_tokens: maxTokens,
-    ...(openRouterFlex ? { service_tier: 'flex' as const } : {}),
-  });
-
-  const choice = response.choices[0];
-  if (!choice || !choice.message) {
-    throw new Error('No response from OpenRouter');
-  }
-
-  return {
-    content: choice.message.content || '',
-    usage: {
-      promptTokens: response.usage?.prompt_tokens || 0,
-      completionTokens: response.usage?.completion_tokens || 0,
-      totalTokens: response.usage?.total_tokens || 0,
-    },
-    model: response.model,
-    finishReason: choice.finish_reason,
-  };
+    maxTokens,
+    openRouterFlex ? { service_tier: 'flex' as const } : undefined,
+  );
 }
 
 export async function callDeepSeek(
@@ -279,35 +291,19 @@ export async function callDeepSeek(
 
   if (!model) throw new Error('model is required for callDeepSeek');
 
+  // Idempotent double-strip: dispatchProvider already strips, but the exported
+  // callDeepSeek is also invoked directly from tests where the prefix may remain.
   const apiModel = stripProviderPrefix(model, 'deepseek');
-  const formattedMessages = formatMessages(messages);
-  const fullMessages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt },
-    ...formattedMessages,
-  ];
 
-  const response = await getDeepSeek(options).chat.completions.create({
-    model: apiModel,
-    messages: fullMessages,
+  return callOpenAICompatible(
+    getDeepSeek(options),
+    'DeepSeek',
+    messages,
+    systemPrompt,
+    apiModel,
     temperature,
-    max_tokens: maxTokens,
-  });
-
-  const choice = response.choices[0];
-  if (!choice || !choice.message) {
-    throw new Error('No response from DeepSeek');
-  }
-
-  return {
-    content: choice.message.content || '',
-    usage: {
-      promptTokens: response.usage?.prompt_tokens || 0,
-      completionTokens: response.usage?.completion_tokens || 0,
-      totalTokens: response.usage?.total_tokens || 0,
-    },
-    model: response.model,
-    finishReason: choice.finish_reason,
-  };
+    maxTokens,
+  );
 }
 
 type AnthropicModelAlias = keyof typeof anthropicModels;
@@ -362,8 +358,11 @@ async function resolveLatestModelId(
       resolvedModelCache.set(family, { id: resolved, ts: Date.now() });
       return resolved;
     }
-  } catch {
-    // API unavailable — use stale cache if we have one, else fallback
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `Anthropic models.list() failed for family "${family}"; using ${cached ? 'stale cache' : 'pinned fallback'}. Reason: ${message}`,
+    );
   }
 
   if (cached) return cached.id;
@@ -562,24 +561,33 @@ export async function chat(
 
     return response;
   } catch (error: unknown) {
-    const err = error as { message?: string };
-    const errorMessage = err.message || 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : String(error);
     console.log(`${provider} failed:`, errorMessage);
 
-    traceLLMCall(provider, model, messages as ChatMessage[], systemPrompt, {
+    const errorResponse: ChatResponse = {
       content: `Error: ${errorMessage}`,
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
       model,
       finishReason: null,
-    } as ChatResponse, startTime, options)
+    };
+
+    // LangSmith trace is fire-and-forget (matches success path).
+    traceLLMCall(provider, model, messages as ChatMessage[], systemPrompt, errorResponse, startTime, options)
       .catch(traceErr => console.error('Tracing error (LangSmith):', traceErr));
-    traceLLMCallLangFuse(provider, model, messages as ChatMessage[], systemPrompt, {
-      content: `Error: ${errorMessage}`,
-      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+
+    // Langfuse trace MUST be awaited so `flushLangfuseTraces()` (exportMode: "immediate")
+    // completes before the serverless container is frozen. Without the await, error
+    // traces vanish on cold-start containers even though the success path persists them.
+    await traceLLMCallLangFuse(
+      provider,
       model,
-      finishReason: null,
-    } as ChatResponse, startTime, options)
-      .catch(traceErr => console.error('Tracing error (Langfuse):', traceErr));
+      messages as ChatMessage[],
+      systemPrompt,
+      errorResponse,
+      startTime,
+      options,
+      options.langfusePrompt ?? null,
+    ).catch(traceErr => console.error('Tracing error (Langfuse):', traceErr));
 
     throw error;
   }

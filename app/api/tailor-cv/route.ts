@@ -109,7 +109,19 @@ export async function POST(request: NextRequest) {
       resetTime: rateLimit.resetTime,
     });
   } catch (error: unknown) {
-    console.error("Tailor CV API error:", error);
+    // Log only name/message/stack. Provider SDKs (OpenAI, Anthropic, Upstash) often
+    // attach `request`, `response`, `config`, and header objects to their thrown
+    // Errors; dumping the raw error can leak Authorization headers, request bodies,
+    // or PII into logs. Stringify the safe subset explicitly.
+    if (error instanceof Error) {
+      console.error("Tailor CV API error:", {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+      });
+    } else {
+      console.error("Tailor CV API error (non-Error thrown):", String(error));
+    }
 
     if (error instanceof RateLimitError) {
       return NextResponse.json({ error: error.message }, { status: 429 });

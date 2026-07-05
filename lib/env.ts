@@ -104,7 +104,13 @@ function getProviderRegistry(): Set<string> {
   try {
     const llmModule = require('../app/api/lib/llm') as { KNOWN_PROVIDERS?: unknown };
     registry = sanitizeProviderRegistry(llmModule?.KNOWN_PROVIDERS);
-  } catch {
+  } catch (error) {
+    // Circular-import fallback: llm.ts imports env.ts, so during partial init
+    // require() may throw or return an empty exports object. This is expected
+    // behavior — we degrade to the env-derived fallback below — but the error
+    // itself is worth surfacing once so operators can spot genuine misconfig.
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[env] KNOWN_PROVIDERS require failed, using env-derived provider fallback: ${message}`);
     registry = null;
   }
 
