@@ -8,7 +8,7 @@ import path from "node:path";
 import { getCvPromptFallbackText, compileCvPrompt } from "../app/api/lib/cv-prompt";
 import { getAllContext as getAllContextDefault } from "../app/api/lib/knowledge-base";
 import { chat, type ChatMessage, type ChatResponse } from "../app/api/lib/llm";
-import { initLangFuse } from "../app/api/lib/langfuse";
+import { initLangFuse } from "../app/api/lib/tracers/langfuse";
 import type { Evaluation } from "@langfuse/client";
 import { flushLangfuseTraces } from "../app/api/lib/langfuse-otel";
 import { validateGenerationModels } from "../app/api/lib/eval-model-validation";

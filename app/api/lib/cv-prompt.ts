@@ -8,7 +8,7 @@
  */
 
 import { LangfuseClient } from "@langfuse/client";
-import { initLangFuse } from "./langfuse";
+import { initLangFuse } from "./tracers/langfuse";
 
 // Hardcoded fallback (kept in sync with the Langfuse prompt "cv-tailor-system")
 const FALLBACK_PROMPT = `<role>

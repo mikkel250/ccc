@@ -9,8 +9,7 @@
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
-import { traceLLMCall } from './langsmith';
-import { traceLLMCall as traceLLMCallLangFuse, type LangfusePromptRef } from './langfuse';
+import { recordLangSmithTrace, recordLangfuseTrace, type LangfusePromptRef } from './tracers';
 import { getDeepSeekBaseUrl, getEnvNumber, getLLMConfig, getDefaultLlmModel } from '../../../lib/env';
 import { KNOWN_PROVIDERS, type Provider } from '../../../lib/providers';
 import anthropicModels from '../../../config/anthropic-models.json';
@@ -547,18 +546,25 @@ export async function chat(
       model,
     });
 
-    traceLLMCall(provider, model, messages as ChatMessage[], systemPrompt, response, startTime, options)
-      .catch(err => console.error('Tracing error (LangSmith):', err));
-    await traceLLMCallLangFuse(
+    recordLangSmithTrace({
       provider,
       model,
-      messages as ChatMessage[],
+      messages: messages as ChatMessage[],
       systemPrompt,
       response,
       startTime,
       options,
-      options.langfusePrompt ?? null
-    ).catch(err => console.error('Tracing error (Langfuse):', err));
+    });
+    await recordLangfuseTrace({
+      provider,
+      model,
+      messages: messages as ChatMessage[],
+      systemPrompt,
+      response,
+      startTime,
+      options,
+      langfusePrompt: options.langfusePrompt ?? null,
+    });
 
     return response;
   } catch (error: unknown) {
@@ -573,22 +579,29 @@ export async function chat(
     };
 
     // LangSmith trace is fire-and-forget (matches success path).
-    traceLLMCall(provider, model, messages as ChatMessage[], systemPrompt, errorResponse, startTime, options)
-      .catch(traceErr => console.error('Tracing error (LangSmith):', traceErr));
+    recordLangSmithTrace({
+      provider,
+      model,
+      messages: messages as ChatMessage[],
+      systemPrompt,
+      response: errorResponse,
+      startTime,
+      options,
+    });
 
     // Langfuse trace MUST be awaited so `flushLangfuseTraces()` (exportMode: "immediate")
     // completes before the serverless container is frozen. Without the await, error
     // traces vanish on cold-start containers even though the success path persists them.
-    await traceLLMCallLangFuse(
+    await recordLangfuseTrace({
       provider,
       model,
-      messages as ChatMessage[],
+      messages: messages as ChatMessage[],
       systemPrompt,
-      errorResponse,
+      response: errorResponse,
       startTime,
       options,
-      options.langfusePrompt ?? null,
-    ).catch(traceErr => console.error('Tracing error (Langfuse):', traceErr));
+      langfusePrompt: options.langfusePrompt ?? null,
+    });
 
     throw error;
   }
