@@ -12,7 +12,12 @@ import { GoogleGenAI } from '@google/genai';
 import { traceLLMCall } from './langsmith';
 import { traceLLMCall as traceLLMCallLangFuse, type LangfusePromptRef } from './langfuse';
 import { getDeepSeekBaseUrl, getEnvNumber, getLLMConfig, getDefaultLlmModel } from '../../../lib/env';
+import { KNOWN_PROVIDERS, type Provider } from '../../../lib/providers';
 import anthropicModels from '../../../config/anthropic-models.json';
+
+// Re-exported for backward compatibility — llm.ts was the historical home of
+// the provider registry; see lib/providers.ts for why it moved to a leaf module.
+export { KNOWN_PROVIDERS, type Provider };
 
 export const LLM_CONFIG = getLLMConfig();
 
@@ -49,10 +54,6 @@ export interface ChatOptions {
   /** Test-only: inject Anthropic client */
   anthropicClient?: Anthropic;
 }
-
-export type Provider = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'deepseek';
-
-export const KNOWN_PROVIDERS = new Set<Provider>(['openai', 'anthropic', 'google', 'openrouter', 'deepseek']);
 
 let openaiClient: OpenAI | null = null;
 let anthropicClient: Anthropic | null = null;
