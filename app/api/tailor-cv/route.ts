@@ -9,13 +9,9 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { validateTailorCvBody } from "../lib/tailor-cv-validation";
-import { getTailorModel, getEnvString } from "../../../lib/env";
+import { getTailorModel } from "../../../lib/env";
 import { RateLimitError, ServiceError } from "../lib/errors";
 import { tailorCvDeps } from "../lib/tailor-cv-deps";
-
-const TRUSTED_PROXIES = new Set(
-  (getEnvString("TRUSTED_PROXIES", "") || "").split(",").map(s => s.trim()).filter(Boolean)
-);
 
 function isValidIp(value: string): boolean {
   if (value.length > 45) return false;
@@ -24,26 +20,25 @@ function isValidIp(value: string): boolean {
   return ipv4Regex.test(value) || ipv6Regex.test(value);
 }
 
+/**
+ * Resolve the client IP from `x-forwarded-for`.
+ *
+ * `NextRequest.ip`/`.geo` were removed in Next.js 15 and have no
+ * hosting-agnostic replacement; a Route Handler has no way to inspect the
+ * raw connecting-peer address on Railway (no `@vercel/functions` here).
+ * The rightmost entry is trusted because it is the one *our own* edge proxy
+ * appends when forwarding — true whether Railway overwrites the header or
+ * appends to whatever a client already sent, so a client-injected leftmost
+ * value can never override it. Returns "unknown" when no valid IP is found.
+ */
 function parseClientIp(request: NextRequest): string {
-  const peerIp = request.ip || "unknown";
-
-  if (TRUSTED_PROXIES.size > 0 && TRUSTED_PROXIES.has(peerIp)) {
-    const realIp = request.headers.get("x-real-ip");
-    if (realIp?.trim() && isValidIp(realIp.trim())) {
-      return realIp.trim();
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded?.trim()) {
+    const entries = forwarded.split(",").map(s => s.trim()).filter(Boolean);
+    const rightmost = entries[entries.length - 1];
+    if (rightmost && isValidIp(rightmost)) {
+      return rightmost;
     }
-
-    const forwarded = request.headers.get("x-forwarded-for");
-    if (forwarded?.trim()) {
-      const leftmost = forwarded.split(",")[0]!.trim();
-      if (leftmost && isValidIp(leftmost)) {
-        return leftmost;
-      }
-    }
-  }
-
-  if (isValidIp(peerIp)) {
-    return peerIp;
   }
 
   return "unknown";
@@ -51,6 +46,14 @@ function parseClientIp(request: NextRequest): string {
 
 export async function POST(request: NextRequest) {
   try {
+    const ipAddress = parseClientIp(request);
+    if (ipAddress === "unknown") {
+      return NextResponse.json(
+        { error: "Cannot determine client IP" },
+        { status: 400 }
+      );
+    }
+
     let body: unknown;
     try {
       body = await request.json();
@@ -60,8 +63,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-
-    const ipAddress = parseClientIp(request);
 
     const validated = validateTailorCvBody(body, `ip:${ipAddress}`);
     if (!validated.ok) {

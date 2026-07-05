@@ -51,8 +51,8 @@ The root page (`app/page.tsx :: Home`) calls `notFound()` — there is intention
 
 | Step | File | Function |
 |------|------|----------|
+| Client identity | `route.ts` | Rightmost `x-forwarded-for` entry → `400` if unresolvable |
 | JSON body | `route.ts` | `request.json()` |
-| Client identity | `route.ts` | `x-forwarded-for` or `x-real-ip` → fallback session `ip:{address}` |
 | Validation | `app/api/lib/tailor-cv-validation.ts` | `validateTailorCvBody(body, fallbackSessionId)` |
 
 **Contract:** `jobDescription` required non-empty string; `sessionId` optional (defaults to IP-based id). Failures → **400**.
@@ -63,7 +63,7 @@ The root page (`app/page.tsx :: Home`) calls `notFound()` — there is intention
 |------|------|----------|
 | Burst limit | `app/api/lib/rate-limit.ts` | `checkRateLimit(sessionId, ipAddress)` |
 
-In-memory IP burst detection (`RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW`). Not per-session persistence — protects the LLM from hammering. Failures → **429** with `remaining` and `resetTime`.
+Upstash Redis sliding-window burst detection (`RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW`), keyed on client IP. Not per-session persistence — protects the LLM from hammering. Failures → **429** with `remaining` and `resetTime`; unresolvable IP → **400** before rate limiting runs.
 
 ### 4. Load candidate context
 

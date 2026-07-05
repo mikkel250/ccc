@@ -3,7 +3,7 @@
  *
  * Sliding-window IP-burst detection — one Redis INCR/Lua eval per check.
  * sessionId is accepted for future auth integration; limiting is keyed on
- * the identifier argument (currently IP from x-forwarded-for / x-real-ip).
+ * the identifier argument (currently IP from x-forwarded-for).
  * State is durable across deploys — lives in Upstash Redis, not process memory.
  */
 import { Ratelimit } from "@upstash/ratelimit";
@@ -76,7 +76,7 @@ export function __injectRatelimitForTest(r: RatelimitLike | null): void {
  *
  * @param _sessionId Reserved for future per-user rate limiting when auth is added.
  *                    Currently unused — rate limiting is keyed on `identifier` only.
- * @param identifier The rate-limit key (currently IP address from x-forwarded-for/x-real-ip).
+ * @param identifier The rate-limit key (currently IP address from x-forwarded-for).
  * @returns Rate limit result with allowed/remaining/resetTime.
  */
 export async function checkRateLimit(
