@@ -7,7 +7,8 @@
  * etc.) means adding a new adapter file, not touching `llm.ts` or the other
  * adapters.
  */
-import type { ChatMessage, ChatOptions, ChatResponse, Provider } from '../llm';
+import type { Provider } from '../../../../lib/providers';
+import type { ChatMessage, ChatOptions, ChatResponse } from '../llm';
 import type { LangfusePromptRef } from './langfuse';
 
 export type TraceOptions = Omit<

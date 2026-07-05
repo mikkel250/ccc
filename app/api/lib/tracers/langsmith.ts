@@ -7,27 +7,30 @@ import { Client } from 'langsmith';
 import { getEnvString } from '../../../../lib/env';
 import type { Tracer, TracePayload } from './tracer';
 
+const REDACTED = '[REDACTED]';
+
 let client: Client | null = null;
 
 function initLangSmith(): Client | null {
-  if (!client && process.env.LANGSMITH_API_KEY) {
+  const apiKey = getEnvString('LANGSMITH_API_KEY');
+  if (!client && apiKey) {
     client = new Client({
-      apiKey: process.env.LANGSMITH_API_KEY,
+      apiKey,
       apiUrl: getEnvString('LANGSMITH_ENDPOINT', 'https://api.smith.langchain.com')!,
-      workspaceId: process.env.LANGSMITH_WORKSPACE_ID,
+      workspaceId: getEnvString('LANGSMITH_WORKSPACE_ID'),
     });
   }
   return client;
 }
 
 function isEnabled(): boolean {
-  return process.env.LANGSMITH_TRACING === 'true';
+  return getEnvString('LANGSMITH_TRACING') === 'true';
 }
 
 async function record(payload: TracePayload): Promise<void> {
   if (!isEnabled()) return;
 
-  const { provider, model, messages, systemPrompt, response, startTime, options } = payload;
+  const { provider, model, response, startTime, options } = payload;
 
   try {
     const smithClient = initLangSmith();
@@ -40,17 +43,17 @@ async function record(payload: TracePayload): Promise<void> {
 
     const traceData = {
       name: `llm_call_${provider}_${model}`,
-      project_name: process.env.LANGSMITH_PROJECT_NAME,
+      project_name: getEnvString('LANGSMITH_PROJECT_NAME'),
       run_type: 'chain',
       inputs: {
         provider,
         model,
-        messages,
-        system_prompt: systemPrompt,
+        messages: REDACTED,
+        system_prompt: REDACTED,
         options,
       },
       outputs: {
-        content: response.content,
+        content: REDACTED,
         usage: response.usage,
       },
       metadata: {

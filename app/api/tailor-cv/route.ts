@@ -133,33 +133,22 @@ export async function POST(request: NextRequest) {
  * errors get their raw `.message` forwarded to the client vs. masked with a
  * generic string — is auditable in one place instead of interleaved `if`s.
  */
-type ErrorResponseEntry =
-  | {
-      matches: (error: unknown) => error is RateLimitError;
-      status: 429;
-      body: (error: RateLimitError) => { error: string };
-    }
-  | {
-      matches: (error: unknown) => error is ServiceError;
-      status: 503;
-      body: (error: ServiceError) => { error: string };
-    }
-  | {
-      matches: (error: unknown) => boolean;
-      status: 503;
-      body: () => { error: string };
-    };
+type ErrorResponseEntry = {
+  matches: (error: unknown) => boolean;
+  status: 429 | 503;
+  body: (error: unknown) => { error: string };
+};
 
 const ERROR_RESPONSES: ErrorResponseEntry[] = [
   {
     matches: (error): error is RateLimitError => error instanceof RateLimitError,
     status: 429,
-    body: (error) => ({ error: error.message }),
+    body: (error) => ({ error: (error as RateLimitError).message }),
   },
   {
     matches: (error): error is ServiceError => error instanceof ServiceError,
     status: 503,
-    body: (error) => ({ error: error.message }),
+    body: (error) => ({ error: (error as ServiceError).message }),
   },
   {
     matches: (error) =>
@@ -174,19 +163,7 @@ const ERROR_RESPONSES: ErrorResponseEntry[] = [
 function mapErrorToResponse(error: unknown) {
   for (const entry of ERROR_RESPONSES) {
     if (!entry.matches(error)) continue;
-    if (error instanceof RateLimitError) {
-      const rateLimitEntry = entry as Extract<ErrorResponseEntry, { status: 429 }>;
-      return NextResponse.json(rateLimitEntry.body(error), { status: rateLimitEntry.status });
-    }
-    if (error instanceof ServiceError) {
-      const serviceEntry = entry as Extract<
-        ErrorResponseEntry,
-        { body: (error: ServiceError) => { error: string } }
-      >;
-      return NextResponse.json(serviceEntry.body(error), { status: serviceEntry.status });
-    }
-    const maskedEntry = entry as Extract<ErrorResponseEntry, { body: () => { error: string } }>;
-    return NextResponse.json(maskedEntry.body(), { status: maskedEntry.status });
+    return NextResponse.json(entry.body(error), { status: entry.status });
   }
   return NextResponse.json(
     { error: "Internal server error. Please try again later." },
