@@ -10,6 +10,22 @@
 import type { ChatMessage, ChatOptions, ChatResponse, Provider } from '../llm';
 import type { LangfusePromptRef } from './langfuse';
 
+export type TraceOptions = Omit<
+  ChatOptions,
+  'openaiClient' | 'openRouterClient' | 'deepseekClient' | 'anthropicClient'
+>;
+
+export function toTraceOptions(options: ChatOptions): TraceOptions {
+  const {
+    openaiClient: _openaiClient,
+    openRouterClient: _openRouterClient,
+    deepseekClient: _deepseekClient,
+    anthropicClient: _anthropicClient,
+    ...traceSafe
+  } = options;
+  return traceSafe;
+}
+
 export interface TracePayload {
   provider: Provider;
   model: string;
@@ -17,7 +33,7 @@ export interface TracePayload {
   systemPrompt: string;
   response: ChatResponse;
   startTime: number;
-  options: ChatOptions;
+  options: TraceOptions;
   langfusePrompt?: LangfusePromptRef | null;
 }
 

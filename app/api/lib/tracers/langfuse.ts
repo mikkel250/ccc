@@ -9,6 +9,7 @@ import {
   startActiveObservation,
   type LangfuseGeneration,
 } from '@langfuse/tracing';
+import { getEnvString } from '../../../../lib/env';
 import { ensureLangfuseOtel, flushLangfuseTraces } from '../langfuse-otel';
 import type { Tracer, TracePayload } from './tracer';
 
@@ -23,7 +24,7 @@ export function initLangFuse(): LangfuseClient | null {
     langfuseClient = new LangfuseClient({
       publicKey: process.env.LANGFUSE_PUBLIC_KEY,
       secretKey: process.env.LANGFUSE_SECRET_KEY,
-      baseUrl: process.env.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com',
+      baseUrl: getEnvString('LANGFUSE_BASE_URL', 'https://cloud.langfuse.com')!,
     });
   }
   return langfuseClient;

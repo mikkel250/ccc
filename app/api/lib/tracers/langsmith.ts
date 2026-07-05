@@ -4,6 +4,7 @@
  * Opt-in: LANGSMITH_TRACING=true and LANGSMITH_API_KEY.
  */
 import { Client } from 'langsmith';
+import { getEnvString } from '../../../../lib/env';
 import type { Tracer, TracePayload } from './tracer';
 
 let client: Client | null = null;
@@ -12,7 +13,7 @@ function initLangSmith(): Client | null {
   if (!client && process.env.LANGSMITH_API_KEY) {
     client = new Client({
       apiKey: process.env.LANGSMITH_API_KEY,
-      apiUrl: process.env.LANGSMITH_ENDPOINT || 'https://api.smith.langchain.com',
+      apiUrl: getEnvString('LANGSMITH_ENDPOINT', 'https://api.smith.langchain.com')!,
       workspaceId: process.env.LANGSMITH_WORKSPACE_ID,
     });
   }
