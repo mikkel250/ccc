@@ -32,13 +32,18 @@ async function main() {
     `Testing against real Upstash Redis — maxRequests=${config.maxRequests}, windowMs=${config.windowMs}, identifier=${identifier}`
   );
 
+  let prevRemaining: number | null = null;
+
   for (let i = 0; i < config.maxRequests; i++) {
     const result = await checkRateLimit("smoke-script", identifier);
-    const ok = result.allowed === true;
+    const monotonic =
+      prevRemaining === null || result.remaining < prevRemaining;
+    const ok = result.allowed === true && monotonic;
     console.log(
-      `${ok ? "PASS" : "FAIL"} request ${i + 1}/${config.maxRequests}: allowed=${result.allowed} remaining=${result.remaining}`
+      `${ok ? "PASS" : "FAIL"} request ${i + 1}/${config.maxRequests}: allowed=${result.allowed} remaining=${result.remaining}${prevRemaining !== null ? ` (prev=${prevRemaining})` : ""}`
     );
     if (!ok) failed++;
+    prevRemaining = result.remaining;
   }
 
   const blocked = await checkRateLimit("smoke-script", identifier);
