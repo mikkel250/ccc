@@ -59,7 +59,9 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── redis.test.ts                      # Upstash Redis client tests
 │   ├── rate-limit.test.ts                 # Rate limiter tests (mock-based)
 │   ├── markdown-docx.test.ts              # DOCX conversion tests
-│   ├── tracers.test.ts                    # Tracer dispatcher flush-semantics tests
+│   ├── langsmith-tracer.test.ts           # LangSmith tracer isEnabled + dispatcher tests
+│   ├── langfuse-tracer.test.ts            # Langfuse tracer isEnabled + dispatcher tests
+│   ├── llm-chat-tracing.test.ts           # chat() tracer flush-semantics integration tests
 │   ├── eslint-config.test.ts              # ESLint config tests
 │   ├── eval-architecture-docs.test.ts     # MODEL_SELECTION.md / .env.example contract tests
 │   ├── eval-cv.test.ts                    # eval-cv.ts runner unit tests

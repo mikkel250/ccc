@@ -133,20 +133,33 @@ export async function POST(request: NextRequest) {
  * errors get their raw `.message` forwarded to the client vs. masked with a
  * generic string — is auditable in one place instead of interleaved `if`s.
  */
-const ERROR_RESPONSES: Array<{
-  matches: (error: unknown) => boolean;
-  status: number;
-  body: (error: unknown) => { error: string };
-}> = [
+type ErrorResponseEntry =
+  | {
+      matches: (error: unknown) => error is RateLimitError;
+      status: 429;
+      body: (error: RateLimitError) => { error: string };
+    }
+  | {
+      matches: (error: unknown) => error is ServiceError;
+      status: 503;
+      body: (error: ServiceError) => { error: string };
+    }
+  | {
+      matches: (error: unknown) => boolean;
+      status: 503;
+      body: () => { error: string };
+    };
+
+const ERROR_RESPONSES: ErrorResponseEntry[] = [
   {
-    matches: (error) => error instanceof RateLimitError,
+    matches: (error): error is RateLimitError => error instanceof RateLimitError,
     status: 429,
-    body: (error) => ({ error: (error as Error).message }),
+    body: (error) => ({ error: error.message }),
   },
   {
-    matches: (error) => error instanceof ServiceError,
+    matches: (error): error is ServiceError => error instanceof ServiceError,
     status: 503,
-    body: (error) => ({ error: (error as Error).message }),
+    body: (error) => ({ error: error.message }),
   },
   {
     matches: (error) =>
@@ -159,9 +172,21 @@ const ERROR_RESPONSES: Array<{
 ];
 
 function mapErrorToResponse(error: unknown) {
-  const entry = ERROR_RESPONSES.find((candidate) => candidate.matches(error));
-  if (entry) {
-    return NextResponse.json(entry.body(error), { status: entry.status });
+  for (const entry of ERROR_RESPONSES) {
+    if (!entry.matches(error)) continue;
+    if (error instanceof RateLimitError) {
+      const rateLimitEntry = entry as Extract<ErrorResponseEntry, { status: 429 }>;
+      return NextResponse.json(rateLimitEntry.body(error), { status: rateLimitEntry.status });
+    }
+    if (error instanceof ServiceError) {
+      const serviceEntry = entry as Extract<
+        ErrorResponseEntry,
+        { body: (error: ServiceError) => { error: string } }
+      >;
+      return NextResponse.json(serviceEntry.body(error), { status: serviceEntry.status });
+    }
+    const maskedEntry = entry as Extract<ErrorResponseEntry, { body: () => { error: string } }>;
+    return NextResponse.json(maskedEntry.body(), { status: maskedEntry.status });
   }
   return NextResponse.json(
     { error: "Internal server error. Please try again later." },
