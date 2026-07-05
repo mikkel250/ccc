@@ -291,8 +291,9 @@ export async function callDeepSeek(
 
   if (!model) throw new Error('model is required for callDeepSeek');
 
-  // Idempotent double-strip: dispatchProvider already strips, but the exported
-  // callDeepSeek is also invoked directly from tests where the prefix may remain.
+  // Sole strip site for deepseek (dispatchProvider skips it for this provider —
+  // see the comment there) since callDeepSeek is also invoked directly from
+  // tests where the prefix may still be present.
   const apiModel = stripProviderPrefix(model, 'deepseek');
 
   return callOpenAICompatible(
@@ -489,7 +490,13 @@ export async function dispatchProvider(
   systemPrompt: string,
   options: ChatOptions
 ): Promise<ChatResponse> {
-  const strippedModel = options.model ? stripProviderPrefix(options.model, provider) : options.model;
+  // deepseek is excluded here — callDeepSeek strips its own prefix (tests call
+  // it directly with a prefixed model string), so stripping here too would be
+  // a redundant double-strip. Every other provider strips only at dispatch.
+  const strippedModel =
+    options.model && provider !== 'deepseek'
+      ? stripProviderPrefix(options.model, provider)
+      : options.model;
   const strippedOptions = { ...options, model: strippedModel };
 
   switch (provider) {
