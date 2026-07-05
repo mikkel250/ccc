@@ -46,20 +46,20 @@ function parseClientIp(request: NextRequest): string {
 
 export async function POST(request: NextRequest) {
   try {
+    const ipAddress = parseClientIp(request);
+    if (ipAddress === "unknown") {
+      return NextResponse.json(
+        { error: "Cannot determine client IP" },
+        { status: 400 }
+      );
+    }
+
     let body: unknown;
     try {
       body = await request.json();
     } catch {
       return NextResponse.json(
         { error: "Invalid JSON in request body" },
-        { status: 400 }
-      );
-    }
-
-    const ipAddress = parseClientIp(request);
-    if (ipAddress === "unknown") {
-      return NextResponse.json(
-        { error: "Cannot determine client IP" },
         { status: 400 }
       );
     }

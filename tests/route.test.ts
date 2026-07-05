@@ -57,7 +57,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
   });
 
   it("returns 400 with structured error for empty body", async () => {
-    const response = await POST(buildPostRequest(""));
+    const response = await POST(buildPostRequest("", { "x-forwarded-for": "198.51.100.42" }));
     assert.equal(response.status, 400);
     const json = (await response.json()) as { error: string };
     assert.equal(json.error, "Invalid JSON in request body");
@@ -65,11 +65,18 @@ describe("POST /api/tailor-cv — request hardening", () => {
 
   it("returns 400 for trailing-comma JSON", async () => {
     const response = await POST(
-      buildPostRequest('{"jobDescription": "React role",}')
+      buildPostRequest('{"jobDescription": "React role",}', { "x-forwarded-for": "198.51.100.42" })
     );
     assert.equal(response.status, 400);
     const json = (await response.json()) as { error: string };
     assert.equal(json.error, "Invalid JSON in request body");
+  });
+
+  it("returns 400 for missing IP before attempting JSON parse", async () => {
+    const response = await POST(buildPostRequest('{"jobDescription": "React role",}'));
+    assert.equal(response.status, 400);
+    const json = (await response.json()) as { error: string };
+    assert.equal(json.error, "Cannot determine client IP");
   });
 
   it("returns 405 for GET", async () => {
