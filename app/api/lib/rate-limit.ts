@@ -22,7 +22,7 @@ const RATE_LIMIT_TIMEOUT_MS = Math.max(
 export interface RateLimitResult {
   allowed: boolean;
   remaining: number;
-  resetTime?: number;
+  resetTime: number;
   message?: string;
 }
 

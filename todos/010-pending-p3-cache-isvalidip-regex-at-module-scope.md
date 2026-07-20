@@ -1,5 +1,5 @@
 ---
-status: pending
+status: closed
 priority: p3
 issue_id: "010"
 tags: [code-review, performance, micro-optimization]
@@ -7,6 +7,21 @@ dependencies: []
 ---
 
 # Cache `isValidIp` regexes at module scope
+
+## Resolution — 2026-07-05
+
+**Closed — target code no longer exists.** Commit `ede0ad1` (`fix(tailor-cv): harden parseClientIp with node:net and rightmost-only trust`, merged in PR #11 on 2026-07-04) replaced the manual `ipv4Regex`/`ipv6Regex` literals this finding targets with `isIP()` from Node's built-in `node:net` module:
+
+```typescript
+import { isIP } from "node:net";
+
+function isValidIp(value: string): boolean {
+  if (value.length > 45) return false;
+  return isIP(value) !== 0;
+}
+```
+
+There are no regex literals left to hoist — `node:net`'s `isIP()` has no per-call compilation cost to cache against. No code change required.
 
 ## Problem Statement
 

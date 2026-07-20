@@ -9,10 +9,15 @@
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
-import { traceLLMCall } from './langsmith';
-import { traceLLMCall as traceLLMCallLangFuse, type LangfusePromptRef } from './langfuse';
+import { recordLangSmithTrace, recordLangfuseTrace, type LangfusePromptRef } from './tracers';
+import { toTraceOptions, type TracePayload } from './tracers/tracer';
 import { getDeepSeekBaseUrl, getEnvNumber, getLLMConfig, getDefaultLlmModel } from '../../../lib/env';
+import { KNOWN_PROVIDERS, type Provider } from '../../../lib/providers';
 import anthropicModels from '../../../config/anthropic-models.json';
+
+// Re-exported for backward compatibility — llm.ts was the historical home of
+// the provider registry; see lib/providers.ts for why it moved to a leaf module.
+export { KNOWN_PROVIDERS, type Provider };
 
 export const LLM_CONFIG = getLLMConfig();
 
@@ -49,10 +54,6 @@ export interface ChatOptions {
   /** Test-only: inject Anthropic client */
   anthropicClient?: Anthropic;
 }
-
-export type Provider = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'deepseek';
-
-export const KNOWN_PROVIDERS = new Set<Provider>(['openai', 'anthropic', 'google', 'openrouter', 'deepseek']);
 
 let openaiClient: OpenAI | null = null;
 let anthropicClient: Anthropic | null = null;
@@ -291,8 +292,9 @@ export async function callDeepSeek(
 
   if (!model) throw new Error('model is required for callDeepSeek');
 
-  // Idempotent double-strip: dispatchProvider already strips, but the exported
-  // callDeepSeek is also invoked directly from tests where the prefix may remain.
+  // Sole strip site for deepseek (dispatchProvider skips it for this provider —
+  // see the comment there) since callDeepSeek is also invoked directly from
+  // tests where the prefix may still be present.
   const apiModel = stripProviderPrefix(model, 'deepseek');
 
   return callOpenAICompatible(
@@ -489,7 +491,13 @@ export async function dispatchProvider(
   systemPrompt: string,
   options: ChatOptions
 ): Promise<ChatResponse> {
-  const strippedModel = options.model ? stripProviderPrefix(options.model, provider) : options.model;
+  // deepseek is excluded here — callDeepSeek strips its own prefix (tests call
+  // it directly with a prefixed model string), so stripping here too would be
+  // a redundant double-strip. Every other provider strips only at dispatch.
+  const strippedModel =
+    options.model && provider !== 'deepseek'
+      ? stripProviderPrefix(options.model, provider)
+      : options.model;
   const strippedOptions = { ...options, model: strippedModel };
 
   switch (provider) {
@@ -525,6 +533,27 @@ export function isLlmServiceError(message: string): boolean {
   );
 }
 
+function buildLlmTracePayload(params: {
+  provider: Provider;
+  model: string;
+  messages: Omit<ChatMessage, 'role'>[] | ChatMessage[];
+  systemPrompt: string;
+  response: ChatResponse;
+  startTime: number;
+  options: ChatOptions;
+}): TracePayload {
+  return {
+    provider: params.provider,
+    model: params.model,
+    messages: formatMessages(params.messages),
+    systemPrompt: params.systemPrompt,
+    response: params.response,
+    startTime: params.startTime,
+    options: toTraceOptions(params.options),
+    langfusePrompt: params.options.langfusePrompt ?? null,
+  };
+}
+
 /**
  * Central entry for all LLM chat completions. Resolves model from options or AI_MODEL,
  * dispatches to the correct provider integration, and records traces for observability.
@@ -546,18 +575,18 @@ export async function chat(
       model,
     });
 
-    traceLLMCall(provider, model, messages as ChatMessage[], systemPrompt, response, startTime, options)
-      .catch(err => console.error('Tracing error (LangSmith):', err));
-    await traceLLMCallLangFuse(
+    const tracePayload = buildLlmTracePayload({
       provider,
       model,
-      messages as ChatMessage[],
+      messages,
       systemPrompt,
       response,
       startTime,
       options,
-      options.langfusePrompt ?? null
-    ).catch(err => console.error('Tracing error (Langfuse):', err));
+    });
+
+    recordLangSmithTrace(tracePayload);
+    await recordLangfuseTrace(tracePayload);
 
     return response;
   } catch (error: unknown) {
@@ -571,23 +600,23 @@ export async function chat(
       finishReason: null,
     };
 
+    const tracePayload = buildLlmTracePayload({
+      provider,
+      model,
+      messages,
+      systemPrompt,
+      response: errorResponse,
+      startTime,
+      options,
+    });
+
     // LangSmith trace is fire-and-forget (matches success path).
-    traceLLMCall(provider, model, messages as ChatMessage[], systemPrompt, errorResponse, startTime, options)
-      .catch(traceErr => console.error('Tracing error (LangSmith):', traceErr));
+    recordLangSmithTrace(tracePayload);
 
     // Langfuse trace MUST be awaited so `flushLangfuseTraces()` (exportMode: "immediate")
     // completes before the serverless container is frozen. Without the await, error
     // traces vanish on cold-start containers even though the success path persists them.
-    await traceLLMCallLangFuse(
-      provider,
-      model,
-      messages as ChatMessage[],
-      systemPrompt,
-      errorResponse,
-      startTime,
-      options,
-      options.langfusePrompt ?? null,
-    ).catch(traceErr => console.error('Tracing error (Langfuse):', traceErr));
+    await recordLangfuseTrace(tracePayload);
 
     throw error;
   }

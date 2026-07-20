@@ -26,6 +26,7 @@ import {
   DEFAULT_EVAL_JUDGE_MODEL,
   DEFAULT_EVAL_MODELS_CSV,
 } from '../app/api/lib/eval-defaults';
+import { KNOWN_PROVIDERS, type Provider } from './providers';
 
 export function getEnvBoolean(key: string, defaultValue: boolean): boolean {
   const raw = process.env[key];
@@ -43,91 +44,13 @@ const DEFAULT_TAILOR_MODEL = 'anthropic/sonnet';
 const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
 const MIN_MAX_TOKENS = 1;
 
-function sanitizeProviderRegistry(value: unknown): Set<string> | null {
-  if (value instanceof Set) {
-    const providers = [...value].filter(
-      (entry): entry is string => typeof entry === 'string' && entry.length > 0
-    );
-    return providers.length > 0 ? new Set(providers) : null;
-  }
-  if (Array.isArray(value)) {
-    const providers = value.filter(
-      (entry): entry is string => typeof entry === 'string' && entry.length > 0
-    );
-    return providers.length > 0 ? new Set(providers) : null;
-  }
-  return null;
-}
-
-function addProviderFromModel(providers: Set<string>, model: string | undefined): void {
-  if (!model) return;
-  const slash = model.trim().indexOf('/');
-  if (slash > 0) {
-    providers.add(model.trim().slice(0, slash));
-  }
-}
-
-function getConfiguredProviderFallback(): Set<string> {
-  const providers = new Set<string>();
-  addProviderFromModel(providers, DEFAULT_LLM_MODEL);
-  addProviderFromModel(providers, DEFAULT_TAILOR_MODEL);
-  addProviderFromModel(providers, DEFAULT_EVAL_JUDGE_MODEL);
-  addProviderFromModel(providers, DEFAULT_EVAL_EXTRACTION_MODEL);
-  addProviderFromModel(providers, process.env.AI_MODEL);
-  addProviderFromModel(providers, process.env.TAILOR_MODEL);
-  addProviderFromModel(providers, process.env.EVAL_JUDGE_MODEL);
-  addProviderFromModel(providers, process.env.EVAL_EXTRACTION_MODEL);
-
-  const evalModels = getEnvString('EVAL_MODELS', DEFAULT_EVAL_MODELS_CSV);
-  if (evalModels) {
-    for (const model of evalModels.split(',')) {
-      addProviderFromModel(providers, model);
-    }
-  }
-
-  return providers;
-}
-
-let cachedProviderRegistry: Set<string> | null = null;
-
-/** Clears cached provider registry (for tests). */
-export function resetProviderRegistryCache(): void {
-  cachedProviderRegistry = null;
-}
-
-function getProviderRegistry(): Set<string> {
-  if (cachedProviderRegistry) {
-    return cachedProviderRegistry;
-  }
-
-  let registry: Set<string> | null = null;
-  try {
-    const llmModule = require('../app/api/lib/llm') as { KNOWN_PROVIDERS?: unknown };
-    registry = sanitizeProviderRegistry(llmModule?.KNOWN_PROVIDERS);
-  } catch (error) {
-    // Circular-import fallback: llm.ts imports env.ts, so during partial init
-    // require() may throw or return an empty exports object. This is expected
-    // behavior — we degrade to the env-derived fallback below — but the error
-    // itself is worth surfacing once so operators can spot genuine misconfig.
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[env] KNOWN_PROVIDERS require failed, using env-derived provider fallback: ${message}`);
-    registry = null;
-  }
-
-  cachedProviderRegistry = registry && registry.size > 0
-    ? registry
-    : getConfiguredProviderFallback();
-  return cachedProviderRegistry;
-}
-
 function validateDefaultModel(model: string): string {
   const slash = model.indexOf('/');
   if (slash <= 0 || slash === model.length - 1) {
     throw new Error(`Invalid AI_MODEL "${model}": must be namespaced as provider/model`);
   }
   const provider = model.slice(0, slash);
-  const registry = getProviderRegistry();
-  if (!registry.has(provider)) {
+  if (!KNOWN_PROVIDERS.has(provider as Provider)) {
     throw new Error(`Unknown provider "${provider}" in AI_MODEL "${model}"`);
   }
   return model;

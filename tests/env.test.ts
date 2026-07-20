@@ -1,8 +1,5 @@
-import { createRequire } from "node:module";
-import path from "node:path";
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import type { Module } from "node:module";
 import {
   getDeepSeekBaseUrl,
   getEnvString,
@@ -11,8 +8,9 @@ import {
   getEvalModels,
   getLLMConfig,
   getTailorModel,
-  resetProviderRegistryCache,
 } from "../lib/env";
+import { KNOWN_PROVIDERS as KNOWN_PROVIDERS_FROM_PROVIDERS } from "../lib/providers";
+import { KNOWN_PROVIDERS as KNOWN_PROVIDERS_FROM_LLM } from "../app/api/lib/llm";
 import {
   CANDIDATE_GENERATION_MODELS,
   DEFAULT_EVAL_EXTRACTION_MODEL,
@@ -227,19 +225,7 @@ describe("getJudgeMap — lazy init after env change", () => {
   });
 });
 
-const envRequire = createRequire(path.join(process.cwd(), "lib/env.ts"));
-const llmModuleId = envRequire.resolve("../app/api/lib/llm");
-
-function stubLlmKnownProviders(value: unknown): void {
-  envRequire.cache[llmModuleId] = {
-    id: llmModuleId,
-    filename: llmModuleId,
-    loaded: true,
-    exports: { KNOWN_PROVIDERS: value },
-  } as Module;
-}
-
-describe("getProviderRegistry — llm import cycle", () => {
+describe("provider registry — leaf module (no llm import cycle)", () => {
   it("loads llm module without throwing when getLLMConfig validates defaults", async () => {
     const { LLM_CONFIG } = await import("../app/api/lib/llm");
     assert.equal(typeof LLM_CONFIG.defaultModel, "string");
@@ -252,49 +238,20 @@ describe("getProviderRegistry — llm import cycle", () => {
     assert.equal(typeof config.defaultModel, "string");
     assert.match(config.defaultModel, /^[^/]+\/.+/);
   });
-});
 
-describe("getProviderRegistry — invalid KNOWN_PROVIDERS fallback", () => {
-  const originalLlmModule = envRequire.cache[llmModuleId];
-  const originalTailorModel = process.env.TAILOR_MODEL;
+  it("llm.ts re-exports the same KNOWN_PROVIDERS instance as the leaf module", () => {
+    assert.equal(KNOWN_PROVIDERS_FROM_LLM, KNOWN_PROVIDERS_FROM_PROVIDERS);
+  });
 
-  afterEach(() => {
-    resetProviderRegistryCache();
-    if (originalLlmModule) {
-      envRequire.cache[llmModuleId] = originalLlmModule;
-    } else {
-      delete envRequire.cache[llmModuleId];
+  it("rejects a provider not in the known registry", () => {
+    const originalTailorModel = process.env.TAILOR_MODEL;
+    process.env.TAILOR_MODEL = "fakeprovider/some-model";
+    try {
+      assert.throws(() => getTailorModel(), /unknown provider "fakeprovider"/i);
+    } finally {
+      if (originalTailorModel === undefined) delete process.env.TAILOR_MODEL;
+      else process.env.TAILOR_MODEL = originalTailorModel;
     }
-    if (originalTailorModel === undefined) delete process.env.TAILOR_MODEL;
-    else process.env.TAILOR_MODEL = originalTailorModel;
-  });
-
-  it("uses env-derived fallback when KNOWN_PROVIDERS is undefined (partial llm load)", () => {
-    stubLlmKnownProviders(undefined);
-    resetProviderRegistryCache();
-    assert.doesNotThrow(() => getTailorModel());
-    assert.equal(getTailorModel(), "anthropic/sonnet");
-  });
-
-  it("uses env-derived fallback when KNOWN_PROVIDERS is not a Set", () => {
-    stubLlmKnownProviders({ openai: true });
-    resetProviderRegistryCache();
-    assert.doesNotThrow(() => getTailorModel());
-    assert.equal(getTailorModel(), "anthropic/sonnet");
-  });
-
-  it("accepts providers present in configured models when llm registry is invalid", () => {
-    stubLlmKnownProviders(undefined);
-    resetProviderRegistryCache();
-    process.env.TAILOR_MODEL = "openrouter/google/gemini-2.5-pro";
-    assert.equal(getTailorModel(), "openrouter/google/gemini-2.5-pro");
-  });
-
-  it("rejects providers missing from a sanitized but incomplete llm registry", () => {
-    stubLlmKnownProviders(new Set(["openai"]));
-    resetProviderRegistryCache();
-    delete process.env.TAILOR_MODEL;
-    assert.throws(() => getTailorModel(), /unknown provider|anthropic/i);
   });
 });
 

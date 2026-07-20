@@ -14,17 +14,17 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │       └── lib/                  # All business logic lives here
 │           ├── llm.ts            # Multi-provider LLM client (531 lines)
 │           ├── cv-prompt.ts      # CV tailoring prompt (Langfuse + hardcoded fallback)
-│           ├── chat-prompt.ts    # Chat assistant system prompt (massive, ~320 lines)
-│           ├── chat-prompt.4o-mini.ts        # Model-specific variant
-│           ├── chat-prompt.gemini-flash-v0.ts
-│           ├── chat-prompt.gemini-flash-v1.ts
+│           ├── chat-prompt.ts    # Chat assistant system prompt (legacy, no route yet)
 │           ├── jd-prompt.ts      # Job description analysis prompt (evaluation rubric inside)
-│           ├── prompts.ts        # Chat prompt builder with query classification
+│           ├── prompts.ts        # Chat prompt builder (legacy, no route yet)
 │           ├── langfuse-prompts.ts  # Prompt management abstraction layer
-│           ├── langfuse.ts       # Langfuse tracing client
+│           ├── tracers/          # Unified LangSmith + Langfuse tracing adapters
+│           │   ├── tracer.ts     # TracePayload + Tracer interface
+│           │   ├── langsmith.ts  # LangSmith adapter
+│           │   ├── langfuse.ts   # Langfuse adapter (+ initLangFuse export)
+│           │   └── index.ts      # recordLangSmithTrace / recordLangfuseTrace
 │           ├── langfuse-otel.ts  # OTEL bootstrap (lazy)
-│           ├── langsmith.ts      # LangSmith tracing (optional)
-│           ├── knowledge-base.ts # Context retrieval (RAG, file-based)
+│           ├── knowledge-base.ts # Full KB load for tailor-cv (getAllContext)
 │           ├── markdown-docx.ts  # Markdown → .docx conversion
 │           ├── redis.ts          # Shared Upstash Redis client singleton
 │           ├── rate-limit.ts     # IP-based burst rate limiter (Upstash Redis-backed)
@@ -41,7 +41,8 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── meta-project.md           # 19KB about this project itself
 │   └── test-jds/                 # Real JDs for eval (MVP)
 ├── lib/
-│   ├── input-filter.ts           # Client-side input filtering (location, salary, JD detection)
+│   ├── env.ts                    # Env var parsing and model getters
+│   ├── providers.ts              # Provider type + KNOWN_PROVIDERS leaf registry
 │   └── formatDate.ts             # Date formatting utility
 ├── scripts/
 │   ├── create-langfuse-prompts.ts  # Upload prompts to Langfuse
@@ -58,6 +59,9 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── redis.test.ts                      # Upstash Redis client tests
 │   ├── rate-limit.test.ts                 # Rate limiter tests (mock-based)
 │   ├── markdown-docx.test.ts              # DOCX conversion tests
+│   ├── langsmith-tracer.test.ts           # LangSmith tracer isEnabled + dispatcher tests
+│   ├── langfuse-tracer.test.ts            # Langfuse tracer isEnabled + dispatcher tests
+│   ├── llm-chat-tracing.test.ts           # chat() tracer flush-semantics integration tests
 │   ├── eslint-config.test.ts              # ESLint config tests
 │   ├── eval-architecture-docs.test.ts     # MODEL_SELECTION.md / .env.example contract tests
 │   ├── eval-cv.test.ts                    # eval-cv.ts runner unit tests

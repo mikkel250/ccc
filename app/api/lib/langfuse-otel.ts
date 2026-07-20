@@ -4,6 +4,7 @@
  */
 
 import type { LangfuseSpanProcessor } from "@langfuse/otel";
+import { getEnvNumber } from "../../../lib/env";
 
 let otelStarted = false;
 let otelStarting: Promise<void> | null = null;
@@ -56,9 +57,39 @@ export async function ensureLangfuseOtel(): Promise<void> {
   await otelStarting;
 }
 
+const DEFAULT_FLUSH_TIMEOUT_MS = 5000;
+
+function flushWithTimeout(processor: LangfuseSpanProcessor, timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Langfuse flush timed out after ${timeoutMs}ms`)),
+      timeoutMs
+    );
+    processor
+      .forceFlush()
+      .then(() => {
+        clearTimeout(timer);
+        resolve();
+      })
+      .catch((error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
 /** Flush pending spans so they appear in Langfuse before the request ends. */
 export async function flushLangfuseTraces(): Promise<void> {
-  if (spanProcessor) {
-    await spanProcessor.forceFlush();
+  if (!spanProcessor) return;
+
+  const timeoutMs = Math.max(
+    1,
+    Math.floor(getEnvNumber("LANGFUSE_FLUSH_TIMEOUT_MS", DEFAULT_FLUSH_TIMEOUT_MS))
+  );
+
+  try {
+    await flushWithTimeout(spanProcessor, timeoutMs);
+  } catch (error) {
+    console.warn("Langfuse flush failed or timed out:", error);
   }
 }

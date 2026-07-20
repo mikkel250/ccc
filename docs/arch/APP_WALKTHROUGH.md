@@ -25,8 +25,8 @@ app/api/tailor-cv/route.ts
     ├── getCvPrompt() + compileCvPrompt()   app/api/lib/cv-prompt.ts
     ├── chat()                     app/api/lib/llm.ts  (model: TAILOR_MODEL)
     │     ├── dispatchProvider()   → OpenAI / Anthropic / Google / OpenRouter / DeepSeek
-    │     ├── traceLLMCall()       app/api/lib/langsmith.ts
-    │     └── traceLLMCall()       app/api/lib/langfuse.ts (+ langfuse-otel.ts)
+    │     ├── recordLangSmithTrace()  app/api/lib/tracers/index.ts (fire-and-forget)
+    │     └── recordLangfuseTrace()   app/api/lib/tracers/index.ts (+ langfuse-otel.ts flush)
     └── markdownToDocxBase64()   app/api/lib/markdown-docx.ts
     │
     ▼ 200 { cv, model, usage, remaining, resetTime }
@@ -71,9 +71,7 @@ Upstash Redis sliding-window burst detection (`RATE_LIMIT_MAX` / `RATE_LIMIT_WIN
 |------|------|----------|
 | Full KB injection | `app/api/lib/knowledge-base.ts` | `getAllContext()` |
 
-Reads all five markdown files from `knowledge-base/` (`experience.md`, `projects.md`, `skills.md`, `career-story.md`, `meta-project.md`), joins with `\n\n--\n\n`. **MVP injects everything** (~50–60k tokens) — no RAG at runtime.
-
-`getRelevantContext(query)` in the same file implements keyword-based selective retrieval for the **legacy chat bot**; tailor-cv does not call it.
+Reads all five markdown files from `knowledge-base/` (`experience.md`, `projects.md`, `skills.md`, `career-story.md`, `meta-project.md`), joins with `\n\n--\n\n`. **MVP injects everything** (~50–60k tokens) — no selective RAG at runtime.
 
 ### 5. Build the system prompt
 
@@ -117,12 +115,13 @@ Returns base64 Office Open XML. `isValidDocxBase64()` checks ZIP magic bytes (`0
 
 **Success (200):** `{ cv, model, usage, remaining, resetTime }`
 
-**Error mapping** (`route.ts` catch block):
+**Error mapping** (`route.ts :: mapErrorToResponse`, table-driven `ERROR_RESPONSES`):
 
 | Condition | Status | Handler |
 |-----------|--------|---------|
-| Provider/quota errors | 503 | `isLlmServiceError(message)` in `llm.ts` |
-| Provider rate limit | 429 | message contains `"Rate limit"` |
+| `RateLimitError` | 429 | forwards `error.message` |
+| `ServiceError` | 503 | forwards `error.message` |
+| LLM provider/quota errors | 503 | `isLlmServiceError(message)` → masked generic message |
 | Other | 500 | generic internal error |
 
 ---
@@ -147,9 +146,9 @@ Canonical catalog: `.env.example`. Cross-file invariant: documented `TAILOR_MODE
 
 | Layer | File | When it runs |
 |-------|------|--------------|
-| Langfuse generations | `app/api/lib/langfuse.ts :: traceLLMCall` | Every `chat()` call when `LANGFUSE_TRACING=true` |
+| Langfuse generations | `app/api/lib/tracers/langfuse.ts :: record` via `recordLangfuseTrace` | Every `chat()` call when `LANGFUSE_TRACING=true`; awaited so flush completes |
 | Langfuse OTEL | `app/api/lib/langfuse-otel.ts :: ensureLangfuseOtel` | Lazy start on first trace; `flushLangfuseTraces()` before response ends |
-| LangSmith runs | `app/api/lib/langsmith.ts :: traceLLMCall` | Every `chat()` when `LANGSMITH_TRACING=true` |
+| LangSmith runs | `app/api/lib/tracers/langsmith.ts :: record` via `recordLangSmithTrace` | Every `chat()` when `LANGSMITH_TRACING=true`; fire-and-forget |
 | Next.js hook | `instrumentation.ts :: register` | No-op — OTEL cannot load at build time |
 
 Production CV generations link to the Langfuse prompt version via `langfusePrompt` on `ChatOptions` (set in `route.ts` from `getCvPrompt()`).
@@ -184,13 +183,11 @@ Test JD fixtures: `knowledge-base/test-jds/*.md`. Mock artifacts for CI: `script
 
 ---
 
-## Legacy modules (not on production path)
+## Legacy prompt modules (not on production path)
 
-Cloned from the portfolio chat bot — prompts exist, no HTTP routes today:
+Prompt files cloned from the portfolio chat bot remain for a hypothetical future `/api/chat` route. Dead RAG helpers (`input-filter.ts`, `getRelevantContext`, chat-prompt model variants) were removed — recoverable from git history if needed.
 
-- `chat-prompt.ts`, `jd-prompt.ts`, `prompts.ts`, `langfuse-prompts.ts` → future `/api/chat`
-- `lib/input-filter.ts` → client-side short-circuits before chat API calls
-- `knowledge-base.ts :: getRelevantContext()` → keyword RAG for chat (unused by tailor-cv)
+- `chat-prompt.ts`, `jd-prompt.ts`, `prompts.ts`, `langfuse-prompts.ts`
 
 ---
 

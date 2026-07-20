@@ -1,16 +1,17 @@
 /**
- * Langfuse generation tracing — links each LLM call to prompt versions and usage.
+ * Langfuse generation tracing — one of two tracer adapters dispatched from `tracers/index.ts`.
  *
- * Invoked from `llm.ts :: chat()` after every provider call. Requires
- * LANGFUSE_TRACING=true and keys; pairs with langfuse-otel.ts for span export.
+ * Links each LLM call to prompt versions and usage. Requires LANGFUSE_TRACING=true
+ * and keys; pairs with langfuse-otel.ts for span export.
  */
 import { LangfuseClient } from '@langfuse/client';
 import {
   startActiveObservation,
   type LangfuseGeneration,
 } from '@langfuse/tracing';
-import { ensureLangfuseOtel, flushLangfuseTraces } from './langfuse-otel';
-import { ChatMessage, ChatOptions, ChatResponse } from './llm';
+import { getEnvString } from '../../../../lib/env';
+import { ensureLangfuseOtel, flushLangfuseTraces } from '../langfuse-otel';
+import type { Tracer, TracePayload } from './tracer';
 
 let langfuseClient: LangfuseClient | null = null;
 
@@ -23,7 +24,7 @@ export function initLangFuse(): LangfuseClient | null {
     langfuseClient = new LangfuseClient({
       publicKey: process.env.LANGFUSE_PUBLIC_KEY,
       secretKey: process.env.LANGFUSE_SECRET_KEY,
-      baseUrl: process.env.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com',
+      baseUrl: getEnvString('LANGFUSE_BASE_URL', 'https://cloud.langfuse.com')!,
     });
   }
   return langfuseClient;
@@ -35,21 +36,16 @@ export interface LangfusePromptRef {
   isFallback?: boolean;
 }
 
-export async function traceLLMCall(
-  provider: string,
-  model: string,
-  messages: ChatMessage[],
-  systemPrompt: string,
-  response: ChatResponse,
-  startTime: number,
-  options: ChatOptions | Record<string, unknown> = {},
-  langfusePrompt?: LangfusePromptRef | null
-): Promise<void> {
-  try {
-    if (process.env.LANGFUSE_TRACING !== 'true') {
-      return;
-    }
+function isEnabled(): boolean {
+  return process.env.LANGFUSE_TRACING === 'true';
+}
 
+async function record(payload: TracePayload): Promise<void> {
+  if (!isEnabled()) return;
+
+  const { provider, model, messages, systemPrompt, response, startTime, options, langfusePrompt } = payload;
+
+  try {
     if (
       !process.env.LANGFUSE_PUBLIC_KEY?.trim() ||
       !process.env.LANGFUSE_SECRET_KEY?.trim()
@@ -63,12 +59,11 @@ export async function traceLLMCall(
 
     const durationMs = Date.now() - startTime;
     const modelParameters: Record<string, string | number> = {};
-    const opts = options as ChatOptions & Record<string, unknown>;
-    if (typeof opts.temperature === 'number') {
-      modelParameters.temperature = opts.temperature;
+    if (typeof options.temperature === 'number') {
+      modelParameters.temperature = options.temperature;
     }
-    if (typeof opts.maxTokens === 'number') {
-      modelParameters.maxTokens = opts.maxTokens;
+    if (typeof options.maxTokens === 'number') {
+      modelParameters.maxTokens = options.maxTokens;
     }
 
     await startActiveObservation(
@@ -90,9 +85,9 @@ export async function traceLLMCall(
             provider,
             model,
             duration_ms: durationMs,
-            temperature: opts.temperature,
-            max_tokens: opts.maxTokens,
-            ...(opts.source ? { source: opts.source } : {}),
+            temperature: options.temperature,
+            max_tokens: options.maxTokens,
+            ...(options.source ? { source: options.source } : {}),
           },
           model,
           ...(Object.keys(modelParameters).length > 0
@@ -123,26 +118,8 @@ export async function traceLLMCall(
   }
 }
 
-export async function traceableChat(
-  originalChat: Function,
-  messages: ChatMessage[],
-  systemPrompt: string,
-  options: ChatOptions | Record<string, unknown> = {},
-  provider = 'unknown',
-  model = 'unknown'
-): Promise<ChatResponse> {
-  const startTime = Date.now();
-  const response = await originalChat(messages, systemPrompt, options);
-
-  traceLLMCall(
-    provider,
-    model,
-    messages,
-    systemPrompt,
-    response,
-    startTime,
-    options
-  ).catch((err) => console.error('Langfuse tracing error:', err));
-
-  return response;
-}
+export const langfuseTracer: Tracer = {
+  name: 'langfuse',
+  isEnabled,
+  record,
+};
