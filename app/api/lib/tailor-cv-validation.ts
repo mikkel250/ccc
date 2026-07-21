@@ -2,6 +2,8 @@
  * Request boundary validation for POST /api/tailor-cv.
  * Keeps parsing/typing out of the route handler — the route maps `{ ok: false }` to HTTP 400.
  */
+import { getTailorJdMaxChars } from "./cv-schema";
+
 export interface TailorCvRequestBody {
   jobDescription?: unknown;
   sessionId?: unknown;
@@ -39,10 +41,16 @@ export function validateTailorCvBody(
     return { ok: false, error: "jobDescription must be a non-empty string." };
   }
 
+  const trimmed = jd.trim();
+  const maxChars = getTailorJdMaxChars();
+  if (trimmed.length > maxChars) {
+    return { ok: false, error: "jobDescription exceeds configured size limit." };
+  }
+
   const sessionId =
     typeof record.sessionId === "string" && record.sessionId.trim().length > 0
       ? record.sessionId.trim()
       : fallbackSessionId;
 
-  return { ok: true, jobDescription: jd.trim(), sessionId };
+  return { ok: true, jobDescription: trimmed, sessionId };
 }

@@ -86,4 +86,20 @@ describe("validateTailorCvBody", () => {
     assert.equal(result.ok, true);
     if (result.ok) assert.equal(result.sessionId, "ip:fallback");
   });
+
+  it("rejects jobDescription over TAILOR_JD_MAX_CHARS", () => {
+    const previous = process.env.TAILOR_JD_MAX_CHARS;
+    process.env.TAILOR_JD_MAX_CHARS = "10";
+    try {
+      const result = validateTailorCvBody(
+        { jobDescription: "abcdefghijk" },
+        "fallback"
+      );
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.match(result.error, /size limit/i);
+    } finally {
+      if (previous === undefined) delete process.env.TAILOR_JD_MAX_CHARS;
+      else process.env.TAILOR_JD_MAX_CHARS = previous;
+    }
+  });
 });

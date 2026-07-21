@@ -1,9 +1,8 @@
 /**
- * Production CV tailoring endpoint — orchestrates the full request pipeline.
+ * Production CV tailoring endpoint — JSON curator pipeline.
  *
- * Flow: auth → validate → rate-limit → load KB → compile prompt → LLM → DOCX → JSON.
- * Called by the CCC consumer app; see docs/arch/APP_WALKTHROUGH.md for the
- * step-by-step map of every function involved.
+ * Flow: auth → body size → validate JD → rate-limit → load master → curator LLM →
+ * schema/size → docx → dual JSON response. See docs/plans/2026-07-20-001-feat-json-curator-cv-pipeline-plan.md.
  */
 export const runtime = "nodejs";
 
@@ -15,13 +14,15 @@ import { RateLimitError, ServiceError } from "../lib/errors";
 import { tailorCvDeps } from "../lib/tailor-cv-deps";
 import { getConfiguredTailorApiKey } from "../lib/tailor-auth";
 import { hashTailorApiKeyForRateLimit } from "../lib/rate-limit";
+import {
+  getTailorRequestMaxBytes,
+  getTailorResponseMaxBytes,
+} from "../lib/cv-schema";
+import { CURATOR_LANGFUSE_PROMPT_NAME } from "../lib/curator-prompt";
 
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" } as const;
 
-function jsonResponse(
-  body: unknown,
-  status: number
-): NextResponse {
+function jsonResponse(body: unknown, status: number): NextResponse {
   return NextResponse.json(body, { status, headers: NO_STORE_HEADERS });
 }
 
@@ -32,14 +33,7 @@ function isValidIp(value: string): boolean {
 
 /**
  * Resolve the client IP from `x-forwarded-for`.
- *
- * `NextRequest.ip`/`.geo` were removed in Next.js 15 and have no
- * hosting-agnostic replacement; a Route Handler has no way to inspect the
- * raw connecting-peer address on Railway (no `@vercel/functions` here).
- * The rightmost entry is trusted because it is the one *our own* edge proxy
- * appends when forwarding — true whether Railway overwrites the header or
- * appends to whatever a client already sent, so a client-injected leftmost
- * value can never override it. Returns "unknown" when no valid IP is found.
+ * The rightmost entry is trusted (appended by our edge proxy).
  */
 function parseClientIp(request: NextRequest): string {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -54,6 +48,23 @@ function parseClientIp(request: NextRequest): string {
   return "unknown";
 }
 
+function safeTailorLog(message: string, error?: unknown): void {
+  // Never log master/curated/JD payloads (R18).
+  if (error instanceof Error) {
+    console.error(message, {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    });
+    return;
+  }
+  if (error !== undefined) {
+    console.error(message, String(error));
+    return;
+  }
+  console.error(message);
+}
+
 export async function POST(request: NextRequest) {
   try {
     const auth = tailorCvDeps.authenticateTailorRequest(
@@ -65,20 +76,34 @@ export async function POST(request: NextRequest) {
 
     const ipAddress = parseClientIp(request);
     if (ipAddress === "unknown") {
-      return jsonResponse(
-        { error: "Cannot determine client IP" },
-        400
-      );
+      return jsonResponse({ error: "Cannot determine client IP" }, 400);
+    }
+
+    const maxRequestBytes = getTailorRequestMaxBytes();
+    const contentLengthHeader = request.headers.get("content-length");
+    if (contentLengthHeader) {
+      const contentLength = Number(contentLengthHeader);
+      if (Number.isFinite(contentLength) && contentLength > maxRequestBytes) {
+        return jsonResponse({ error: "Request body too large" }, 400);
+      }
+    }
+
+    let rawBody: string;
+    try {
+      rawBody = await request.text();
+    } catch {
+      return jsonResponse({ error: "Invalid request body" }, 400);
+    }
+
+    if (Buffer.byteLength(rawBody, "utf8") > maxRequestBytes) {
+      return jsonResponse({ error: "Request body too large" }, 400);
     }
 
     let body: unknown;
     try {
-      body = await request.json();
+      body = JSON.parse(rawBody);
     } catch {
-      return jsonResponse(
-        { error: "Invalid JSON in request body" },
-        400
-      );
+      return jsonResponse({ error: "Invalid JSON in request body" }, 400);
     }
 
     const validated = validateTailorCvBody(body, `ip:${ipAddress}`);
@@ -109,57 +134,88 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const context = tailorCvDeps.getAllContext();
-    const { systemPrompt: promptText, langfusePrompt } = await tailorCvDeps.getCvPrompt();
-    const systemPrompt = tailorCvDeps.compileCvPrompt(promptText, context);
+    const masterCv = tailorCvDeps.requireMasterCv();
+    const { systemPrompt: promptText, langfusePrompt } =
+      await tailorCvDeps.getCuratorPrompt();
+    const systemPrompt = tailorCvDeps.compileCuratorPrompt(promptText, masterCv);
+    const userContent = tailorCvDeps.buildCuratorUserMessage(jobDescription);
 
-    const messages = [
+    const llmResponse = await tailorCvDeps.chat(
+      [{ role: "user" as const, content: userContent }],
+      systemPrompt,
       {
-        role: "user" as const,
-        content: `Tailor a CV for this job description:\n\n${jobDescription}`,
-      },
-    ];
+        model: getTailorModel(),
+        langfusePrompt: langfusePrompt ?? {
+          name: CURATOR_LANGFUSE_PROMPT_NAME,
+          version: 0,
+          isFallback: true,
+        },
+        source: "tailor-cv-curator",
+      }
+    );
 
-    const llmResponse = await tailorCvDeps.chat(messages, systemPrompt, {
-      model: getTailorModel(),
-      langfusePrompt: langfusePrompt ?? { name: "cv-tailor-system", version: 0, isFallback: true },
-      source: "tailor-cv",
-    });
+    let curatedRaw: unknown;
+    try {
+      curatedRaw = tailorCvDeps.extractStructuredJson(llmResponse.content);
+    } catch {
+      safeTailorLog("Curator output was not valid JSON");
+      return jsonResponse(
+        { error: "Curator output was not valid JSON" },
+        422
+      );
+    }
 
-    const cv = await tailorCvDeps.markdownToDocxBase64(llmResponse.content);
+    const schemaResult = tailorCvDeps.validateCvJson(curatedRaw);
+    if (!schemaResult.ok) {
+      safeTailorLog("Curator output failed schema validation");
+      return jsonResponse(
+        { error: "Curator output failed schema validation" },
+        422
+      );
+    }
 
-    return jsonResponse({
-      cv,
+    const sizeResult = tailorCvDeps.assertCuratedJsonSize(schemaResult.data);
+    if (!sizeResult.ok) {
+      return jsonResponse({ error: sizeResult.error }, 422);
+    }
+
+    const built = await tailorCvDeps.buildJsonDocxBase64(schemaResult.data);
+    if (!built.ok) {
+      safeTailorLog("Docx builder failed after valid curated JSON");
+      return jsonResponse(
+        { error: "Failed to render CV document" },
+        422
+      );
+    }
+
+    const responseBody = {
+      cv: built.base64,
+      curatedJson: schemaResult.data,
+      builderVersion: built.builderVersion,
       model: llmResponse.model,
       usage: llmResponse.usage,
       remaining: rateLimit.remaining,
       resetTime: rateLimit.resetTime,
-    }, 200);
-  } catch (error: unknown) {
-    // Log only name/message/stack. Provider SDKs (OpenAI, Anthropic, Upstash) often
-    // attach `request`, `response`, `config`, and header objects to their thrown
-    // Errors; dumping the raw error can leak Authorization headers, request bodies,
-    // or PII into logs. Stringify the safe subset explicitly.
-    if (error instanceof Error) {
-      console.error("Tailor CV API error:", {
-        name: error.name,
-        message: error.message,
-        stack: error.stack,
-      });
-    } else {
-      console.error("Tailor CV API error (non-Error thrown):", String(error));
+    };
+
+    const responseBytes = Buffer.byteLength(
+      JSON.stringify(responseBody),
+      "utf8"
+    );
+    if (responseBytes > getTailorResponseMaxBytes()) {
+      return jsonResponse(
+        { error: "Tailor response exceeds configured size limit" },
+        422
+      );
     }
 
+    return jsonResponse(responseBody, 200);
+  } catch (error: unknown) {
+    safeTailorLog("Tailor CV API error:", error);
     return mapErrorToResponse(error);
   }
 }
 
-/**
- * Maps a caught error to its HTTP response. Table-driven (checked top to
- * bottom, first match wins) so the security-sensitive decision — which
- * errors get their raw `.message` forwarded to the client vs. masked with a
- * generic string — is auditable in one place instead of interleaved `if`s.
- */
 type ErrorResponseEntry = {
   matches: (error: unknown) => boolean;
   status: 429 | 503;
@@ -199,8 +255,5 @@ function mapErrorToResponse(error: unknown) {
 }
 
 export async function GET() {
-  return jsonResponse(
-    { error: "Method not allowed. Use POST." },
-    405
-  );
+  return jsonResponse({ error: "Method not allowed. Use POST." }, 405);
 }

@@ -3,20 +3,32 @@
  * pipeline steps via mock.method on plain object properties (ESM namespace getters are not mockable).
  */
 import { checkRateLimit as checkRateLimitImpl } from "./rate-limit";
-import { getAllContext as getAllContextImpl } from "./knowledge-base";
-import { getCvPrompt as getCvPromptImpl, compileCvPrompt as compileCvPromptImpl } from "./cv-prompt";
 import { chat as chatImpl, isLlmServiceError as isLlmServiceErrorImpl } from "./llm";
-import { markdownToDocxBase64 as markdownToDocxBase64Impl } from "./markdown-docx";
-
 import { authenticateTailorRequest as authenticateTailorRequestImpl } from "./tailor-auth";
+import { requireMasterCv as requireMasterCvImpl } from "./master-cv";
+import {
+  getCuratorPrompt as getCuratorPromptImpl,
+  compileCuratorPrompt as compileCuratorPromptImpl,
+  buildCuratorUserMessage as buildCuratorUserMessageImpl,
+} from "./curator-prompt";
+import {
+  validateCvJson as validateCvJsonImpl,
+  assertCuratedJsonSize as assertCuratedJsonSizeImpl,
+} from "./cv-schema";
+import { extractStructuredJson as extractStructuredJsonImpl } from "./eval-parse";
+import { buildJsonDocxBase64 as buildJsonDocxBase64Impl } from "./json-docx-builder";
 
 export const tailorCvDeps = {
   authenticateTailorRequest: authenticateTailorRequestImpl,
   checkRateLimit: checkRateLimitImpl,
-  getAllContext: getAllContextImpl,
-  getCvPrompt: getCvPromptImpl,
-  compileCvPrompt: compileCvPromptImpl,
+  requireMasterCv: requireMasterCvImpl,
+  getCuratorPrompt: getCuratorPromptImpl,
+  compileCuratorPrompt: compileCuratorPromptImpl,
+  buildCuratorUserMessage: buildCuratorUserMessageImpl,
   chat: chatImpl,
   isLlmServiceError: isLlmServiceErrorImpl,
-  markdownToDocxBase64: markdownToDocxBase64Impl,
+  extractStructuredJson: extractStructuredJsonImpl,
+  validateCvJson: validateCvJsonImpl,
+  assertCuratedJsonSize: assertCuratedJsonSizeImpl,
+  buildJsonDocxBase64: buildJsonDocxBase64Impl,
 };
