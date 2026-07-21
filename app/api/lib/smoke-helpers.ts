@@ -1,11 +1,11 @@
 /**
  * Smoke helpers: threshold evaluation + redact-by-default artifacts (KTD9 / R18).
  */
-import { getEnvNumber } from "../../../lib/env";
+import { getEnvFloat, getEnvNumber } from "../../../lib/env";
 import type { JsonGroundingScore, JsonJdFitScore } from "./eval-judge";
 
 export function getSmokeGroundingMin(): number {
-  return Math.min(1, Math.max(0, getEnvNumber("SMOKE_GROUNDING_MIN", 0.7)));
+  return Math.min(1, Math.max(0, getEnvFloat("SMOKE_GROUNDING_MIN", 0.7)));
 }
 
 export function getSmokeJdFitMin(): number {
@@ -39,6 +39,11 @@ export function evaluateSmokeJudgeGates(
     return { ok: false, reasons };
   }
 
+  if (grounding.flaggedClaims.length > 0) {
+    reasons.push(
+      `grounding flaggedClaims (${grounding.flaggedClaims.length}) must be empty`
+    );
+  }
   if (grounding.score < mins.groundingMin) {
     reasons.push(
       `grounding score ${grounding.score} < min ${mins.groundingMin}`

@@ -90,7 +90,10 @@ function mockTailorPipelineSuccess(
       isFallback: true,
     },
   }));
-  mock.method(tailorCvDeps, "compileCuratorPrompt", (prompt: string) => prompt);
+  mock.method(tailorCvDeps, "compileCuratorPrompt", (prompt: string) => ({
+    ok: true as const,
+    systemPrompt: prompt,
+  }));
   mock.method(
     tailorCvDeps,
     "buildCuratorUserMessage",
@@ -173,6 +176,18 @@ describe("POST /api/tailor-cv — request hardening", () => {
     assert.equal(response.status, 400);
     const json = (await response.json()) as { error: string };
     assert.equal(json.error, "Invalid JSON in request body");
+  });
+
+  it("still rate-limits authorized invalid JSON (before body parse succeeds)", async () => {
+    const checkRateLimitSpy = mock.method(tailorCvDeps, "checkRateLimit");
+    const response = await POST(
+      buildPostRequest(
+        '{"jobDescription": "React role",}',
+        authHeaders({ "x-forwarded-for": "198.51.100.42" })
+      )
+    );
+    assert.equal(response.status, 400);
+    assert.ok(checkRateLimitSpy.mock.callCount() >= 1);
   });
 
   it("returns 400 for missing IP before attempting JSON parse when authorized", async () => {
@@ -430,6 +445,20 @@ describe("POST /api/tailor-cv — request hardening", () => {
     assert.match(json.error, /schema/i);
     assert.equal(json.cv, undefined);
     assert.equal(json.curatedJson, undefined);
+  });
+
+  it("returns 503 when curator prompt is missing MASTER_CV_JSON placeholder", async () => {
+    mockTailorPipelineSuccess();
+    mock.method(tailorCvDeps, "compileCuratorPrompt", () => ({
+      ok: false as const,
+      error: "Curator prompt misconfigured",
+    }));
+    const chatSpy = mock.method(tailorCvDeps, "chat");
+    const response = await POST(buildPostRequest(VALID_BODY, XFF));
+    assert.equal(response.status, 503);
+    const json = (await response.json()) as { error: string };
+    assert.match(json.error, /misconfigured/i);
+    assert.equal(chatSpy.mock.callCount(), 0);
   });
 
   it("returns 422 when builder fails after valid curated JSON", async () => {

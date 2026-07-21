@@ -177,6 +177,33 @@ describe("checkRateLimit", () => {
     assert.equal(blocked.allowed, false);
   });
 
+  it("does not consume IP quota when secret bucket alone denies", async () => {
+    __injectSecretRatelimitForTest(
+      createSlidingWindowMock({
+        maxRequests: 1,
+        windowMs: config.windowMs,
+      })
+    );
+    const ipInner = createSlidingWindowMock({
+      maxRequests: 100,
+      windowMs: config.windowMs,
+    });
+    let ipCalls = 0;
+    __injectRatelimitForTest({
+      limit: async (identifier: string) => {
+        ipCalls += 1;
+        return ipInner.limit(identifier);
+      },
+    });
+    const secret = hashTailorApiKeyForRateLimit(`no-ip-burn-${Date.now()}`);
+    const first = await checkRateLimit("s", `ip-a-${Date.now()}`, secret);
+    assert.equal(first.allowed, true);
+    assert.equal(ipCalls, 1);
+    const blocked = await checkRateLimit("s", `ip-b-${Date.now()}`, secret);
+    assert.equal(blocked.allowed, false);
+    assert.equal(ipCalls, 1);
+  });
+
   it("returns the more restrictive remaining of the two buckets", async () => {
     __injectSecretRatelimitForTest(
       createSlidingWindowMock({

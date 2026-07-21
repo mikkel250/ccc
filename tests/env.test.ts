@@ -2,6 +2,8 @@ import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import {
   getDeepSeekBaseUrl,
+  getEnvFloat,
+  getEnvNumber,
   getEnvString,
   getEvalExtractionModel,
   getEvalJudgeModel,
@@ -19,6 +21,25 @@ import {
   getJudgeMap,
   resetJudgeMapCache,
 } from "../app/api/lib/eval-schema";
+
+describe("getEnvFloat", () => {
+  const key = "TEST_ENV_FLOAT_KEY";
+
+  afterEach(() => {
+    delete process.env[key];
+  });
+
+  it("preserves fractional values (unlike getEnvNumber/parseInt)", () => {
+    process.env[key] = "0.7";
+    assert.equal(getEnvFloat(key, 0.5), 0.7);
+    assert.equal(getEnvNumber(key, 0.5), 0);
+  });
+
+  it("returns default for non-finite input", () => {
+    process.env[key] = "not-a-number";
+    assert.equal(getEnvFloat(key, 0.7), 0.7);
+  });
+});
 
 describe("getEnvString", () => {
   const key = "TEST_ENV_STRING_KEY";

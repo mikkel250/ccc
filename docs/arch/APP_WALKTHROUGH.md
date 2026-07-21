@@ -20,8 +20,8 @@ Client (CCC / smoke CLI)
     ▼ POST { jobDescription } + Authorization: Bearer
 app/api/tailor-cv/route.ts
     ├── authenticateTailorRequest()   app/api/lib/tailor-auth.ts
+    ├── checkRateLimit(ip, secret)    app/api/lib/rate-limit.ts  (before body parse)
     ├── validateTailorCvBody()        app/api/lib/tailor-cv-validation.ts
-    ├── checkRateLimit(ip, secret)    app/api/lib/rate-limit.ts
     ├── requireMasterCv()             app/api/lib/master-cv.ts
     ├── getCuratorPrompt() + compile  app/api/lib/curator-prompt.ts
     ├── chat()                        app/api/lib/llm.ts  (TAILOR_MODEL, source: tailor-cv-curator)
@@ -64,7 +64,7 @@ The root page (`app/page.tsx :: Home`) calls `notFound()` — there is intention
 |------|------|----------|
 | Burst limit | `app/api/lib/rate-limit.ts` | `checkRateLimit(sessionId, ip, secretBucketKey)` |
 
-Upstash Redis dual sliding windows (`RATE_LIMIT_MAX` + `RATE_LIMIT_SECRET_MAX`). Failures → **429** with more-restrictive `remaining`/`resetTime`; unresolvable IP → **400** before rate limiting.
+Upstash Redis dual sliding windows (`RATE_LIMIT_MAX` + `RATE_LIMIT_SECRET_MAX`). Secret bucket is checked first so secret exhaustion does not burn IP quota. Runs after auth/IP resolution and **before** body parse so invalid authorized floods still count. Failures → **429** with more-restrictive `remaining`/`resetTime`; unresolvable IP → **400** before rate limiting.
 
 ### 4. Load master CV
 
@@ -79,8 +79,8 @@ Resolves `MASTER_CV_JSON` (preferred) or `MASTER_CV_PATH` (non-world-readable), 
 | Step | File | Function |
 |------|------|----------|
 | Fetch prompt | `app/api/lib/curator-prompt.ts` | `getCuratorPrompt()` |
-| Compile | same | `compileCuratorPrompt(promptText, masterCv)` |
-| User message | same | `buildCuratorUserMessage(jd)` — JD in delimited data channel |
+| Compile | same | `compileCuratorPrompt(promptText, masterCv)` → `{ ok, systemPrompt }` (fails closed if `{{MASTER_CV_JSON}}` missing; `$`-safe inject) |
+| User message | same | `buildCuratorUserMessage(jd)` — JD in per-request nonce-delimited data channel |
 
 Langfuse prompt name: `cv-curator-json` (fallback hardcoded; page-count / visual QA stripped).
 

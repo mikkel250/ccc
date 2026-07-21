@@ -17,10 +17,23 @@ const SCHEMA_RELATIVE = join(
 );
 
 let validateFn: ValidateFunction | null = null;
+let schemaPathOverride: string | null = null;
+
+/** Test-only: force schema path / clear compiled validator. */
+export function __resetCvSchemaValidatorForTest(pathOverride?: string | null): void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error(
+      "__resetCvSchemaValidatorForTest is only available in the test environment"
+    );
+  }
+  schemaPathOverride = pathOverride === undefined ? null : pathOverride;
+  validateFn = null;
+}
 
 function loadValidator(): ValidateFunction {
   if (validateFn) return validateFn;
-  const schemaPath = join(process.cwd(), SCHEMA_RELATIVE);
+  const schemaPath =
+    schemaPathOverride ?? join(process.cwd(), SCHEMA_RELATIVE);
   const schema = JSON.parse(readFileSync(schemaPath, "utf8")) as object;
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   validateFn = ajv.compile(schema);
@@ -39,11 +52,15 @@ function formatErrors(errors: ErrorObject[] | null | undefined): string {
 
 /** Validate unknown JSON against master-cv.schema.json (draft 2020-12). */
 export function validateCvJson(data: unknown): CvSchemaValidationResult {
-  const validate = loadValidator();
-  if (validate(data)) {
-    return { ok: true, data };
+  try {
+    const validate = loadValidator();
+    if (validate(data)) {
+      return { ok: true, data };
+    }
+    return { ok: false, error: formatErrors(validate.errors) };
+  } catch {
+    return { ok: false, error: "CV schema unavailable" };
   }
-  return { ok: false, error: formatErrors(validate.errors) };
 }
 
 export function getCuratedJsonMaxBytes(): number {

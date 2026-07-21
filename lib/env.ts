@@ -12,6 +12,14 @@ export function getEnvNumber(key: string, defaultValue: number): number {
   return Number.isFinite(parsed) ? parsed : defaultValue;
 }
 
+/** Float env parse — use for fractional thresholds (getEnvNumber uses parseInt). */
+export function getEnvFloat(key: string, defaultValue: number): number {
+  const raw = process.env[key];
+  if (!raw) return defaultValue;
+  const parsed = parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : defaultValue;
+}
+
 export function getEnvString(key: string, defaultValue?: string): string | undefined {
   const value = process.env[key];
   if (value === undefined || value === null || value.trim() === '') {

@@ -72,16 +72,26 @@ export function resolveJudgeModel(generatorModel: string): string {
   return getEvalJudgeModel();
 }
 
-function clampRelevanceScore(value: unknown): number {
+function parseRelevanceScore(
+  value: unknown
+): { ok: true; score: number } | { ok: false } {
   const num = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(num)) return 3;
-  return Math.min(5, Math.max(1, Math.round(num)));
+  if (!Number.isFinite(num)) return { ok: false };
+  return { ok: true, score: Math.min(5, Math.max(1, Math.round(num))) };
 }
 
 function clampUnitScore(value: unknown, fallback = 0.5): number {
   const num = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(num)) return fallback;
   return Math.min(1, Math.max(0, num));
+}
+
+function parseUnitScore(
+  value: unknown
+): { ok: true; score: number } | { ok: false } {
+  const num = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(num)) return { ok: false };
+  return { ok: true, score: Math.min(1, Math.max(0, num)) };
 }
 
 export async function scoreExtraction(
@@ -153,8 +163,20 @@ export async function scoreRelevance(
       reasoning?: unknown;
     };
 
+    const score = parseRelevanceScore(parsed.score);
+    if (!score.ok) {
+      return {
+        score: 1,
+        reasoning:
+          typeof parsed.reasoning === "string"
+            ? parsed.reasoning
+            : "Missing or invalid relevance score",
+        parseFailed: true,
+      };
+    }
+
     return {
-      score: clampRelevanceScore(parsed.score),
+      score: score.score,
       reasoning:
         typeof parsed.reasoning === "string"
           ? parsed.reasoning
@@ -165,7 +187,7 @@ export async function scoreRelevance(
     const message = error instanceof Error ? error.message : String(error);
     console.warn("scoreRelevance parse failure:", message);
     return {
-      score: 3,
+      score: 1,
       reasoning: `Parse failure: ${message}`,
       parseFailed: true,
     };
@@ -257,8 +279,12 @@ export async function scoreJsonGrounding(
       score?: unknown;
       flaggedClaims?: unknown;
     };
+    const score = parseUnitScore(parsed.score);
+    if (!score.ok) {
+      return { score: 0, flaggedClaims: [], parseFailed: true };
+    }
     return {
-      score: clampUnitScore(parsed.score, 0.5),
+      score: score.score,
       flaggedClaims: parseStringArray(parsed.flaggedClaims),
       parseFailed: false,
     };
@@ -299,8 +325,19 @@ export async function scoreJsonJdFit(
       score?: unknown;
       reasoning?: unknown;
     };
+    const score = parseRelevanceScore(parsed.score);
+    if (!score.ok) {
+      return {
+        score: 1,
+        reasoning:
+          typeof parsed.reasoning === "string"
+            ? parsed.reasoning
+            : "Missing or invalid jd-fit score",
+        parseFailed: true,
+      };
+    }
     return {
-      score: clampRelevanceScore(parsed.score),
+      score: score.score,
       reasoning:
         typeof parsed.reasoning === "string"
           ? parsed.reasoning

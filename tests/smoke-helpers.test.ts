@@ -1,4 +1,4 @@
-import { describe, it } from "node:test";
+import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { ChatResponse } from "../app/api/lib/llm";
 import {
@@ -7,6 +7,7 @@ import {
 } from "../app/api/lib/eval-judge";
 import {
   evaluateSmokeJudgeGates,
+  getSmokeGroundingMin,
   redactCuratedForArtifact,
 } from "../app/api/lib/smoke-helpers";
 
@@ -82,6 +83,49 @@ describe("scoreJsonGrounding / scoreJsonJdFit", () => {
     assert.equal(result.parseFailed, false);
     assert.equal(result.score, 4);
   });
+
+  it("marks parseFailed when jd-fit score is missing (does not clamp to 3)", async () => {
+    const result = await scoreJsonJdFit(
+      MASTER,
+      CURATED,
+      "React role",
+      "test/model",
+      {
+        chat: async () =>
+          mockChat('{"reasoning": "forgot the score"}'),
+      }
+    );
+    assert.equal(result.parseFailed, true);
+    assert.notEqual(result.score, 3);
+  });
+
+  it("marks parseFailed when grounding score is missing", async () => {
+    const result = await scoreJsonGrounding(
+      MASTER,
+      CURATED,
+      "React role",
+      "test/model",
+      {
+        chat: async () =>
+          mockChat('{"flaggedClaims": []}'),
+      }
+    );
+    assert.equal(result.parseFailed, true);
+  });
+});
+
+describe("getSmokeGroundingMin", () => {
+  const original = process.env.SMOKE_GROUNDING_MIN;
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.SMOKE_GROUNDING_MIN;
+    else process.env.SMOKE_GROUNDING_MIN = original;
+  });
+
+  it("keeps fractional SMOKE_GROUNDING_MIN=0.7 as 0.7 not 0", () => {
+    process.env.SMOKE_GROUNDING_MIN = "0.7";
+    assert.equal(getSmokeGroundingMin(), 0.7);
+  });
 });
 
 describe("evaluateSmokeJudgeGates", () => {
@@ -103,6 +147,20 @@ describe("evaluateSmokeJudgeGates", () => {
     );
     assert.equal(gate.ok, false);
     if (!gate.ok) assert.match(gate.reasons.join(" "), /parseFailed/i);
+  });
+
+  it("fails when grounding flaggedClaims is non-empty", () => {
+    const gate = evaluateSmokeJudgeGates(
+      {
+        score: 0.95,
+        flaggedClaims: ["Invented Acme Corp $10M ARR"],
+        parseFailed: false,
+      },
+      { score: 5, reasoning: "ok", parseFailed: false },
+      { groundingMin: 0.7, jdFitMin: 3 }
+    );
+    assert.equal(gate.ok, false);
+    if (!gate.ok) assert.match(gate.reasons.join(" "), /flaggedClaims/i);
   });
 
   it("passes when both scores meet mins", () => {

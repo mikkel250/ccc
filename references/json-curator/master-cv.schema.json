@@ -12,13 +12,14 @@
     "experience",
     "education"
   ],
-  "additionalProperties": true,
+  "additionalProperties": false,
   "properties": {
     "name": {
       "type": "string"
     },
     "contact": {
       "type": "object",
+      "additionalProperties": false,
       "required": [
         "location",
         "phone",
@@ -39,6 +40,7 @@
           "type": "array",
           "items": {
             "type": "object",
+            "additionalProperties": false,
             "required": [
               "label",
               "url"
@@ -65,6 +67,7 @@
       "type": "array",
       "items": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "category",
           "items"
@@ -83,6 +86,7 @@
       "type": "array",
       "items": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "title",
           "dates"
@@ -110,6 +114,7 @@
             "type": "array",
             "items": {
               "type": "object",
+              "additionalProperties": false,
               "required": [
                 "heading",
                 "bullets"
@@ -134,6 +139,7 @@
       "type": "array",
       "items": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "name",
           "bullets"
