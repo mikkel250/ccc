@@ -93,7 +93,7 @@ Treat dual tracers as **two contracts**, not one shared “trace everything” p
 
 **Bounded flush:** `flushLangfuseTraces()` reads `LANGFUSE_FLUSH_TIMEOUT_MS` and races `forceFlush()` (`app/api/lib/langfuse-otel.ts:60-95`). Default documented in `.env.example`.
 
-**Caveat:** Langfuse’s adapter still records full message/prompt/content into the generation. PR #14 hardened LangSmith; if Langfuse sits outside your trust boundary, treat content redaction there as a separate follow-up.
+**Caveat (historical, pre-fix):** Before the JSON curator cutover hardening, Langfuse’s adapter recorded full message/prompt/content into generations. **Current behavior:** `buildLangfuseGenerationUpdate` redacts prompt and response content to `[REDACTED]` (same posture as LangSmith). If Langfuse sits outside your trust boundary, confirm redaction in a live trace after deploy.
 
 ## Related
 

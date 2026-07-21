@@ -4,10 +4,16 @@
  * page-count / visual QA / resume_builder operator steps stripped.
  */
 import { randomBytes } from "node:crypto";
+import { getEnvNumber } from "../../../lib/env";
 import { initLangFuse } from "./tracers/langfuse";
 
 export const CURATOR_LANGFUSE_PROMPT_NAME = "cv-curator-json";
 export const MASTER_CV_JSON_PLACEHOLDER = "{{MASTER_CV_JSON}}";
+/** Langfuse prompt cache TTL (seconds). Default 300. */
+const CURATOR_PROMPT_CACHE_TTL_SECONDS = Math.max(
+  0,
+  Math.floor(getEnvNumber("LANGFUSE_CURATOR_PROMPT_CACHE_TTL_SECONDS", 300))
+);
 
 const FALLBACK_PROMPT = `<role>
 You are an elite CV/résumé strategist and ATS specialist. You structure every CV using
@@ -101,7 +107,7 @@ export async function getCuratorPrompt(): Promise<{
   try {
     const prompt = await client.prompt.get(CURATOR_LANGFUSE_PROMPT_NAME, {
       label: "production",
-      cacheTtlSeconds: 300,
+      cacheTtlSeconds: CURATOR_PROMPT_CACHE_TTL_SECONDS,
     });
 
     return {

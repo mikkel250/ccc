@@ -77,8 +77,8 @@ interface ExperienceRole {
 
 interface Project {
   name: string;
-  linkLabel: string;
-  linkUrl: string;
+  linkLabel?: string;
+  linkUrl?: string;
   bullets: string[];
 }
 
@@ -278,29 +278,35 @@ function buildDocument(data: ResumeCv): Document {
   if (data.projects?.length) {
     children.push(sectionHeader("PROJECTS"));
     for (const p of data.projects) {
+      const headingChildren: (TextRun | ExternalHyperlink)[] = [
+        new TextRun({
+          text:
+            p.linkUrl && p.linkLabel ? `${p.name} — ` : p.name,
+          bold: true,
+          size: 21,
+          font: FONT,
+        }),
+      ];
+      if (p.linkUrl && p.linkLabel) {
+        headingChildren.push(
+          new ExternalHyperlink({
+            link: p.linkUrl,
+            children: [
+              new TextRun({
+                text: p.linkLabel,
+                bold: false,
+                style: "Hyperlink",
+                size: 21,
+                font: FONT,
+              }),
+            ],
+          })
+        );
+      }
       children.push(
         new Paragraph({
           spacing: { after: 40 },
-          children: [
-            new TextRun({
-              text: `${p.name} — `,
-              bold: true,
-              size: 21,
-              font: FONT,
-            }),
-            new ExternalHyperlink({
-              link: p.linkUrl,
-              children: [
-                new TextRun({
-                  text: p.linkLabel,
-                  bold: false,
-                  style: "Hyperlink",
-                  size: 21,
-                  font: FONT,
-                }),
-              ],
-            }),
-          ],
+          children: headingChildren,
         })
       );
       for (const b of p.bullets) {

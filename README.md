@@ -61,16 +61,21 @@ Full reference: [`docs/api/API.md`](docs/api/API.md)
 
 ## Quick Examples
 
-```bash
-curl http://localhost:3000/api/hello
+Supported manual live-API path (Bearer + dual artifacts + judges):
 
-curl -s -X POST http://localhost:3000/api/tailor-cv \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TAILOR_API_KEY" \
-  -d '{"jobDescription": "Senior React engineer. Requirements: TypeScript, React, Node."}' \
-  | jq -r '.cv' | base64 -d > /tmp/cv.docx
+```bash
+npm run smoke -- http://localhost:3000
+# optional JD override:
+npm run smoke -- http://localhost:3000 path/to/jd.md
 ```
 
+Health probe only (not a tailor workflow):
+
+```bash
+curl http://localhost:3000/api/hello
+```
+
+Ad-hoc `curl` to `POST /api/tailor-cv` is **not** a supported operator method once smoke exists (see product contract). Use smoke for live checks.
 ---
 
 ## Testing
@@ -79,10 +84,10 @@ curl -s -X POST http://localhost:3000/api/tailor-cv \
 npm test                 # unit — no live tailor/smoke LLM
 npm run smoke -- http://localhost:3000   # manual live API + judges (not CI)
 npm run regen-docx -- curated.json out.docx --builder-version=1.0.0
-npm run test:e2e         # Playwright HTTP checks (Bearer required)
+npm run test:e2e         # Playwright HTTP checks (Bearer or bypass env)
 ```
 
-`scripts/eval-cv.ts` markdown generation eval is **retired** — use smoke for live quality.
+Live quality uses `npm run smoke` (not CI). Judge helpers used by smoke live under `app/api/lib/eval-*.ts`.
 
 See [`docs/test/TESTING.md`](docs/test/TESTING.md).
 

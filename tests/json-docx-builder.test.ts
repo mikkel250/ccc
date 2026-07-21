@@ -69,6 +69,22 @@ describe("json-docx-builder", () => {
     assert.ok(second.buffer.length > 0);
   });
 
+  it("builds docx for a project with only name and bullets (no link)", async () => {
+    const cv = structuredClone(FIXTURE) as {
+      projects: Array<{
+        name: string;
+        bullets: string[];
+        linkLabel?: string;
+        linkUrl?: string;
+      }>;
+    };
+    cv.projects = [{ name: "Unlinked Example", bullets: ["Did a thing."] }];
+    const result = await buildJsonDocx(cv);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.ok(isDocxZip(result.buffer));
+  });
+
   it("rejects non-object input", async () => {
     const result = await buildJsonDocx(null);
     assert.equal(result.ok, false);

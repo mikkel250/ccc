@@ -51,9 +51,10 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── create-langfuse-prompts.ts  # Upload prompts to Langfuse
 │   ├── e2e-tailor-cv.ts           # npm run smoke — live API + JSON judges
 │   ├── regen-docx.ts              # npm run regen-docx — mechanical rebuild
-│   ├── eval-cv.ts                 # RETIRED markdown eval CLI (points to smoke)
-│   └── seed-eval-results.ts       # Seed historical eval-results artifacts
+│   ├── seed-eval-results.ts       # Seed historical eval-results artifacts
+│   └── verify-rate-limit.ts       # Live Upstash rate-limit check
 ├── tests/
+│   ├── e2e/api.e2e.ts                     # Playwright API checks (Bearer / bypass)
 │   ├── curator-prompt.test.ts             # Curator prompt contract
 │   ├── json-docx-builder.test.ts          # Builder + regen CLI
 │   ├── smoke-helpers.test.ts              # Judge gates + redaction
@@ -62,7 +63,6 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── route.test.ts                      # Tailor route (mocked curator)
 │   ├── cv-prompt*.test.ts                 # Legacy markdown prompt tests
 │   ├── markdown-docx.test.ts              # Legacy markdown→docx
-│   ├── eval-cv.test.ts                    # Retired CLI stub
 │   └── …                                  # LLM, rate-limit, env, etc.
 ├── eval-results/                 # Eval output artifacts per JD×model
 ├── docs/
@@ -71,7 +71,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   │   └── …
 │   ├── struan-8-part-cv-framework.md     # Reference for CV output structure
 │   └── plan/llm-eval-pipeline/           # Active eval pipeline plan
-├── instrumentation.ts           # Next.js instrument hook (no-op)
+├── instrumentation.ts           # Next.js register → ensureSecureStartup (R5d)
 ├── next.config.mjs              # Next.js config (OTEL external packages)
 ├── railway.toml                 # Railway deployment config
 ├── .coderabbit.yaml             # CodeRabbit review config

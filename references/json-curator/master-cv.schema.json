@@ -106,12 +106,14 @@
           },
           "bullets": {
             "type": "array",
+            "minItems": 1,
             "items": {
               "type": "string"
             }
           },
           "subroles": {
             "type": "array",
+            "minItems": 1,
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -125,6 +127,7 @@
                 },
                 "bullets": {
                   "type": "array",
+                  "minItems": 1,
                   "items": {
                     "type": "string"
                   }
@@ -132,7 +135,17 @@
               }
             }
           }
-        }
+        },
+        "oneOf": [
+          {
+            "required": ["bullets"],
+            "not": { "required": ["subroles"] }
+          },
+          {
+            "required": ["subroles"],
+            "not": { "required": ["bullets"] }
+          }
+        ]
       }
     },
     "projects": {

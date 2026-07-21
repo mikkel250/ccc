@@ -2,6 +2,7 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import {
   authenticateTailorRequest,
+  ensureSecureStartup,
   isProductionLikeDeploy,
 } from "../app/api/lib/tailor-auth";
 
@@ -94,5 +95,12 @@ describe("tailor-auth", () => {
     if (!result.ok) {
       assert.equal(result.status, 503);
     }
+  });
+
+  it("ensureSecureStartup is a no-op under NODE_ENV=test", () => {
+    process.env.NODE_ENV = "test";
+    process.env.TAILOR_AUTH_INSECURE_BYPASS = "1";
+    process.env.RAILWAY_ENVIRONMENT = "production";
+    assert.doesNotThrow(() => ensureSecureStartup());
   });
 });

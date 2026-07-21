@@ -32,7 +32,7 @@ OpenAI and Google models go through OpenRouter flex (`service_tier: flex`, overr
 
 ### Evaluation pipeline
 
-The eval runner (`scripts/eval-cv.ts`) benchmarks CV generation across candidate models and real test JDs (`knowledge-base/test-jds/`). Test JDs are raw, unstructured recruiter text (no YAML frontmatter).
+Live quality for the JSON curator pipeline is **`npm run smoke`** (Bearer + dual artifacts + grounding/JD-fit judges). Historical markdown generation eval artifacts remain under `eval-results/`; judge helpers live in `app/api/lib/eval-*.ts`. Test JDs are raw, unstructured recruiter text in `knowledge-base/test-jds/` (no YAML frontmatter).
 
 **Complete (MVP):** LLM-as-Judge evaluation pipeline — two-stage judging with JD extraction gate, automated format compliance, relevance and hallucination judges. Scores pushed to Langfuse; artifacts saved to `eval-results/<jd-slug>/`.
 

@@ -111,7 +111,6 @@ npm test
 | `tests/env.test.ts` | Env var parsing, provider/model validation |
 | `tests/errors.test.ts` | Typed error classes (`RateLimitError`, `ServiceError`) |
 | `tests/eval-architecture-docs.test.ts` | Eval architecture doc cross-references |
-| `tests/eval-cv.test.ts` | Retired eval-cv CLI points to smoke |
 | `tests/smoke-helpers.test.ts` | Smoke judge gates + redaction |
 | `tests/json-docx-builder.test.ts` | JSON→docx builder + regen CLI |
 | `tests/curator-prompt.test.ts` | Curator prompt contract |
@@ -144,13 +143,7 @@ npm run regen-docx -- curated.json out.docx --builder-version=1.0.0
 npm run test:e2e
 ```
 
-Bearer required. Optional LLM path gated by `RUN_E2E_LLM_TESTS=true`.
-
----
-
-## Retired: markdown eval-cv
-
-`scripts/eval-cv.ts` exits with a pointer to `npm run smoke`. Do not use it for live quality.
+Bearer required (or `TAILOR_AUTH_INSECURE_BYPASS=1` with `TAILOR_API_KEY` unset for bypass cases). Optional LLM path gated by `RUN_E2E_LLM_TESTS=true`.
 
 ---
 

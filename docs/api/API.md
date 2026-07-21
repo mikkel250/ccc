@@ -66,7 +66,7 @@ Headers: `Content-Type: application/json`, `Authorization: Bearer <TAILOR_API_KE
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `jobDescription` | `string` | Yes | Untrusted JD text; size capped by `TAILOR_JD_MAX_CHARS` (default 50000) |
-| `sessionId` | `string` | No | Optional caller id (not used for rate limiting) |
+| `sessionId` | `string` | No | Optional caller ID (not used for rate limiting) |
 
 Request body size capped by `TAILOR_REQUEST_MAX_BYTES` (default 65536).
 
@@ -137,16 +137,19 @@ Errors use `{ "error": string }`. `remaining` / `resetTime` appear on 429 only.
 
 ## Environment Variables
 
-Full catalog: [`.env.example`](../../.env.example)
-
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `TAILOR_API_KEY` | Shared secret for Bearer auth | — (required in deploy) |
+| `TAILOR_AUTH_INSECURE_BYPASS` | Local/dev skip Bearer (hard-blocked in production-like deploys) | off |
 | `MASTER_CV_JSON` / `MASTER_CV_PATH` | Canonical master CV | Prefer env body; path must not be world-readable |
 | `TAILOR_MODEL` | Curator model (`provider/model`) | `anthropic/sonnet` |
-| `RATE_LIMIT_MAX` / `RATE_LIMIT_SECRET_MAX` | Dual rate ceilings | `5` / half of max |
+| `RATE_LIMIT_MAX` | Per-IP sliding-window ceiling | `5` |
+| `RATE_LIMIT_SECRET_MAX` | Per-shared-secret ceiling | half of `RATE_LIMIT_MAX` (min 1) |
+| `RATE_LIMIT_WINDOW` | Sliding window length (ms) | `60000` |
 | `TAILOR_REQUEST_MAX_BYTES` / `TAILOR_JD_MAX_CHARS` | Ingress limits | `65536` / `50000` |
 | `TAILOR_CURATED_JSON_MAX_BYTES` / `TAILOR_RESPONSE_MAX_BYTES` | Egress limits | `512000` / `2097152` |
+
+Full catalog with comments: [`.env.example`](../../.env.example)
 
 ---
 

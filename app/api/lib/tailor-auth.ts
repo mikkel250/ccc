@@ -21,15 +21,23 @@ export function isProductionLikeDeploy(): boolean {
   return false;
 }
 
+export function isTailorAuthBypassRequested(): boolean {
+  return getEnvBoolean("TAILOR_AUTH_INSECURE_BYPASS", false);
+}
+
 /**
- * Fatal at startup when TAILOR_AUTH_INSECURE_BYPASS is set in a production-like
- * deploy (R5d). Operators must notice a crash-loop on misconfiguration; silently
- * serving 503 per-request is not visible enough.
+ * Fatal when TAILOR_AUTH_INSECURE_BYPASS is set in a production-like deploy (R5d).
+ * Operators must notice a crash-loop on misconfiguration; silently serving 503
+ * per-request is not visible enough.
  *
- * Called once at module init. In test mode (NODE_ENV=test) this is a no-op so
- * tests can toggle bypass without triggering a process exit.
+ * In test mode (NODE_ENV=test) this is a no-op so tests can toggle bypass
+ * without terminating the process.
+ *
+ * Not invoked at module load — call {@link ensureSecureStartup} from the HTTP
+ * server entrypoint (`instrumentation.ts`) so scripts/REPL/tests can import
+ * this module safely.
  */
-export function assertSecureStartup(): void {
+function assertSecureStartup(): void {
   if (process.env.NODE_ENV === "test") return;
   if (isProductionLikeDeploy() && isTailorAuthBypassRequested()) {
     console.error(
@@ -40,20 +48,15 @@ export function assertSecureStartup(): void {
   }
 }
 
-// Run at module load — before any request handler is registered.
-assertSecureStartup();
-
-export function isTailorAuthBypassRequested(): boolean {
-  return getEnvBoolean("TAILOR_AUTH_INSECURE_BYPASS", false);
-}
-
-/** Test-only: reset startup guard state so auth tests can run after import. */
-export function __resetAuthStateForTest(): void {
-  if (process.env.NODE_ENV !== "test") {
-    throw new Error("__resetAuthStateForTest is only available in the test environment");
-  }
-  // No state to reset — the startup guard is a no-op in test mode.
-  // Export exists so test files can call it for symmetry with other __reset helpers.
+/**
+ * Ensure startup security invariants are enforced.
+ *
+ * Intentionally not invoked at module load so importing this module in tests,
+ * scripts, or tooling does not terminate the process. The Next.js
+ * `instrumentation.ts` register hook must call this during server startup.
+ */
+export function ensureSecureStartup(): void {
+  assertSecureStartup();
 }
 
 export function getConfiguredTailorApiKey(): string | undefined {

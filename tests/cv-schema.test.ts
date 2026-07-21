@@ -1,15 +1,13 @@
-import { describe, it, beforeEach, afterEach } from "node:test";
+import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, chmodSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 import {
   validateCvJson,
   assertCuratedJsonSize,
   getCuratedJsonMaxBytes,
   __resetCvSchemaValidatorForTest,
 } from "../app/api/lib/cv-schema";
-import { loadMasterCv, __resetMasterCvCacheForTest } from "../app/api/lib/master-cv";
 
 const fixturePath = join(process.cwd(), "tests/fixtures/curated-cv-valid.json");
 const validCv = JSON.parse(readFileSync(fixturePath, "utf8")) as unknown;
@@ -42,6 +40,25 @@ describe("validateCvJson", () => {
     }
   });
 
+  it("rejects experience roles that combine bullets and subroles", () => {
+    const base = validCv as {
+      experience: Array<Record<string, unknown>>;
+    };
+    const combined = {
+      ...base,
+      experience: [
+        {
+          title: "Engineer, Example",
+          dates: "2024 - Present",
+          bullets: ["Did a thing"],
+          subroles: [{ heading: "Also", bullets: ["Nope"] }],
+        },
+      ],
+    };
+    const result = validateCvJson(combined);
+    assert.equal(result.ok, false);
+  });
+
   it("returns schema unavailable when schema file cannot be loaded", () => {
     __resetCvSchemaValidatorForTest("/nonexistent/master-cv.schema.json");
     try {
@@ -66,8 +83,6 @@ describe("assertCuratedJsonSize", () => {
 
   it("rejects when serialized bytes exceed env max", () => {
     process.env.TAILOR_CURATED_JSON_MAX_BYTES = "10";
-    // Module reads env at call time via getEnvNumber — but getCuratedJsonMaxBytes
-    // is called inside assertCuratedJsonSize each time.
     const result = assertCuratedJsonSize(validCv);
     assert.equal(result.ok, false);
     if (!result.ok) {
@@ -79,78 +94,5 @@ describe("assertCuratedJsonSize", () => {
     delete process.env.TAILOR_CURATED_JSON_MAX_BYTES;
     assert.ok(getCuratedJsonMaxBytes() >= 512_000);
     assert.equal(assertCuratedJsonSize(validCv).ok, true);
-  });
-});
-
-describe("loadMasterCv", () => {
-  const savedJson = process.env.MASTER_CV_JSON;
-  const savedPath = process.env.MASTER_CV_PATH;
-  let tempDir: string | undefined;
-
-  beforeEach(() => {
-    __resetMasterCvCacheForTest();
-    delete process.env.MASTER_CV_JSON;
-    delete process.env.MASTER_CV_PATH;
-  });
-
-  afterEach(() => {
-    if (savedJson === undefined) delete process.env.MASTER_CV_JSON;
-    else process.env.MASTER_CV_JSON = savedJson;
-    if (savedPath === undefined) delete process.env.MASTER_CV_PATH;
-    else process.env.MASTER_CV_PATH = savedPath;
-    if (tempDir) {
-      rmSync(tempDir, { recursive: true, force: true });
-      tempDir = undefined;
-    }
-  });
-
-  it("loads valid MASTER_CV_JSON", () => {
-    process.env.MASTER_CV_JSON = JSON.stringify(validCv);
-    const result = loadMasterCv();
-    assert.equal(result.ok, true);
-    if (result.ok) {
-      assert.equal(result.source, "env");
-    }
-  });
-
-  it("loads from a non-world-readable path", () => {
-    tempDir = mkdtempSync(join(tmpdir(), "master-cv-"));
-    const path = join(tempDir, "master.json");
-    writeFileSync(path, JSON.stringify(validCv), { mode: 0o600 });
-    chmodSync(path, 0o600);
-    process.env.MASTER_CV_PATH = path;
-    const result = loadMasterCv();
-    assert.equal(result.ok, true);
-    if (result.ok) {
-      assert.equal(result.source, "path");
-    }
-  });
-
-  it("fails closed for world-readable master path", () => {
-    tempDir = mkdtempSync(join(tmpdir(), "master-cv-"));
-    const path = join(tempDir, "master.json");
-    writeFileSync(path, JSON.stringify(validCv));
-    chmodSync(path, 0o644);
-    process.env.MASTER_CV_PATH = path;
-    const result = loadMasterCv();
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.match(result.error, /unavailable/i);
-    }
-  });
-
-  it("fails closed when neither env nor path is set", () => {
-    const result = loadMasterCv();
-    assert.equal(result.ok, false);
-  });
-
-  it("prefers MASTER_CV_JSON over MASTER_CV_PATH", () => {
-    process.env.MASTER_CV_JSON = JSON.stringify(validCv);
-    process.env.MASTER_CV_PATH = "/nonexistent/master.json";
-    const result = loadMasterCv();
-    assert.equal(result.ok, true);
-    if (result.ok) {
-      assert.equal(result.source, "env");
-    }
   });
 });

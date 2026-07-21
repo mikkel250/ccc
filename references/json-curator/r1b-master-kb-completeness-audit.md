@@ -99,14 +99,12 @@ KB: `knowledge-base/*.md` (excludes `test-jds/`)
 ## Master certifications
 - JavaScript (Intermediate) — HackerRank, Jun 2026
 - JavaScript (Basic) — HackerRank, Jun 2026
-- Node.js (Basic) — [confirm issuer/date]
 - Theme Development — Shopify, 2021
 - SEO Certifications (Fundamentals, Keyword Research, Backlink Management, Local, Mobile) — SEMrush Academy, 2021
 
 ## Certs with weak KB coverage (heuristic)
 - JavaScript (Intermediate) — HackerRank, Jun 2026
 - JavaScript (Basic) — HackerRank, Jun 2026
-- Node.js (Basic) — [confirm issuer/date]
 - SEO Certifications (Fundamentals, Keyword Research, Backlink Management, Local, Mobile) — SEMrush Academy, 2021
 
 ## KB skill tokens not found in master JSON (triage)

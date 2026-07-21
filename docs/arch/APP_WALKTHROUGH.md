@@ -64,7 +64,7 @@ The root page (`app/page.tsx :: Home`) calls `notFound()` — there is intention
 |------|------|----------|
 | Burst limit | `app/api/lib/rate-limit.ts` | `checkRateLimit(sessionId, ip, secretBucketKey)` |
 
-Upstash Redis dual sliding windows (`RATE_LIMIT_MAX` + `RATE_LIMIT_SECRET_MAX`). Secret bucket is checked first so secret exhaustion does not burn IP quota. Runs after auth/IP resolution and **before** body parse so invalid authorized floods still count. Failures → **429** with more-restrictive `remaining`/`resetTime`; unresolvable IP → **400** before rate limiting.
+Upstash Redis dual sliding windows (`RATE_LIMIT_MAX` + `RATE_LIMIT_SECRET_MAX`). Secret bucket is checked first so secret exhaustion does not burn IP quota. Runs after auth/IP resolution and **before** body parse so invalid authorized floods still count. **Quota exhaustion → 429** with more-restrictive `remaining`/`resetTime`. **Redis / rate-limit service failure → 503**. Unresolvable IP → **400** before rate limiting.
 
 ### 4. Load master CV
 
@@ -72,7 +72,7 @@ Upstash Redis dual sliding windows (`RATE_LIMIT_MAX` + `RATE_LIMIT_SECRET_MAX`).
 |------|------|----------|
 | Master load | `app/api/lib/master-cv.ts` | `requireMasterCv()` |
 
-Resolves `MASTER_CV_JSON` (preferred) or `MASTER_CV_PATH` (non-world-readable), schema-validates with Ajv. Failures → **503**. Markdown `knowledge-base/` is **not** the tailor source.
+Resolves `MASTER_CV_JSON` (preferred) or `MASTER_CV_PATH` (non-world-readable), schema-validates with Ajv. Preloaded asynchronously at process startup (`preloadMasterCv`); request path serves the cache only. Failures → **503**. Markdown `knowledge-base/` is **not** the tailor source.
 
 ### 5. Curator system prompt
 
@@ -143,7 +143,7 @@ Canonical catalog: `.env.example`. Cross-file invariant: documented `TAILOR_MODE
 | Langfuse generations | `app/api/lib/tracers/langfuse.ts :: record` via `recordLangfuseTrace` | Every `chat()` call when `LANGFUSE_TRACING=true`; awaited so flush completes |
 | Langfuse OTEL | `app/api/lib/langfuse-otel.ts :: ensureLangfuseOtel` | Lazy start on first trace; `flushLangfuseTraces()` before response ends |
 | LangSmith runs | `app/api/lib/tracers/langsmith.ts :: record` via `recordLangSmithTrace` | Every `chat()` when `LANGSMITH_TRACING=true`; fire-and-forget |
-| Next.js hook | `instrumentation.ts :: register` | No-op — OTEL cannot load at build time |
+| Next.js hook | `instrumentation.ts :: register` | `ensureSecureStartup()` (R5d) + `preloadMasterCv()`; OTEL stays lazy |
 
 Production curator generations link to Langfuse prompt `cv-curator-json` via `langfusePrompt` on `ChatOptions`. Prompt/response content is redacted for export (R8b).
 
@@ -155,7 +155,7 @@ Production curator generations link to Langfuse prompt `cv-curator-json` via `la
 npm run smoke -- http://localhost:3000 [optional-jd-path]
 ```
 
-Loads master via the same `MASTER_CV_*` env as the server, POSTs with Bearer, asserts `.docx` + `curatedJson` + `builderVersion`, then always runs `scoreJsonGrounding` + `scoreJsonJdFit` (env mins `SMOKE_GROUNDING_MIN` / `SMOKE_JD_FIT_MIN`). Markdown `scripts/eval-cv.ts` generation is retired.
+Loads master via the same `MASTER_CV_*` env as the server, POSTs with Bearer, asserts `.docx` + `curatedJson` + `builderVersion`, then always runs `scoreJsonGrounding` + `scoreJsonJdFit` (env mins `SMOKE_GROUNDING_MIN` / `SMOKE_JD_FIT_MIN`). Markdown generation eval is retired — use smoke only.
 
 Local regen without LLM: `npm run regen-docx -- curated.json out.docx --builder-version=<BUILDER_VERSION>`.
 
