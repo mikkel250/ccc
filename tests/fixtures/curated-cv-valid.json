@@ -1,0 +1,78 @@
+{
+  "name": "JANE EXAMPLE",
+  "contact": {
+    "location": "Example City, ST",
+    "phone": "+1-555-0100",
+    "email": "jane.example@example.com",
+    "links": [
+      {
+        "label": "linkedin.com/in/example",
+        "url": "https://linkedin.com/in/example"
+      },
+      {
+        "label": "github.com/example",
+        "url": "https://github.com/example"
+      }
+    ]
+  },
+  "summary": [
+    "Evergreen objective value statement placeholder.",
+    "Relevant accomplishment placeholder (leadership).",
+    "Relevant accomplishment placeholder (technical depth)."
+  ],
+  "skills": [
+    {
+      "category": "Front End",
+      "items": "React, TypeScript, Next.js, JavaScript (ES6+)"
+    },
+    {
+      "category": "Back End",
+      "items": "Node.js, PostgreSQL, REST APIs"
+    }
+  ],
+  "experience": [
+    {
+      "title": "Software Engineer, Example Corp",
+      "location": "Remote",
+      "dates": "2024 - Present",
+      "blurb": "Example blurb for schema illustration.",
+      "bullets": [
+        "Shipped example feature reducing latency ~30%.",
+        "Led example migration to TypeScript and React."
+      ]
+    },
+    {
+      "title": "Software Engineer, Stealth Example (Contract)",
+      "location": "Remote",
+      "dates": "2023 - 2024",
+      "blurb": "Multi-engagement contract role example.",
+      "subroles": [
+        {
+          "heading": "Product A \u2014 Client",
+          "bullets": [
+            "Built example API with Node.js and PostgreSQL."
+          ]
+        }
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "name": "Example Project",
+      "linkLabel": "example.com",
+      "linkUrl": "https://example.com",
+      "bullets": [
+        "Example project bullet."
+      ]
+    }
+  ],
+  "portfolioSites": [
+    "example-site.example.com"
+  ],
+  "education": [
+    "Example Bootcamp \u2014 Example School"
+  ],
+  "certifications": [
+    "Example Certification \u2014 Example Org, 2024"
+  ]
+}
