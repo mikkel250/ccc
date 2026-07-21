@@ -2,7 +2,6 @@
 title: "refactor: Close outstanding code-review todos (tracing unification, provider leaf module, chaos-audit batch)"
 date: 2026-07-05
 type: refactor
-status: draft
 origin: none — planning bootstrap from todos/ backlog
 ---
 

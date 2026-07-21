@@ -2,6 +2,16 @@
 
 Testing guide for the CV Tailoring API. Update when new endpoints or test suites are added.
 
+## Process: TDD
+
+This project uses test-driven development for new behavior and bug fixes. Canonical agent rules live in `AGENTS.md` (Testing Philosophy).
+
+1. **Red** — write a failing `tests/*.test.ts` case; confirm failure reason.
+2. **Green** — minimal implementation to pass.
+3. **Refactor** — clean up with the suite still green.
+
+`npm test` is the red/green loop. Smoke and Playwright are post-green verification, not a substitute for the failing unit test.
+
 ## Prerequisites
 
 | Requirement | Notes |
