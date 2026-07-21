@@ -12,6 +12,8 @@ import { getRedisClient } from "./redis";
 import { getEnvNumber, getEnvString } from "../../../lib/env";
 
 const RATE_LIMIT_MAX = Math.max(1, Math.floor(getEnvNumber("RATE_LIMIT_MAX", 5)));
+// Per-secret ceiling defaults to half the per-IP cap so key sharing cannot
+// inflate overall throughput beyond a single authenticated consumer.
 const RATE_LIMIT_SECRET_MAX = Math.max(
   1,
   Math.floor(getEnvNumber("RATE_LIMIT_SECRET_MAX", Math.max(1, Math.floor(RATE_LIMIT_MAX / 2))))
@@ -143,6 +145,7 @@ function moreRestrictive(
 
 /**
  * Check IP and shared-secret rate-limit buckets (both must succeed).
+ * Secret bucket is checked first so secret exhaustion does not burn IP quota.
  *
  * @param _sessionId Reserved — not used as an anti-exfil identity.
  * @param ipIdentifier Client IP from x-forwarded-for.
@@ -155,10 +158,10 @@ export async function checkRateLimit(
 ): Promise<RateLimitResult> {
   const ipRl = getIpRatelimit();
   const secretRl = getSecretRatelimit();
-  const ipResult = await runLimit(ipRl, ipIdentifier);
-  if (!ipResult.allowed) {
-    return ipResult;
-  }
   const secretResult = await runLimit(secretRl, secretBucketKey);
+  if (!secretResult.allowed) {
+    return secretResult;
+  }
+  const ipResult = await runLimit(ipRl, ipIdentifier);
   return moreRestrictive(ipResult, secretResult);
 }

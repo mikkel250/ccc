@@ -21,8 +21,39 @@ export function isProductionLikeDeploy(): boolean {
   return false;
 }
 
+/**
+ * Fatal at startup when TAILOR_AUTH_INSECURE_BYPASS is set in a production-like
+ * deploy (R5d). Operators must notice a crash-loop on misconfiguration; silently
+ * serving 503 per-request is not visible enough.
+ *
+ * Called once at module init. In test mode (NODE_ENV=test) this is a no-op so
+ * tests can toggle bypass without triggering a process exit.
+ */
+export function assertSecureStartup(): void {
+  if (process.env.NODE_ENV === "test") return;
+  if (isProductionLikeDeploy() && isTailorAuthBypassRequested()) {
+    console.error(
+      "FATAL: TAILOR_AUTH_INSECURE_BYPASS is set in a production-like deploy. " +
+        "The bypass flag is only allowed in local/dev. Unset it or set the env to non-production."
+    );
+    process.exit(1);
+  }
+}
+
+// Run at module load — before any request handler is registered.
+assertSecureStartup();
+
 export function isTailorAuthBypassRequested(): boolean {
   return getEnvBoolean("TAILOR_AUTH_INSECURE_BYPASS", false);
+}
+
+/** Test-only: reset startup guard state so auth tests can run after import. */
+export function __resetAuthStateForTest(): void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("__resetAuthStateForTest is only available in the test environment");
+  }
+  // No state to reset — the startup guard is a no-op in test mode.
+  // Export exists so test files can call it for symmetry with other __reset helpers.
 }
 
 export function getConfiguredTailorApiKey(): string | undefined {

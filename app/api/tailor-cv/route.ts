@@ -1,7 +1,7 @@
 /**
  * Production CV tailoring endpoint — JSON curator pipeline.
  *
- * Flow: auth → body size → validate JD → rate-limit → load master → curator LLM →
+ * Flow: auth → IP → rate-limit → body size → validate JD → load master → curator LLM →
  * schema/size → docx → dual JSON response. See docs/plans/2026-07-20-001-feat-json-curator-cv-pipeline-plan.md.
  */
 export const runtime = "nodejs";
@@ -35,12 +35,17 @@ function isValidIp(value: string): boolean {
  * Resolve the client IP from `x-forwarded-for`.
  * The rightmost entry is trusted (appended by our edge proxy).
  */
+/** Max rightmost x-forwarded-for entries to examine before giving up. */
+const MAX_XFF_ENTRIES = 5;
+
 function parseClientIp(request: NextRequest): string {
   const forwarded = request.headers.get("x-forwarded-for");
   if (!forwarded?.trim()) return "unknown";
 
   const entries = forwarded.split(",");
-  for (let i = entries.length - 1; i >= 0; i--) {
+  // Only examine the rightmost N entries (nearest proxy chain hops).
+  const start = Math.max(0, entries.length - MAX_XFF_ENTRIES);
+  for (let i = entries.length - 1; i >= start; i--) {
     const entry = entries[i]!.trim();
     if (!entry) continue;
     return isValidIp(entry) ? entry : "unknown";
@@ -50,11 +55,12 @@ function parseClientIp(request: NextRequest): string {
 
 function safeTailorLog(message: string, error?: unknown): void {
   // Never log master/curated/JD payloads (R18).
+  const isProduction = process.env.NODE_ENV === "production";
   if (error instanceof Error) {
     console.error(message, {
       name: error.name,
       message: error.message,
-      stack: error.stack,
+      ...(isProduction ? {} : { stack: error.stack }),
     });
     return;
   }
@@ -63,6 +69,55 @@ function safeTailorLog(message: string, error?: unknown): void {
     return;
   }
   console.error(message);
+}
+
+/**
+ * Read request body with a hard byte cap (Content-Length early reject + stream).
+ */
+async function readRequestBodyCapped(
+  request: NextRequest,
+  maxBytes: number
+): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  const contentLengthHeader = request.headers.get("content-length");
+  if (contentLengthHeader) {
+    const contentLength = Number(contentLengthHeader);
+    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+      return { ok: false, error: "Request body too large" };
+    }
+  }
+
+  const reader = request.body?.getReader();
+  if (!reader) {
+    try {
+      const text = await request.text();
+      if (Buffer.byteLength(text, "utf8") > maxBytes) {
+        return { ok: false, error: "Request body too large" };
+      }
+      return { ok: true, text };
+    } catch {
+      return { ok: false, error: "Invalid request body" };
+    }
+  }
+
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return { ok: false, error: "Request body too large" };
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return { ok: false, error: "Invalid request body" };
+  }
+
+  return { ok: true, text: Buffer.concat(chunks).toString("utf8") };
 }
 
 export async function POST(request: NextRequest) {
@@ -79,47 +134,14 @@ export async function POST(request: NextRequest) {
       return jsonResponse({ error: "Cannot determine client IP" }, 400);
     }
 
-    const maxRequestBytes = getTailorRequestMaxBytes();
-    const contentLengthHeader = request.headers.get("content-length");
-    if (contentLengthHeader) {
-      const contentLength = Number(contentLengthHeader);
-      if (Number.isFinite(contentLength) && contentLength > maxRequestBytes) {
-        return jsonResponse({ error: "Request body too large" }, 400);
-      }
-    }
-
-    let rawBody: string;
-    try {
-      rawBody = await request.text();
-    } catch {
-      return jsonResponse({ error: "Invalid request body" }, 400);
-    }
-
-    if (Buffer.byteLength(rawBody, "utf8") > maxRequestBytes) {
-      return jsonResponse({ error: "Request body too large" }, 400);
-    }
-
-    let body: unknown;
-    try {
-      body = JSON.parse(rawBody);
-    } catch {
-      return jsonResponse({ error: "Invalid JSON in request body" }, 400);
-    }
-
-    const validated = validateTailorCvBody(body, `ip:${ipAddress}`);
-    if (!validated.ok) {
-      return jsonResponse({ error: validated.error }, 400);
-    }
-
-    const { jobDescription, sessionId } = validated;
-
     const configuredKey = getConfiguredTailorApiKey();
     const secretBucketKey = configuredKey
       ? hashTailorApiKeyForRateLimit(configuredKey)
       : hashTailorApiKeyForRateLimit(`bypass:${auth.mode}`);
 
+    // Rate-limit before body work so invalid/authorized floods still hit Redis ceilings.
     const rateLimit = await tailorCvDeps.checkRateLimit(
-      sessionId,
+      "pre-body",
       ipAddress,
       secretBucketKey
     );
@@ -134,10 +156,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const maxRequestBytes = getTailorRequestMaxBytes();
+    const bodyRead = await readRequestBodyCapped(request, maxRequestBytes);
+    if (!bodyRead.ok) {
+      return jsonResponse({ error: bodyRead.error }, 400);
+    }
+
+    let body: unknown;
+    try {
+      body = JSON.parse(bodyRead.text);
+    } catch {
+      return jsonResponse({ error: "Invalid JSON in request body" }, 400);
+    }
+
+    const validated = validateTailorCvBody(body, `ip:${ipAddress}`);
+    if (!validated.ok) {
+      return jsonResponse({ error: validated.error }, 400);
+    }
+
+    const { jobDescription } = validated;
+
     const masterCv = tailorCvDeps.requireMasterCv();
     const { systemPrompt: promptText, langfusePrompt } =
       await tailorCvDeps.getCuratorPrompt();
-    const systemPrompt = tailorCvDeps.compileCuratorPrompt(promptText, masterCv);
+    const compiled = tailorCvDeps.compileCuratorPrompt(promptText, masterCv);
+    if (!compiled.ok) {
+      return jsonResponse({ error: compiled.error }, 503);
+    }
+    const systemPrompt = compiled.systemPrompt;
     const userContent = tailorCvDeps.buildCuratorUserMessage(jobDescription);
 
     const llmResponse = await tailorCvDeps.chat(
@@ -179,6 +225,8 @@ export async function POST(request: NextRequest) {
       return jsonResponse({ error: sizeResult.error }, 422);
     }
 
+    const sanitized = tailorCvDeps.sanitizeForResponse(schemaResult.data);
+
     const built = await tailorCvDeps.buildJsonDocxBase64(schemaResult.data);
     if (!built.ok) {
       safeTailorLog("Docx builder failed after valid curated JSON");
@@ -190,7 +238,7 @@ export async function POST(request: NextRequest) {
 
     const responseBody = {
       cv: built.base64,
-      curatedJson: schemaResult.data,
+      curatedJson: sanitized,
       builderVersion: built.builderVersion,
       model: llmResponse.model,
       usage: llmResponse.usage,

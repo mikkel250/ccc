@@ -27,19 +27,19 @@ export function sanitizeCvText(value: string): string {
 }
 
 /** Recursively sanitize all string leaves in curated/master CV JSON. */
-export function sanitizeCvJson<T>(value: T): T {
+export function sanitizeCvJson(value: unknown): unknown {
   if (typeof value === "string") {
-    return sanitizeCvText(value) as T;
+    return sanitizeCvText(value);
   }
   if (Array.isArray(value)) {
-    return value.map((item) => sanitizeCvJson(item)) as T;
+    return value.map((item) => sanitizeCvJson(item));
   }
   if (value !== null && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       out[k] = sanitizeCvJson(v);
     }
-    return out as T;
+    return out;
   }
   return value;
 }

@@ -7,8 +7,9 @@ import {
   validateCvJson,
   assertCuratedJsonSize,
   getCuratedJsonMaxBytes,
+  __resetCvSchemaValidatorForTest,
 } from "../app/api/lib/cv-schema";
-import { loadMasterCv } from "../app/api/lib/master-cv";
+import { loadMasterCv, __resetMasterCvCacheForTest } from "../app/api/lib/master-cv";
 
 const fixturePath = join(process.cwd(), "tests/fixtures/curated-cv-valid.json");
 const validCv = JSON.parse(readFileSync(fixturePath, "utf8")) as unknown;
@@ -25,6 +26,32 @@ describe("validateCvJson", () => {
     if (!result.ok) {
       assert.match(result.error, /schema validation/i);
       assert.equal(result.error.includes("secret-name-should-not-leak"), false);
+    }
+  });
+
+  it("rejects undeclared root properties (additionalProperties)", () => {
+    const result = validateCvJson({
+      ...(validCv as object),
+      awards: ["Fake Nobel"],
+      secretNotes: "dump",
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /schema validation/i);
+      assert.equal(result.error.includes("Fake Nobel"), false);
+    }
+  });
+
+  it("returns schema unavailable when schema file cannot be loaded", () => {
+    __resetCvSchemaValidatorForTest("/nonexistent/master-cv.schema.json");
+    try {
+      const result = validateCvJson(validCv);
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.match(result.error, /schema unavailable/i);
+      }
+    } finally {
+      __resetCvSchemaValidatorForTest(null);
     }
   });
 });
@@ -61,6 +88,7 @@ describe("loadMasterCv", () => {
   let tempDir: string | undefined;
 
   beforeEach(() => {
+    __resetMasterCvCacheForTest();
     delete process.env.MASTER_CV_JSON;
     delete process.env.MASTER_CV_PATH;
   });
