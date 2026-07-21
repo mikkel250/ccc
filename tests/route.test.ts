@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { NextRequest } from "next/server";
 import { POST, GET } from "../app/api/tailor-cv/route";
 import { RateLimitError, ServiceError } from "../app/api/lib/errors";
-import { __injectRatelimitForTest, getRateLimitConfig } from "../app/api/lib/rate-limit";
+import { __injectRatelimitForTest, __injectSecretRatelimitForTest, getRateLimitConfig } from "../app/api/lib/rate-limit";
 import { resetRedisClientForTest } from "../app/api/lib/redis";
 import { tailorCvDeps } from "../app/api/lib/tailor-cv-deps";
 import { createSlidingWindowMock, createFailingMock } from "../tests/helpers/rate-limit-mock";
@@ -41,6 +41,13 @@ function injectSlidingWindowMock() {
   __injectRatelimitForTest(
     createSlidingWindowMock({
       maxRequests: cfg.maxRequests,
+      windowMs: cfg.windowMs,
+    }),
+  );
+  __injectSecretRatelimitForTest(
+    createSlidingWindowMock({
+      // High enough that IP-isolation tests are not tripped by the shared Bearer key
+      maxRequests: cfg.maxRequests * 20,
       windowMs: cfg.windowMs,
     }),
   );

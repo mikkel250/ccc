@@ -4,6 +4,8 @@ import {
   checkRateLimit,
   getRateLimitConfig,
   __injectRatelimitForTest,
+  __injectSecretRatelimitForTest,
+  hashTailorApiKeyForRateLimit,
 } from "../app/api/lib/rate-limit";
 import { resetRedisClientForTest } from "../app/api/lib/redis";
 
@@ -19,6 +21,7 @@ import {
 // (see getEnvNumber in lib/env.ts). RATE_LIMIT_MAX/WINDOW are read once at
 // module load in rate-limit.ts, so this reflects the same fixed values.
 const config = getRateLimitConfig();
+const SECRET_BUCKET = hashTailorApiKeyForRateLimit("test-secret");
 
 function ensureEnv() {
   process.env.UPSTASH_REDIS_REST_URL =
@@ -39,6 +42,13 @@ describe("checkRateLimit", () => {
         windowMs: config.windowMs,
       })
     );
+    // Match IP ceiling so IP-focused tests are not tripped by the tighter secret default
+    __injectSecretRatelimitForTest(
+      createSlidingWindowMock({
+        maxRequests: config.maxRequests,
+        windowMs: config.windowMs,
+      })
+    );
   });
 
   afterEach(() => {
@@ -46,7 +56,7 @@ describe("checkRateLimit", () => {
   });
 
   it("allows first request", async () => {
-    const result = await checkRateLimit("any-session", `first-${Date.now()}`);
+    const result = await checkRateLimit("any-session", `first-${Date.now()}`, SECRET_BUCKET);
     assert.equal(result.allowed, true);
     assert.ok(result.remaining > 0);
   });
@@ -54,10 +64,10 @@ describe("checkRateLimit", () => {
   it("blocks when burst count exceeded", async () => {
     const identifier = `burst-${Date.now()}`;
     for (let i = 0; i < config.maxRequests; i++) {
-      const r = await checkRateLimit("any-session", identifier);
+      const r = await checkRateLimit("any-session", identifier, SECRET_BUCKET);
       assert.equal(r.allowed, true, `request ${i + 1} should be allowed`);
     }
-    const blocked = await checkRateLimit("any-session", identifier);
+    const blocked = await checkRateLimit("any-session", identifier, SECRET_BUCKET);
     assert.equal(blocked.allowed, false);
     assert.equal(blocked.remaining, 0);
   });
@@ -65,23 +75,25 @@ describe("checkRateLimit", () => {
   it("tracks per-identifier independently", async () => {
     const idA = `ip-a-${Date.now()}`;
     const idB = `ip-b-${Date.now()}`;
+    const secretA = hashTailorApiKeyForRateLimit(`a-${Date.now()}`);
+    const secretB = hashTailorApiKeyForRateLimit(`b-${Date.now()}`);
 
     for (let i = 0; i < config.maxRequests; i++) {
-      await checkRateLimit("a", idA);
+      await checkRateLimit("a", idA, secretA);
     }
-    const blockedA = await checkRateLimit("a", idA);
+    const blockedA = await checkRateLimit("a", idA, secretA);
     assert.equal(blockedA.allowed, false);
 
-    const allowedB = await checkRateLimit("b", idB);
+    const allowedB = await checkRateLimit("b", idB, secretB);
     assert.equal(allowedB.allowed, true);
   });
 
   it("returns resetTime when blocked", async () => {
     const identifier = `blocked-${Date.now()}`;
     for (let i = 0; i < config.maxRequests; i++) {
-      await checkRateLimit("s", identifier);
+      await checkRateLimit("s", identifier, SECRET_BUCKET);
     }
-    const blocked = await checkRateLimit("s", identifier);
+    const blocked = await checkRateLimit("s", identifier, SECRET_BUCKET);
     assert.equal(blocked.allowed, false);
     assert.equal(
       blocked.message,
@@ -94,14 +106,14 @@ describe("checkRateLimit", () => {
   it("rate limits by identifier regardless of sessionId", async () => {
     const identifier = `session-ip-${Date.now()}`;
 
-    await checkRateLimit("session-A", identifier);
-    await checkRateLimit("session-B", identifier);
+    await checkRateLimit("session-A", identifier, SECRET_BUCKET);
+    await checkRateLimit("session-B", identifier, SECRET_BUCKET);
 
     for (let i = 2; i < config.maxRequests; i++) {
-      await checkRateLimit(`session-${i}`, identifier);
+      await checkRateLimit(`session-${i}`, identifier, SECRET_BUCKET);
     }
 
-    const blocked = await checkRateLimit("session-Z", identifier);
+    const blocked = await checkRateLimit("session-Z", identifier, SECRET_BUCKET);
     assert.equal(blocked.allowed, false);
   });
 
@@ -111,7 +123,7 @@ describe("checkRateLimit", () => {
 
     const results = await Promise.all(
       Array.from({ length: totalCalls }, () =>
-        checkRateLimit("session", identifier)
+        checkRateLimit("session", identifier, SECRET_BUCKET)
       )
     );
 
@@ -125,15 +137,17 @@ describe("checkRateLimit", () => {
   it("isolates concurrent requests per identifier", async () => {
     const idA = `iso-a-${Date.now()}`;
     const idB = `iso-b-${Date.now()}`;
+    const secretA = hashTailorApiKeyForRateLimit(`iso-a-${Date.now()}`);
+    const secretB = hashTailorApiKeyForRateLimit(`iso-b-${Date.now()}`);
 
     const resultsA = await Promise.all(
       Array.from({ length: config.maxRequests + 1 }, () =>
-        checkRateLimit("s", idA)
+        checkRateLimit("s", idA, secretA)
       )
     );
     const resultsB = await Promise.all(
       Array.from({ length: config.maxRequests }, () =>
-        checkRateLimit("s", idB)
+        checkRateLimit("s", idB, secretB)
       )
     );
 
@@ -146,6 +160,40 @@ describe("checkRateLimit", () => {
       config.maxRequests
     );
   });
+  it("blocks when secret bucket is exhausted even if IP bucket is free", async () => {
+    __injectSecretRatelimitForTest(
+      createSlidingWindowMock({
+        maxRequests: config.secretMaxRequests,
+        windowMs: config.windowMs,
+      })
+    );
+    const ip = `ip-free-${Date.now()}`;
+    const secret = hashTailorApiKeyForRateLimit(`tight-${Date.now()}`);
+    for (let i = 0; i < config.secretMaxRequests; i++) {
+      const r = await checkRateLimit("s", `${ip}-${i}`, secret);
+      assert.equal(r.allowed, true, `secret request ${i + 1} should be allowed`);
+    }
+    const blocked = await checkRateLimit("s", `${ip}-new`, secret);
+    assert.equal(blocked.allowed, false);
+  });
+
+  it("returns the more restrictive remaining of the two buckets", async () => {
+    __injectSecretRatelimitForTest(
+      createSlidingWindowMock({
+        maxRequests: config.secretMaxRequests,
+        windowMs: config.windowMs,
+      })
+    );
+    const ip = `ip-min-${Date.now()}`;
+    const secret = hashTailorApiKeyForRateLimit(`min-${Date.now()}`);
+    const result = await checkRateLimit("s", ip, secret);
+    assert.equal(result.allowed, true);
+    assert.equal(
+      result.remaining,
+      Math.min(config.maxRequests, config.secretMaxRequests) - 1
+    );
+  });
+
 });
 
 describe("checkRateLimit — error paths", () => {
@@ -160,9 +208,15 @@ describe("checkRateLimit — error paths", () => {
 
   it("throws ServiceError when Ratelimit.limit() rejects, preserving cause", async () => {
     __injectRatelimitForTest(createFailingMock());
+    __injectSecretRatelimitForTest(
+      createSlidingWindowMock({
+        maxRequests: config.maxRequests,
+        windowMs: config.windowMs,
+      })
+    );
 
     await assert.rejects(
-      () => checkRateLimit("s", `fail-${Date.now()}`),
+      () => checkRateLimit("s", `fail-${Date.now()}`, SECRET_BUCKET),
       (err: unknown) => {
         return err instanceof Error &&
                err.name === "ServiceError" &&
@@ -175,9 +229,15 @@ describe("checkRateLimit — error paths", () => {
 
   it("throws ServiceError when limit returns timeout reason", async () => {
     __injectRatelimitForTest(createTimeoutMock());
+    __injectSecretRatelimitForTest(
+      createSlidingWindowMock({
+        maxRequests: config.maxRequests,
+        windowMs: config.windowMs,
+      })
+    );
 
     await assert.rejects(
-      () => checkRateLimit("s", `timeout-${Date.now()}`),
+      () => checkRateLimit("s", `timeout-${Date.now()}`, SECRET_BUCKET),
       (err: unknown) => {
         return err instanceof Error &&
                err.name === "ServiceError" &&
@@ -190,6 +250,7 @@ describe("checkRateLimit — error paths", () => {
 describe("checkRateLimit — missing env vars", () => {
   beforeEach(() => {
     __injectRatelimitForTest(null); // Force re-creation, no cached mock
+    __injectSecretRatelimitForTest(null);
   });
 
   afterEach(() => {
@@ -202,9 +263,10 @@ describe("checkRateLimit — missing env vars", () => {
     process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
     resetRedisClientForTest();
     __injectRatelimitForTest(null); // Force re-creation on next call
+    __injectSecretRatelimitForTest(null);
 
     await assert.rejects(
-      () => checkRateLimit("s", `missing-url-${Date.now()}`),
+      () => checkRateLimit("s", `missing-url-${Date.now()}`, SECRET_BUCKET),
       (err: unknown) => /UPSTASH_REDIS_REST_URL/i.test((err as Error).message)
     );
   });
@@ -214,9 +276,10 @@ describe("checkRateLimit — missing env vars", () => {
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
     resetRedisClientForTest();
     __injectRatelimitForTest(null); // Force re-creation on next call
+    __injectSecretRatelimitForTest(null);
 
     await assert.rejects(
-      () => checkRateLimit("s", `missing-token-${Date.now()}`),
+      () => checkRateLimit("s", `missing-token-${Date.now()}`, SECRET_BUCKET),
       (err: unknown) => /UPSTASH_REDIS_REST_TOKEN/i.test((err as Error).message)
     );
   });
@@ -228,12 +291,14 @@ describe("getRateLimitConfig", () => {
     resetRedisClientForTest();
   });
 
-  it("returns maxRequests and windowMs from env", () => {
+  it("returns maxRequests, secretMaxRequests, and windowMs from env", () => {
     const cfg = getRateLimitConfig();
     assert.ok(cfg.maxRequests > 0);
+    assert.ok(cfg.secretMaxRequests > 0);
     assert.ok(cfg.windowMs > 0);
     assert.ok(cfg.timeoutMs > 0);
     assert.equal(cfg.maxRequests, config.maxRequests);
+    assert.equal(cfg.secretMaxRequests, config.secretMaxRequests);
     assert.equal(cfg.windowMs, config.windowMs);
   });
 });

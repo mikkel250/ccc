@@ -13,6 +13,8 @@ import { validateTailorCvBody } from "../lib/tailor-cv-validation";
 import { getTailorModel } from "../../../lib/env";
 import { RateLimitError, ServiceError } from "../lib/errors";
 import { tailorCvDeps } from "../lib/tailor-cv-deps";
+import { getConfiguredTailorApiKey } from "../lib/tailor-auth";
+import { hashTailorApiKeyForRateLimit } from "../lib/rate-limit";
 
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" } as const;
 
@@ -86,7 +88,16 @@ export async function POST(request: NextRequest) {
 
     const { jobDescription, sessionId } = validated;
 
-    const rateLimit = await tailorCvDeps.checkRateLimit(sessionId, ipAddress);
+    const configuredKey = getConfiguredTailorApiKey();
+    const secretBucketKey = configuredKey
+      ? hashTailorApiKeyForRateLimit(configuredKey)
+      : hashTailorApiKeyForRateLimit(`bypass:${auth.mode}`);
+
+    const rateLimit = await tailorCvDeps.checkRateLimit(
+      sessionId,
+      ipAddress,
+      secretBucketKey
+    );
     if (!rateLimit.allowed) {
       return jsonResponse(
         {
