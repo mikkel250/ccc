@@ -6,7 +6,7 @@ Start-to-finish guide to how the CV Tailoring API works. For stack decisions and
 
 ## What this app does
 
-A **Next.js API-only backend** (no UI) that accepts a job description and returns a tailored CV as a base64-encoded Word document. A separate consumer app (CCC) POSTs the JD, decodes the `.docx`, and attaches it to Gmail drafts.
+A **Next.js API-only backend** (no UI) that accepts a job description, curates structured CV JSON from a master JSON, mechanically renders Word, and returns both artifacts. CCC POSTs the JD with a Bearer secret, attaches the `.docx`, and may retain curated JSON for regen.
 
 **Production entry point:** `POST /api/tailor-cv` → `app/api/tailor-cv/route.ts :: POST`
 
@@ -15,22 +15,23 @@ A **Next.js API-only backend** (no UI) that accepts a job description and return
 ## High-level architecture
 
 ```text
-Client (CCC)
+Client (CCC / smoke CLI)
     │
-    ▼ POST { jobDescription, sessionId? }
+    ▼ POST { jobDescription } + Authorization: Bearer
 app/api/tailor-cv/route.ts
-    ├── validateTailorCvBody()     app/api/lib/tailor-cv-validation.ts
-    ├── checkRateLimit()           app/api/lib/rate-limit.ts
-    ├── getAllContext()            app/api/lib/knowledge-base.ts
-    ├── getCvPrompt() + compileCvPrompt()   app/api/lib/cv-prompt.ts
-    ├── chat()                     app/api/lib/llm.ts  (model: TAILOR_MODEL)
-    │     ├── dispatchProvider()   → OpenAI / Anthropic / Google / OpenRouter / DeepSeek
-    │     ├── recordLangSmithTrace()  app/api/lib/tracers/index.ts (fire-and-forget)
-    │     └── recordLangfuseTrace()   app/api/lib/tracers/index.ts (+ langfuse-otel.ts flush)
-    └── markdownToDocxBase64()   app/api/lib/markdown-docx.ts
+    ├── authenticateTailorRequest()   app/api/lib/tailor-auth.ts
+    ├── validateTailorCvBody()        app/api/lib/tailor-cv-validation.ts
+    ├── checkRateLimit(ip, secret)    app/api/lib/rate-limit.ts
+    ├── requireMasterCv()             app/api/lib/master-cv.ts
+    ├── getCuratorPrompt() + compile  app/api/lib/curator-prompt.ts
+    ├── chat()                        app/api/lib/llm.ts  (TAILOR_MODEL, source: tailor-cv-curator)
+    │     ├── dispatchProvider()
+    │     └── tracers (Langfuse content redacted)
+    ├── extractStructuredJson()       app/api/lib/eval-parse.ts
+    ├── validateCvJson()              app/api/lib/cv-schema.ts
+    └── buildJsonDocxBase64()         app/api/lib/json-docx-builder.ts
     │
-    ▼ 200 { cv, model, usage, remaining, resetTime }
-Client decodes base64 → .docx attachment
+    ▼ 200 { cv, curatedJson, builderVersion, model, usage, remaining, resetTime }
 ```
 
 ---
@@ -43,7 +44,7 @@ Client decodes base64 → .docx attachment
 |------|------|----------|-------|
 | Route handler | `app/api/tailor-cv/route.ts` | `POST` | `runtime = "nodejs"` — Railway Fluid Compute, not Edge |
 | Method guard | same | `GET` | Returns 405; only POST is supported |
-| Health check | `app/api/hello/route.ts` | `GET` | `{ service, status: "ok" }` — used by deploy probes and `scripts/e2e-tailor-cv.ts` |
+| Health check | `app/api/hello/route.ts` | `GET` | `{ service, status: "ok" }` — deploy probes and `npm run smoke` |
 
 The root page (`app/page.tsx :: Home`) calls `notFound()` — there is intentionally no frontend.
 
@@ -61,64 +62,57 @@ The root page (`app/page.tsx :: Home`) calls `notFound()` — there is intention
 
 | Step | File | Function |
 |------|------|----------|
-| Burst limit | `app/api/lib/rate-limit.ts` | `checkRateLimit(sessionId, ipAddress)` |
+| Burst limit | `app/api/lib/rate-limit.ts` | `checkRateLimit(sessionId, ip, secretBucketKey)` |
 
-Upstash Redis sliding-window burst detection (`RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW`), keyed on client IP. Not per-session persistence — protects the LLM from hammering. Failures → **429** with `remaining` and `resetTime`; unresolvable IP → **400** before rate limiting runs.
+Upstash Redis dual sliding windows (`RATE_LIMIT_MAX` + `RATE_LIMIT_SECRET_MAX`). Failures → **429** with more-restrictive `remaining`/`resetTime`; unresolvable IP → **400** before rate limiting.
 
-### 4. Load candidate context
-
-| Step | File | Function |
-|------|------|----------|
-| Full KB injection | `app/api/lib/knowledge-base.ts` | `getAllContext()` |
-
-Reads all five markdown files from `knowledge-base/` (`experience.md`, `projects.md`, `skills.md`, `career-story.md`, `meta-project.md`), joins with `\n\n--\n\n`. **MVP injects everything** (~50–60k tokens) — no selective RAG at runtime.
-
-### 5. Build the system prompt
+### 4. Load master CV
 
 | Step | File | Function |
 |------|------|----------|
-| Fetch prompt | `app/api/lib/cv-prompt.ts` | `getCvPrompt()` |
-| Compile | same | `compileCvPrompt(promptText, context)` |
+| Master load | `app/api/lib/master-cv.ts` | `requireMasterCv()` |
 
-`getCvPrompt()` fetches Langfuse prompt `cv-tailor-system` with label **`production`** (300s cache). On failure, falls back to `getCvPromptFallbackText()` — the hardcoded Struan 8-part prompt (must stay in sync manually).
+Resolves `MASTER_CV_JSON` (preferred) or `MASTER_CV_PATH` (non-world-readable), schema-validates with Ajv. Failures → **503**. Markdown `knowledge-base/` is **not** the tailor source.
 
-`compileCvPrompt()` substitutes `{CONTEXT}` / `{{CONTEXT}}` with the full knowledge base. Output format is defined in `docs/struan-8-part-cv-framework.md`.
-
-### 6. LLM generation
+### 5. Curator system prompt
 
 | Step | File | Function |
 |------|------|----------|
-| Resolve model | `lib/env.ts` | `getTailorModel()` → `TAILOR_MODEL` env (default `anthropic/sonnet`) |
-| User message | `route.ts` | `"Tailor a CV for this job description:\n\n{jd}"` |
-| Chat | `app/api/lib/llm.ts` | `chat(messages, systemPrompt, options)` |
+| Fetch prompt | `app/api/lib/curator-prompt.ts` | `getCuratorPrompt()` |
+| Compile | same | `compileCuratorPrompt(promptText, masterCv)` |
+| User message | same | `buildCuratorUserMessage(jd)` — JD in delimited data channel |
 
-**Inside `chat()`:**
+Langfuse prompt name: `cv-curator-json` (fallback hardcoded; page-count / visual QA stripped).
 
-1. `detectProvider(model)` — first `/` segment must be a known provider (`openai`, `anthropic`, `google`, `openrouter`, `deepseek`).
-2. `dispatchProvider(provider, ...)` — strips provider prefix, calls the integration function.
-3. Dual tracing on success and failure (LangSmith + Langfuse).
-
-Provider integrations live in `llm.ts`: `callOpenAI`, `callOpenRouter` (optional `service_tier: flex`), `callAnthropic` (alias resolution via `config/anthropic-models.json` + Models API cache), `callGoogle`, `callDeepSeek`.
-
-All tunables come from `lib/env.ts :: getLLMConfig()` (`AI_TEMPERATURE`, `AI_MAX_TOKENS`, `OPENROUTER_FLEX_ENABLED`).
-
-### 7. Markdown → DOCX
+### 6. Curator LLM
 
 | Step | File | Function |
 |------|------|----------|
-| Convert | `app/api/lib/markdown-docx.ts` | `markdownToDocxBase64(markdown)` |
-| Parse | same | `markdownToParagraphs()` — `#`/`##`/`###` headings, bullets, `**bold**` |
+| Resolve model | `lib/env.ts` | `getTailorModel()` |
+| Chat | `app/api/lib/llm.ts` | `chat(..., { source: "tailor-cv-curator" })` |
 
-Returns base64 Office Open XML. `isValidDocxBase64()` checks ZIP magic bytes (`0x50 0x4B`) — used by e2e script.
+Provider dispatch and dual tracing unchanged. Langfuse/LangSmith content for tailor is redacted (R8b).
+
+### 7. Validate curated JSON → mechanical DOCX
+
+| Step | File | Function |
+|------|------|----------|
+| Parse | `app/api/lib/eval-parse.ts` | `extractStructuredJson` |
+| Schema + size | `app/api/lib/cv-schema.ts` | `validateCvJson`, `assertCuratedJsonSize` |
+| Build | `app/api/lib/json-docx-builder.ts` | `buildJsonDocxBase64` |
+
+Parse/schema/builder failures → **422** with no dual artifacts. Success → `{ cv, curatedJson, builderVersion, ... }`.
 
 ### 8. Response and errors
 
-**Success (200):** `{ cv, model, usage, remaining, resetTime }`
+**Success (200):** `{ cv, curatedJson, builderVersion, model, usage, remaining, resetTime }`
 
 **Error mapping** (`route.ts :: mapErrorToResponse`, table-driven `ERROR_RESPONSES`):
 
 | Condition | Status | Handler |
 |-----------|--------|---------|
+| Auth failure | 401 | before pipeline |
+| Curator/schema/builder | 422 | client-safe; no dual artifacts |
 | `RateLimitError` | 429 | forwards `error.message` |
 | `ServiceError` | 503 | forwards `error.message` |
 | LLM provider/quota errors | 503 | `isLlmServiceError(message)` → masked generic message |
@@ -151,39 +145,23 @@ Canonical catalog: `.env.example`. Cross-file invariant: documented `TAILOR_MODE
 | LangSmith runs | `app/api/lib/tracers/langsmith.ts :: record` via `recordLangSmithTrace` | Every `chat()` when `LANGSMITH_TRACING=true`; fire-and-forget |
 | Next.js hook | `instrumentation.ts :: register` | No-op — OTEL cannot load at build time |
 
-Production CV generations link to the Langfuse prompt version via `langfusePrompt` on `ChatOptions` (set in `route.ts` from `getCvPrompt()`).
+Production curator generations link to Langfuse prompt `cv-curator-json` via `langfusePrompt` on `ChatOptions`. Prompt/response content is redacted for export (R8b).
 
 ---
 
-## Offline eval pipeline (not HTTP)
+## Smoke (manual live API — not CI)
 
-Used to compare candidate models before choosing `TAILOR_MODEL`. Run: `npx tsx scripts/eval-cv.ts`.
-
-```text
-scripts/eval-cv.ts :: runEvalCv()
-  │
-  ├─ Stage 1 (per JD, cached)
-  │    extractJdMetadata()     app/api/lib/eval-extract.ts  → chat() with EVAL_EXTRACTION_MODEL
-  │    scoreExtraction()        app/api/lib/eval-judge.ts    → gate if score < EVAL_EXTRACTION_MIN_SCORE
-  │    write eval-results/<slug>/extraction.json
-  │
-  └─ Stage 2 (per JD × model)
-       compileCvPrompt(getCvPromptFallbackText(), getAllContext())
-       chat() with each EVAL_MODELS entry
-       scoreFormatCompliance()  app/api/lib/eval-format.ts   — sync 8-part checker
-       scoreRelevance()         app/api/lib/eval-judge.ts    — LLM judge
-       scoreHallucination()     app/api/lib/eval-judge.ts    — LLM judge
-       write eval-results/<slug>/<provider>/<model>/{raw-cv.md,scores.json,usage.json}
-       push scores to Langfuse
+```bash
+npm run smoke -- http://localhost:3000 [optional-jd-path]
 ```
 
-Types, judge prompts, and `JUDGE_MAP` (cross-provider judge routing): `app/api/lib/eval-schema.ts`.
+Loads master via the same `MASTER_CV_*` env as the server, POSTs with Bearer, asserts `.docx` + `curatedJson` + `builderVersion`, then always runs `scoreJsonGrounding` + `scoreJsonJdFit` (env mins `SMOKE_GROUNDING_MIN` / `SMOKE_JD_FIT_MIN`). Markdown `scripts/eval-cv.ts` generation is retired.
 
-Test JD fixtures: `knowledge-base/test-jds/*.md`. Mock artifacts for CI: `scripts/seed-eval-results.ts`.
+Local regen without LLM: `npm run regen-docx -- curated.json out.docx --builder-version=<BUILDER_VERSION>`.
 
 ---
 
-## Legacy prompt modules (not on production path)
+## Legacy prompt modules (not on production tailor path)
 
 Prompt files cloned from the portfolio chat bot remain for a hypothetical future `/api/chat` route. Dead RAG helpers (`input-filter.ts`, `getRelevantContext`, chat-prompt model variants) were removed — recoverable from git history if needed.
 
@@ -195,7 +173,10 @@ Prompt files cloned from the portfolio chat bot remain for a hypothetical future
 
 | Script | Entry | Verifies |
 |--------|-------|----------|
-| `scripts/e2e-tailor-cv.ts` | `main()` | Live hello + tailor-cv; docx magic bytes |
+| `npm run smoke` (`scripts/e2e-tailor-cv.ts`) | `main()` | Live tailor + dual artifacts + JSON judges |
+| `npm run regen-docx` | CLI | Mechanical rebuild from curated JSON |
+| `scripts/verify-rate-limit.ts` | `main()` | Live Upstash rate-limit behavior |
+| `npm run test:e2e` | Playwright | HTTP auth/validation (optional LLM gated) |
 | `scripts/create-langfuse-prompts.ts` | `main()` | Langfuse prompt upload |
 | `npm test` | `tests/**/*.test.ts` | Unit + cross-file contracts |
 
