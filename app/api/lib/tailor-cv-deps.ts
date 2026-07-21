@@ -8,7 +8,10 @@ import { getCvPrompt as getCvPromptImpl, compileCvPrompt as compileCvPromptImpl 
 import { chat as chatImpl, isLlmServiceError as isLlmServiceErrorImpl } from "./llm";
 import { markdownToDocxBase64 as markdownToDocxBase64Impl } from "./markdown-docx";
 
+import { authenticateTailorRequest as authenticateTailorRequestImpl } from "./tailor-auth";
+
 export const tailorCvDeps = {
+  authenticateTailorRequest: authenticateTailorRequestImpl,
   checkRateLimit: checkRateLimitImpl,
   getAllContext: getAllContextImpl,
   getCvPrompt: getCvPromptImpl,

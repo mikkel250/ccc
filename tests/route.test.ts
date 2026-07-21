@@ -8,6 +8,15 @@ import { resetRedisClientForTest } from "../app/api/lib/redis";
 import { tailorCvDeps } from "../app/api/lib/tailor-cv-deps";
 import { createSlidingWindowMock, createFailingMock } from "../tests/helpers/rate-limit-mock";
 
+const TEST_API_KEY = "test-tailor-api-key";
+
+function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    authorization: `Bearer ${TEST_API_KEY}`,
+    ...extra,
+  };
+}
+
 function buildPostRequest(
   body: string | undefined,
   headers: Record<string, string> = {}
@@ -61,6 +70,13 @@ function ensureEnv() {
     process.env.UPSTASH_REDIS_REST_URL || "https://test.upstash.io";
   process.env.UPSTASH_REDIS_REST_TOKEN =
     process.env.UPSTASH_REDIS_REST_TOKEN || "test-token";
+  process.env.TAILOR_API_KEY = TEST_API_KEY;
+  delete process.env.TAILOR_AUTH_INSECURE_BYPASS;
+  process.env.NODE_ENV = "test";
+}
+
+function assertNoStore(response: Response) {
+  assert.equal(response.headers.get("cache-control"), "no-store");
 }
 
 describe("POST /api/tailor-cv — request hardening", () => {
@@ -75,24 +91,50 @@ describe("POST /api/tailor-cv — request hardening", () => {
     resetRedisClientForTest();
   });
 
-  it("returns 400 with structured error for empty body", async () => {
-    const response = await POST(buildPostRequest("", { "x-forwarded-for": "198.51.100.42" }));
+  it("returns 401 when Authorization is missing before body validation", async () => {
+    const chatSpy = mock.method(tailorCvDeps, "chat");
+    const response = await POST(
+      buildPostRequest(VALID_BODY, { "x-forwarded-for": "198.51.100.42" })
+    );
+    assert.equal(response.status, 401);
+    assertNoStore(response);
+    assert.equal(chatSpy.mock.callCount(), 0);
+  });
+
+  it("returns 401 for wrong Bearer token", async () => {
+    const response = await POST(
+      buildPostRequest(VALID_BODY, {
+        "x-forwarded-for": "198.51.100.42",
+        authorization: "Bearer wrong-key",
+      })
+    );
+    assert.equal(response.status, 401);
+    assertNoStore(response);
+  });
+
+  it("returns 400 with structured error for empty body when authorized", async () => {
+    const response = await POST(
+      buildPostRequest("", authHeaders({ "x-forwarded-for": "198.51.100.42" }))
+    );
     assert.equal(response.status, 400);
+    assertNoStore(response);
     const json = (await response.json()) as { error: string };
     assert.equal(json.error, "Invalid JSON in request body");
   });
 
-  it("returns 400 for trailing-comma JSON", async () => {
+  it("returns 400 for trailing-comma JSON when authorized", async () => {
     const response = await POST(
-      buildPostRequest('{"jobDescription": "React role",}', { "x-forwarded-for": "198.51.100.42" })
+      buildPostRequest('{"jobDescription": "React role",}', authHeaders({ "x-forwarded-for": "198.51.100.42" }))
     );
     assert.equal(response.status, 400);
     const json = (await response.json()) as { error: string };
     assert.equal(json.error, "Invalid JSON in request body");
   });
 
-  it("returns 400 for missing IP before attempting JSON parse", async () => {
-    const response = await POST(buildPostRequest('{"jobDescription": "React role",}'));
+  it("returns 400 for missing IP before attempting JSON parse when authorized", async () => {
+    const response = await POST(
+      buildPostRequest('{"jobDescription": "React role",}', authHeaders())
+    );
     assert.equal(response.status, 400);
     const json = (await response.json()) as { error: string };
     assert.equal(json.error, "Cannot determine client IP");
@@ -101,6 +143,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
   it("returns 405 for GET", async () => {
     const response = await GET();
     assert.equal(response.status, 405);
+    assertNoStore(response);
     const json = (await response.json()) as { error: string };
     assert.match(json.error, /method not allowed/i);
   });
@@ -109,7 +152,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
     mockTailorPipelineSuccess();
     const ip = "203.0.113.1";
     const config = getRateLimitConfig();
-    const header = { "x-forwarded-for": ip };
+    const header = authHeaders({ "x-forwarded-for": ip });
 
     for (let i = 0; i < config.maxRequests; i++) {
       const response = await POST(buildPostRequest(VALID_BODY, header));
@@ -125,29 +168,24 @@ describe("POST /api/tailor-cv — request hardening", () => {
     const spoofedIp = "10.0.0.1";
     const realIp = "203.0.113.9";
     const config = getRateLimitConfig();
-    const header = { "x-forwarded-for": `${spoofedIp}, ${realIp}` };
+    const header = authHeaders({ "x-forwarded-for": `${spoofedIp}, ${realIp}` });
 
     for (let i = 0; i < config.maxRequests; i++) {
       const response = await POST(buildPostRequest(VALID_BODY, header));
       assert.equal(response.status, 200, `request ${i + 1} should succeed before limit`);
     }
 
-    // Exhaust the real (rightmost) identifier's bucket directly to prove
-    // the route keyed on it, not on the spoofed leftmost entry.
     const blocked = await POST(buildPostRequest(VALID_BODY, header));
     assert.equal(blocked.status, 429);
 
-    // A fresh request claiming the spoofed IP as its *only* entry still has
-    // its own untouched bucket — proving the earlier requests were never
-    // keyed on the spoofed value.
     const spoofedAlone = await POST(
-      buildPostRequest(VALID_BODY, { "x-forwarded-for": spoofedIp })
+      buildPostRequest(VALID_BODY, authHeaders({ "x-forwarded-for": spoofedIp }))
     );
     assert.equal(spoofedAlone.status, 200);
   });
 
   it("returns 400 when x-forwarded-for is missing", async () => {
-    const response = await POST(buildPostRequest(VALID_BODY));
+    const response = await POST(buildPostRequest(VALID_BODY, authHeaders()));
     assert.equal(response.status, 400);
     const json = (await response.json()) as { error: string };
     assert.equal(json.error, "Cannot determine client IP");
@@ -155,7 +193,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
 
   it("returns 400 when x-forwarded-for contains no valid IP", async () => {
     const response = await POST(
-      buildPostRequest(VALID_BODY, { "x-forwarded-for": "not-an-ip" })
+      buildPostRequest(VALID_BODY, authHeaders({ "x-forwarded-for": "not-an-ip" }))
     );
     assert.equal(response.status, 400);
     const json = (await response.json()) as { error: string };
@@ -164,7 +202,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
 
   it("returns 400 when x-forwarded-for has out-of-range IPv4 octets", async () => {
     const response = await POST(
-      buildPostRequest(VALID_BODY, { "x-forwarded-for": "999.999.999.999" })
+      buildPostRequest(VALID_BODY, authHeaders({ "x-forwarded-for": "999.999.999.999" }))
     );
     assert.equal(response.status, 400);
     const json = (await response.json()) as { error: string };
@@ -173,7 +211,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
 
   it("returns 400 when the rightmost x-forwarded-for entry is invalid even if an earlier hop is valid", async () => {
     const response = await POST(
-      buildPostRequest(VALID_BODY, { "x-forwarded-for": "198.51.100.42, not-an-ip" })
+      buildPostRequest(VALID_BODY, authHeaders({ "x-forwarded-for": "198.51.100.42, not-an-ip" }))
     );
     assert.equal(response.status, 400);
     const json = (await response.json()) as { error: string };
@@ -183,13 +221,13 @@ describe("POST /api/tailor-cv — request hardening", () => {
   it("does not consume a rate-limit check when the IP cannot be determined", async () => {
     const checkRateLimitSpy = mock.method(tailorCvDeps, "checkRateLimit");
 
-    const response = await POST(buildPostRequest(VALID_BODY));
+    const response = await POST(buildPostRequest(VALID_BODY, authHeaders()));
 
     assert.equal(response.status, 400);
     assert.equal(checkRateLimitSpy.mock.callCount(), 0);
   });
 
-  const XFF = { "x-forwarded-for": "198.51.100.42" };
+  const XFF = authHeaders({ "x-forwarded-for": "198.51.100.42" });
 
   it("returns 429 when RateLimitError is thrown", async () => {
     mock.method(tailorCvDeps, "checkRateLimit", async () => {
@@ -198,6 +236,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
 
     const response = await POST(buildPostRequest(VALID_BODY, XFF));
     assert.equal(response.status, 429);
+    assertNoStore(response);
     const json = (await response.json()) as { error: string };
     assert.match(json.error, /too many requests/i);
   });
@@ -243,9 +282,6 @@ describe("POST /api/tailor-cv — request hardening", () => {
   });
 
   it("ServiceError takes precedence over the generic LLM-service mask even when its message would also match isLlmServiceError", async () => {
-    // Table-ordering regression: ServiceError is checked before the generic
-    // isLlmServiceError branch, so its raw message must still surface even
-    // when the message text itself contains an LLM-service keyword.
     mock.method(tailorCvDeps, "getAllContext", () => {
       throw new ServiceError("openai knowledge base sync unavailable");
     });
@@ -263,9 +299,10 @@ describe("POST /api/tailor-cv — request hardening", () => {
 
     it("returns 200 with base64 CV, remaining, and resetTime", async () => {
       const response = await POST(
-        buildPostRequest(VALID_BODY, { "x-forwarded-for": "198.51.100.99" })
+        buildPostRequest(VALID_BODY, authHeaders({ "x-forwarded-for": "198.51.100.99" }))
       );
       assert.equal(response.status, 200);
+      assertNoStore(response);
       const json = (await response.json()) as {
         cv: string;
         remaining: number;

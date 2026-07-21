@@ -1,7 +1,7 @@
 /**
  * Production CV tailoring endpoint — orchestrates the full request pipeline.
  *
- * Flow: validate → rate-limit → load KB → compile prompt → LLM → DOCX → JSON.
+ * Flow: auth → validate → rate-limit → load KB → compile prompt → LLM → DOCX → JSON.
  * Called by the CCC consumer app; see docs/arch/APP_WALKTHROUGH.md for the
  * step-by-step map of every function involved.
  */
@@ -13,6 +13,15 @@ import { validateTailorCvBody } from "../lib/tailor-cv-validation";
 import { getTailorModel } from "../../../lib/env";
 import { RateLimitError, ServiceError } from "../lib/errors";
 import { tailorCvDeps } from "../lib/tailor-cv-deps";
+
+const NO_STORE_HEADERS = { "Cache-Control": "no-store" } as const;
+
+function jsonResponse(
+  body: unknown,
+  status: number
+): NextResponse {
+  return NextResponse.json(body, { status, headers: NO_STORE_HEADERS });
+}
 
 function isValidIp(value: string): boolean {
   if (value.length > 45) return false;
@@ -45,11 +54,18 @@ function parseClientIp(request: NextRequest): string {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = tailorCvDeps.authenticateTailorRequest(
+      request.headers.get("authorization")
+    );
+    if (!auth.ok) {
+      return jsonResponse({ error: auth.error }, auth.status);
+    }
+
     const ipAddress = parseClientIp(request);
     if (ipAddress === "unknown") {
-      return NextResponse.json(
+      return jsonResponse(
         { error: "Cannot determine client IP" },
-        { status: 400 }
+        400
       );
     }
 
@@ -57,28 +73,28 @@ export async function POST(request: NextRequest) {
     try {
       body = await request.json();
     } catch {
-      return NextResponse.json(
+      return jsonResponse(
         { error: "Invalid JSON in request body" },
-        { status: 400 }
+        400
       );
     }
 
     const validated = validateTailorCvBody(body, `ip:${ipAddress}`);
     if (!validated.ok) {
-      return NextResponse.json({ error: validated.error }, { status: 400 });
+      return jsonResponse({ error: validated.error }, 400);
     }
 
     const { jobDescription, sessionId } = validated;
 
     const rateLimit = await tailorCvDeps.checkRateLimit(sessionId, ipAddress);
     if (!rateLimit.allowed) {
-      return NextResponse.json(
+      return jsonResponse(
         {
           error: rateLimit.message || "Rate limit exceeded",
           remaining: rateLimit.remaining,
           resetTime: rateLimit.resetTime,
         },
-        { status: 429 }
+        429
       );
     }
 
@@ -101,13 +117,13 @@ export async function POST(request: NextRequest) {
 
     const cv = await tailorCvDeps.markdownToDocxBase64(llmResponse.content);
 
-    return NextResponse.json({
+    return jsonResponse({
       cv,
       model: llmResponse.model,
       usage: llmResponse.usage,
       remaining: rateLimit.remaining,
       resetTime: rateLimit.resetTime,
-    });
+    }, 200);
   } catch (error: unknown) {
     // Log only name/message/stack. Provider SDKs (OpenAI, Anthropic, Upstash) often
     // attach `request`, `response`, `config`, and header objects to their thrown
@@ -163,17 +179,17 @@ const ERROR_RESPONSES: ErrorResponseEntry[] = [
 function mapErrorToResponse(error: unknown) {
   for (const entry of ERROR_RESPONSES) {
     if (!entry.matches(error)) continue;
-    return NextResponse.json(entry.body(error), { status: entry.status });
+    return jsonResponse(entry.body(error), entry.status);
   }
-  return NextResponse.json(
+  return jsonResponse(
     { error: "Internal server error. Please try again later." },
-    { status: 500 }
+    500
   );
 }
 
 export async function GET() {
-  return NextResponse.json(
+  return jsonResponse(
     { error: "Method not allowed. Use POST." },
-    { status: 405 }
+    405
   );
 }
