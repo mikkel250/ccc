@@ -12,7 +12,8 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "node --import ./tests/set-node-env-test.mjs --import tsx --test tests/**/*.test.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "regen-docx": "tsx scripts/regen-docx.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.67.1",
