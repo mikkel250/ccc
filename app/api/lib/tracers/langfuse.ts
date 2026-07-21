@@ -3,6 +3,9 @@
  *
  * Links each LLM call to prompt versions and usage. Requires LANGFUSE_TRACING=true
  * and keys; pairs with langfuse-otel.ts for span export.
+ *
+ * Content (messages, system prompt, response body) is redacted to LangSmith parity
+ * before export (R8b / KTD5) so master/curated CV PII never leaves the trust boundary.
  */
 import { LangfuseClient } from '@langfuse/client';
 import {
@@ -12,6 +15,8 @@ import {
 import { getEnvString } from '../../../../lib/env';
 import { ensureLangfuseOtel, flushLangfuseTraces } from '../langfuse-otel';
 import type { Tracer, TracePayload } from './tracer';
+
+const REDACTED = '[REDACTED]';
 
 let langfuseClient: LangfuseClient | null = null;
 
@@ -40,10 +45,76 @@ function isEnabled(): boolean {
   return process.env.LANGFUSE_TRACING === 'true';
 }
 
+/**
+ * Build the Langfuse generation.update() payload with content redacted.
+ * Exported for unit tests that assert no raw prompt/response substrings leak.
+ */
+export function buildLangfuseGenerationUpdate(payload: TracePayload): {
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  model: string;
+  modelParameters?: Record<string, string | number>;
+  usageDetails: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  prompt?: LangfusePromptRef;
+} {
+  const { provider, model, response, startTime, options, langfusePrompt } = payload;
+  const durationMs = Date.now() - startTime;
+  const modelParameters: Record<string, string | number> = {};
+  if (typeof options.temperature === 'number') {
+    modelParameters.temperature = options.temperature;
+  }
+  if (typeof options.maxTokens === 'number') {
+    modelParameters.maxTokens = options.maxTokens;
+  }
+
+  return {
+    input: {
+      provider,
+      model,
+      messages: REDACTED,
+      system_prompt: REDACTED,
+      options,
+    },
+    output: {
+      content: REDACTED,
+      usage: response.usage,
+    },
+    metadata: {
+      provider,
+      model,
+      duration_ms: durationMs,
+      temperature: options.temperature,
+      max_tokens: options.maxTokens,
+      ...(options.source ? { source: options.source } : {}),
+    },
+    model,
+    ...(Object.keys(modelParameters).length > 0 ? { modelParameters } : {}),
+    usageDetails: {
+      promptTokens: response.usage.promptTokens,
+      completionTokens: response.usage.completionTokens,
+      totalTokens: response.usage.totalTokens,
+    },
+    ...(langfusePrompt
+      ? {
+          prompt: {
+            name: langfusePrompt.name,
+            version: langfusePrompt.version,
+            isFallback: langfusePrompt.isFallback ?? false,
+          },
+        }
+      : {}),
+  };
+}
+
 async function record(payload: TracePayload): Promise<void> {
   if (!isEnabled()) return;
 
-  const { provider, model, messages, systemPrompt, response, startTime, options, langfusePrompt } = payload;
+  const { provider, model } = payload;
 
   try {
     if (
@@ -57,64 +128,23 @@ async function record(payload: TracePayload): Promise<void> {
     await ensureLangfuseOtel();
     initLangFuse();
 
-    const durationMs = Date.now() - startTime;
-    const modelParameters: Record<string, string | number> = {};
-    if (typeof options.temperature === 'number') {
-      modelParameters.temperature = options.temperature;
-    }
-    if (typeof options.maxTokens === 'number') {
-      modelParameters.maxTokens = options.maxTokens;
-    }
+    const update = buildLangfuseGenerationUpdate(payload);
 
     await startActiveObservation(
       `llm_call_${provider}_${model}`,
       async (generation: LangfuseGeneration) => {
-        generation.update({
-          input: {
-            provider,
-            model,
-            messages,
-            system_prompt: systemPrompt,
-            options,
-          },
-          output: {
-            content: response.content,
-            usage: response.usage,
-          },
-          metadata: {
-            provider,
-            model,
-            duration_ms: durationMs,
-            temperature: options.temperature,
-            max_tokens: options.maxTokens,
-            ...(options.source ? { source: options.source } : {}),
-          },
-          model,
-          ...(Object.keys(modelParameters).length > 0
-            ? { modelParameters }
-            : {}),
-          usageDetails: {
-            promptTokens: response.usage.promptTokens,
-            completionTokens: response.usage.completionTokens,
-            totalTokens: response.usage.totalTokens,
-          },
-          ...(langfusePrompt
-            ? {
-                prompt: {
-                  name: langfusePrompt.name,
-                  version: langfusePrompt.version,
-                  isFallback: langfusePrompt.isFallback ?? false,
-                },
-              }
-            : {}),
-        });
+        generation.update(update);
       },
       { asType: 'generation' }
     );
 
     await flushLangfuseTraces();
   } catch (error) {
-    console.error('Langfuse trace failed:', error);
+    // Do not log TracePayload bodies — they may contain master/curated CV text.
+    console.error('Langfuse trace failed:', {
+      name: error instanceof Error ? error.name : 'unknown',
+      message: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 

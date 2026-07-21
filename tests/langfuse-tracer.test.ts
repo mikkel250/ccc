@@ -1,22 +1,29 @@
 import { describe, it, mock, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { langfuseTracer } from "../app/api/lib/tracers/langfuse";
+import {
+  langfuseTracer,
+  buildLangfuseGenerationUpdate,
+} from "../app/api/lib/tracers/langfuse";
 import { recordLangfuseTrace } from "../app/api/lib/tracers";
 import type { ChatResponse } from "../app/api/lib/llm";
+
+const SECRET_SYSTEM = "MASTER_CV_SECRET_PROMPT_TOKEN_xyz";
+const SECRET_USER = "CURATED_JSON_SECRET_USER_TOKEN_abc";
+const SECRET_RESPONSE = "CURATED_RESPONSE_SECRET_TOKEN_def";
 
 const basePayload = {
   provider: "openai" as const,
   model: "gpt-4o",
-  messages: [{ role: "user" as const, content: "hi" }],
-  systemPrompt: "system",
+  messages: [{ role: "user" as const, content: SECRET_USER }],
+  systemPrompt: SECRET_SYSTEM,
   response: {
-    content: "hello",
+    content: SECRET_RESPONSE,
     usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
     model: "gpt-4o",
     finishReason: "stop",
   } satisfies ChatResponse,
   startTime: Date.now(),
-  options: {},
+  options: { source: "tailor-cv-curator", temperature: 0.2, maxTokens: 100 },
 };
 
 describe("langfuseTracer.isEnabled", () => {
@@ -57,5 +64,33 @@ describe("recordLangfuseTrace — awaited", () => {
       throw new Error("langfuse boom");
     });
     await assert.doesNotReject(() => recordLangfuseTrace(basePayload));
+  });
+});
+
+describe("buildLangfuseGenerationUpdate — content redaction (R8b)", () => {
+  it("redacts messages, system prompt, and response content to [REDACTED]", () => {
+    const update = buildLangfuseGenerationUpdate(basePayload);
+    assert.equal(update.input.messages, "[REDACTED]");
+    assert.equal(update.input.system_prompt, "[REDACTED]");
+    assert.equal(update.output.content, "[REDACTED]");
+  });
+
+  it("keeps usage, model, and source metadata", () => {
+    const update = buildLangfuseGenerationUpdate(basePayload);
+    assert.deepEqual(update.output.usage, basePayload.response.usage);
+    assert.equal(update.model, "gpt-4o");
+    assert.equal(update.metadata.source, "tailor-cv-curator");
+    assert.deepEqual(update.usageDetails, {
+      promptTokens: 1,
+      completionTokens: 1,
+      totalTokens: 2,
+    });
+  });
+
+  it("serialized export contains no master/curated fixture substrings", () => {
+    const serialized = JSON.stringify(buildLangfuseGenerationUpdate(basePayload));
+    assert.equal(serialized.includes(SECRET_SYSTEM), false);
+    assert.equal(serialized.includes(SECRET_USER), false);
+    assert.equal(serialized.includes(SECRET_RESPONSE), false);
   });
 });
