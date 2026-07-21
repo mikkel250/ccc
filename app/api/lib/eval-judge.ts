@@ -1,11 +1,11 @@
 /**
- * LLM-as-Judge scorers for the offline eval pipeline (scripts/eval-cv.ts).
+ * LLM-as-Judge scorers for smoke (JSON master+curated) and legacy markdown helpers.
  *
- * scoreExtraction — validates Stage 1 JD parsing
- * scoreRelevance / scoreHallucination — judge generated CVs against KB + extraction
- * resolveJudgeModel — maps generator model → judge model via getJudgeMap() (eval-schema.ts)
+ * scoreJsonGrounding / scoreJsonJdFit — smoke path (npm run smoke)
+ * scoreExtraction / scoreRelevance / scoreHallucination — legacy offline helpers
+ * resolveJudgeModel — maps generator model → judge model via getJudgeMap()
  *
- * Not invoked by POST /api/tailor-cv; used only to pick TAILOR_MODEL.
+ * Not invoked by POST /api/tailor-cv.
  */
 import { chat, type ChatMessage, type ChatResponse } from "./llm";
 import { getEvalJudgeModel } from "../../../lib/env";
@@ -15,6 +15,8 @@ import {
   getJudgeMap,
   warnUnmappedJudgeModels,
   RELEVANCE_JUDGE_PROMPT,
+  JSON_GROUNDING_JUDGE_PROMPT,
+  JSON_JD_FIT_JUDGE_PROMPT,
   type ExtractionScore,
   type HallucinationScore,
   type JdExtraction,
@@ -210,5 +212,104 @@ export async function scoreHallucination(
       flaggedClaims: [],
       parseFailed: true,
     };
+  }
+}
+
+export type JsonGroundingScore = {
+  score: number;
+  flaggedClaims: string[];
+  parseFailed: boolean;
+};
+
+export type JsonJdFitScore = {
+  score: number;
+  reasoning: string;
+  parseFailed: boolean;
+};
+
+/** Grounding judge for smoke: master + curated JSON (+ JD context). Higher score = better. */
+export async function scoreJsonGrounding(
+  masterCv: unknown,
+  curatedCv: unknown,
+  jobDescription: string,
+  judgeModel: string,
+  options: JudgeScoreOptions = {}
+): Promise<JsonGroundingScore> {
+  const chatFn = options.chat ?? chat;
+  const userContent = [
+    "## Job description (untrusted context only)",
+    jobDescription,
+    "",
+    "## Master CV JSON (ground truth)",
+    JSON.stringify(masterCv),
+    "",
+    "## Curated CV JSON",
+    JSON.stringify(curatedCv),
+  ].join("\n");
+
+  try {
+    const response = await chatFn(
+      [{ role: "user", content: userContent }],
+      JSON_GROUNDING_JUDGE_PROMPT,
+      { model: judgeModel, source: "smoke-grounding" }
+    );
+    const parsed = extractStructuredJson(response.content) as {
+      score?: unknown;
+      flaggedClaims?: unknown;
+    };
+    return {
+      score: clampUnitScore(parsed.score, 0.5),
+      flaggedClaims: parseStringArray(parsed.flaggedClaims),
+      parseFailed: false,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("scoreJsonGrounding parse failure:", message);
+    return { score: 0, flaggedClaims: [], parseFailed: true };
+  }
+}
+
+/** JD-fit judge for smoke: curated JSON vs JD (master for availability context). */
+export async function scoreJsonJdFit(
+  masterCv: unknown,
+  curatedCv: unknown,
+  jobDescription: string,
+  judgeModel: string,
+  options: JudgeScoreOptions = {}
+): Promise<JsonJdFitScore> {
+  const chatFn = options.chat ?? chat;
+  const userContent = [
+    "## Job description",
+    jobDescription,
+    "",
+    "## Master CV JSON (available content)",
+    JSON.stringify(masterCv),
+    "",
+    "## Curated CV JSON",
+    JSON.stringify(curatedCv),
+  ].join("\n");
+
+  try {
+    const response = await chatFn(
+      [{ role: "user", content: userContent }],
+      JSON_JD_FIT_JUDGE_PROMPT,
+      { model: judgeModel, source: "smoke-jd-fit" }
+    );
+    const parsed = extractStructuredJson(response.content) as {
+      score?: unknown;
+      reasoning?: unknown;
+    };
+    return {
+      score: clampRelevanceScore(parsed.score),
+      reasoning:
+        typeof parsed.reasoning === "string"
+          ? parsed.reasoning
+          : "No reasoning provided",
+      parseFailed: false,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("scoreJsonJdFit parse failure:", message);
+    return { score: 1, reasoning: `Parse failure: ${message}`, parseFailed: true };
   }
 }

@@ -2,7 +2,7 @@ import { describe, it, skip } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { parseEvalModels } from "../scripts/eval-cv";
+import { parseEvalModels } from "../app/api/lib/eval-cv-helpers";
 
 const EVAL_RESULTS_DIR = path.join(process.cwd(), "eval-results");
 const ENV_EXAMPLE_PATH = path.join(process.cwd(), ".env.example");
@@ -85,7 +85,7 @@ describe("eval-results — post-evaluation artifacts", () => {
       }
     }
     if (checked === 0) {
-      skip("eval-results/ is empty or stale — run `npx tsx scripts/eval-cv.ts` to populate");
+      skip("eval-results/ is empty or stale — historical markdown eval artifacts; use npm run smoke for live quality");
     }
   });
 

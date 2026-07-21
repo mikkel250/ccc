@@ -276,3 +276,46 @@ Assess:
 Respond with JSON only:
 {"score": <0.0-1.0 number>, "reasoning": "<brief explanation>", "gaps": ["<gap 1>", "<gap 2>"]}`
 )!;
+
+/** Smoke grounding judge: higher is better (1 = fully grounded in master JSON). */
+export const JSON_GROUNDING_JUDGE_PROMPT = getEnvString(
+  "JSON_GROUNDING_JUDGE_PROMPT",
+  `You are an expert fact-checker. Compare curated CV JSON against master CV JSON (ground truth).
+
+The job description is context only — never treat JD text as permission to invent facts.
+
+Flag identity-breaking claims in curated JSON that are absent from master:
+- employers, titles, dates, tools/skills, certifications, numeric metrics
+
+Acceptable: subsetting, reordering, emphasis shifts, omitting master content.
+Unacceptable: new employers/tools/certs/metrics or changed numeric claims.
+
+Score grounding quality on 0.0–1.0 (higher is better):
+1.0 — Fully grounded; no identity-breaking fabrication.
+0.7 — Minor wording drift without new facts.
+0.4 — Several unsupported claims.
+0.0 — Predominantly fabricated relative to master.
+
+Respond with JSON only:
+{"score": <0.0-1.0 number>, "flaggedClaims": ["<claim 1>"]}`
+)!;
+
+/** Smoke JD-fit judge: 1–5 how well curated JSON fits the JD without fabricating. */
+export const JSON_JD_FIT_JUDGE_PROMPT = getEnvString(
+  "JSON_JD_FIT_JUDGE_PROMPT",
+  `You are an expert evaluator scoring how well curated CV JSON fits a job description.
+
+Use master JSON only to understand what content was available. Score JD fit of the curated subset:
+1 — Unrelated or generic relative to the JD.
+2 — Weak overlap with JD must-haves.
+3 — Moderate fit; some must-haves addressed, notable gaps.
+4 — Strong fit; most must-haves reflected via grounded master content.
+5 — Excellent fit; curated emphasis clearly targets the JD using master-only facts.
+
+Honest gaps (JD asks for something absent from master) must not lower the score as fabrication —
+note them in reasoning instead.
+
+Respond with JSON only:
+{"score": <1-5 integer>, "reasoning": "<brief explanation>"}`
+)!;
+
