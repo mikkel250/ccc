@@ -11,6 +11,10 @@ the server runs the builder mechanically (see Product Contract).
   fit). CCC Product Contract R6c: content fit beats length; do not gate on pages.
 - Keep Struan 8-part curation rules, subset-only constraints, and honest-gap behavior.
 - Isolate JD as untrusted delimited data (R24).
+- **Single-master multi-industry:** one complete granular master. Request `curationMode`
+  (`strict` default | `flexible`) selects Struan subset-only vs grounded category-style
+  collapse. Canonical live text: `app/api/lib/curator-prompt.ts` + `curation-mode.ts`
+  (keep Langfuse `cv-curator-json` production label in sync; mode policy is applied in code).
 
 The historical Claude text below is retained for port fidelity; strikethrough-class rules above
 win when they conflict.

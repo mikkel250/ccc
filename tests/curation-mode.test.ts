@@ -1,0 +1,46 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import {
+  applyCurationModePolicy,
+  curationModePolicy,
+  groundingJudgeModeAddendum,
+  CURATION_MODE_POLICY_PLACEHOLDER,
+  DEFAULT_CURATION_MODE,
+} from "../app/api/lib/curation-mode";
+
+describe("curation-mode", () => {
+  it("defaults to strict", () => {
+    assert.equal(DEFAULT_CURATION_MODE, "strict");
+  });
+
+  it("strict policy forbids collapse; flexible allows grounded collapse", () => {
+    const strict = curationModePolicy("strict");
+    const flexible = curationModePolicy("flexible");
+    assert.match(strict, /Do not collapse/i);
+    assert.match(flexible, /collapse multiple experience/i);
+    assert.match(flexible, /category-style/i);
+  });
+
+  it("applyCurationModePolicy replaces placeholder when present", () => {
+    const out = applyCurationModePolicy(
+      `before\n${CURATION_MODE_POLICY_PLACEHOLDER}\nafter`,
+      "strict"
+    );
+    assert.match(out, /MODE: strict/);
+    assert.doesNotMatch(out, /CURATION_MODE_POLICY/);
+    assert.match(out, /^before\n/);
+    assert.match(out, /\nafter$/);
+  });
+
+  it("applyCurationModePolicy appends when placeholder is missing", () => {
+    const out = applyCurationModePolicy("base prompt only", "flexible");
+    assert.match(out, /base prompt only/);
+    assert.match(out, /<curation_mode>/);
+    assert.match(out, /MODE: flexible/);
+  });
+
+  it("grounding addendum matches mode", () => {
+    assert.match(groundingJudgeModeAddendum("strict"), /NOT acceptable/i);
+    assert.match(groundingJudgeModeAddendum("flexible"), /Accept collapsing/i);
+  });
+});

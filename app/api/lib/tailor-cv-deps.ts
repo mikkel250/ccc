@@ -20,6 +20,7 @@ import {
   compileCuratorPrompt as compileCuratorPromptImpl,
   buildCuratorUserMessage as buildCuratorUserMessageImpl,
 } from "./curator-prompt";
+import { applyCurationModePolicy as applyCurationModePolicyImpl } from "./curation-mode";
 import {
   validateCvJson as validateCvJsonImpl,
   assertCuratedJsonSize as assertCuratedJsonSizeImpl,
@@ -32,6 +33,7 @@ export const tailorCvDeps = {
   checkRateLimit: checkRateLimitImpl,
   requireMasterCv: requireMasterCvImpl,
   getCuratorPrompt: getCuratorPromptImpl,
+  applyCurationModePolicy: applyCurationModePolicyImpl,
   compileCuratorPrompt: compileCuratorPromptImpl,
   buildCuratorUserMessage: buildCuratorUserMessageImpl,
   chat: chatImpl,

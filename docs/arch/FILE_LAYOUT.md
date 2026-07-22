@@ -14,6 +14,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │       └── lib/                  # All business logic lives here
 │           ├── llm.ts            # Multi-provider LLM client
 │           ├── curator-prompt.ts # JSON curator prompt (Langfuse cv-curator-json + fallback)
+│           ├── curation-mode.ts  # strict|flexible curation policy + judge addendum
 │           ├── master-cv.ts      # MASTER_CV_JSON / MASTER_CV_PATH loader
 │           ├── cv-schema.ts      # Ajv draft-2020-12 validation + size limits
 │           ├── json-docx-builder.ts # Mechanical JSON → .docx (BUILDER_VERSION)

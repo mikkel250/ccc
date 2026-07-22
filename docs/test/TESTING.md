@@ -127,9 +127,11 @@ npm test
 npm run smoke -- http://localhost:3000
 # optional JD override:
 npm run smoke -- http://localhost:3000 path/to/jd.md
+# optional flexible curation (category-style collapse allowed):
+npm run smoke -- http://localhost:3000 path/to/jd.md --flexible
 ```
 
-Requires running server, `TAILOR_API_KEY`, `MASTER_CV_*`, judge model keys. Asserts dual artifacts and always runs grounding + JD-fit judges (hard fail on `parseFailed` or scores below `SMOKE_*_MIN`).
+Requires running server, `TAILOR_API_KEY`, `MASTER_CV_*`, judge model keys. Asserts dual artifacts and always runs grounding + JD-fit judges (hard fail on `parseFailed` or scores below `SMOKE_*_MIN`). Default `curationMode` is `strict`; pass `--flexible` or set `SMOKE_CURATION_MODE=flexible`.
 
 Mechanical regen (no LLM):
 

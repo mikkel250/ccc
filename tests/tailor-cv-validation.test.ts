@@ -102,4 +102,35 @@ describe("validateTailorCvBody", () => {
       else process.env.TAILOR_JD_MAX_CHARS = previous;
     }
   });
+
+  it("defaults curationMode to strict when omitted", () => {
+    const result = validateTailorCvBody(
+      { jobDescription: "Senior React engineer role" },
+      "ip:1.2.3.4"
+    );
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.curationMode, "strict");
+    }
+  });
+
+  it("accepts curationMode strict and flexible", () => {
+    for (const curationMode of ["strict", "flexible"] as const) {
+      const result = validateTailorCvBody(
+        { jobDescription: "JD text", curationMode },
+        "fallback"
+      );
+      assert.equal(result.ok, true);
+      if (result.ok) assert.equal(result.curationMode, curationMode);
+    }
+  });
+
+  it("rejects invalid curationMode", () => {
+    const result = validateTailorCvBody(
+      { jobDescription: "JD text", curationMode: "loose" },
+      "fallback"
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.error, /curationMode/i);
+  });
 });

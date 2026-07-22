@@ -23,6 +23,11 @@ import {
   type RelevanceScore,
 } from "./eval-schema";
 import { extractStructuredJson, parseStringArray } from "./eval-parse";
+import {
+  DEFAULT_CURATION_MODE,
+  groundingJudgeModeAddendum,
+  type CurationMode,
+} from "./curation-mode";
 
 export { extractStructuredJson } from "./eval-parse";
 
@@ -34,6 +39,7 @@ type ChatFn = (
 
 export interface JudgeScoreOptions {
   chat?: ChatFn;
+  curationMode?: CurationMode;
 }
 
 function formatKbContext(kbFiles: Record<string, string>): string {
@@ -258,6 +264,12 @@ export async function scoreJsonGrounding(
   options: JudgeScoreOptions = {}
 ): Promise<JsonGroundingScore> {
   const chatFn = options.chat ?? chat;
+  const curationMode = options.curationMode ?? DEFAULT_CURATION_MODE;
+  const systemPrompt = [
+    JSON_GROUNDING_JUDGE_PROMPT,
+    "",
+    groundingJudgeModeAddendum(curationMode),
+  ].join("\n");
   const userContent = [
     "## Job description (untrusted context only)",
     jobDescription,
@@ -272,7 +284,7 @@ export async function scoreJsonGrounding(
   try {
     const response = await chatFn(
       [{ role: "user", content: userContent }],
-      JSON_GROUNDING_JUDGE_PROMPT,
+      systemPrompt,
       { model: judgeModel, source: "smoke-grounding" }
     );
     const parsed = extractStructuredJson(response.content) as {

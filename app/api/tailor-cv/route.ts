@@ -174,17 +174,24 @@ export async function POST(request: NextRequest) {
       return jsonResponse({ error: validated.error }, 400);
     }
 
-    const { jobDescription } = validated;
+    const { jobDescription, curationMode } = validated;
 
     const masterCv = tailorCvDeps.requireMasterCv();
     const { systemPrompt: promptText, langfusePrompt } =
       await tailorCvDeps.getCuratorPrompt();
-    const compiled = tailorCvDeps.compileCuratorPrompt(promptText, masterCv);
+    const modePrompt = tailorCvDeps.applyCurationModePolicy(
+      promptText,
+      curationMode
+    );
+    const compiled = tailorCvDeps.compileCuratorPrompt(modePrompt, masterCv);
     if (!compiled.ok) {
       return jsonResponse({ error: compiled.error }, 503);
     }
     const systemPrompt = compiled.systemPrompt;
-    const userContent = tailorCvDeps.buildCuratorUserMessage(jobDescription);
+    const userContent = tailorCvDeps.buildCuratorUserMessage(
+      jobDescription,
+      curationMode
+    );
 
     const llmResponse = await tailorCvDeps.chat(
       [{ role: "user" as const, content: userContent }],
@@ -240,6 +247,7 @@ export async function POST(request: NextRequest) {
       cv: built.base64,
       curatedJson: sanitized,
       builderVersion: built.builderVersion,
+      curationMode,
       model: llmResponse.model,
       usage: llmResponse.usage,
       remaining: rateLimit.remaining,

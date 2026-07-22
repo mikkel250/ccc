@@ -21,6 +21,13 @@ describe("curator-prompt", () => {
     assert.doesNotMatch(text, /Length target:\s*1-2 pages/i);
   });
 
+  it("fallback encodes mode-neutral base with curation mode placeholder", () => {
+    const text = getCuratorPromptFallbackText();
+    assert.match(text, /single Master CV/i);
+    assert.match(text, /\{\{CURATION_MODE_POLICY\}\}/);
+    assert.doesNotMatch(text, /Collapse when appropriate/i);
+  });
+
   it("compileCuratorPrompt injects master JSON", () => {
     const compiled = compileCuratorPrompt("MASTER={{MASTER_CV_JSON}}", {
       name: "X",

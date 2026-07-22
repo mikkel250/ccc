@@ -3,17 +3,23 @@
  * Not wired into `npm test` / CI.
  *
  * Usage:
- *   npm run smoke -- [baseUrl] [jdPath]
- *   npx tsx scripts/e2e-tailor-cv.ts [baseUrl] [jdPath]
+ *   npm run smoke -- [baseUrl] [jdPath] [--flexible]
+ *   npx tsx scripts/e2e-tailor-cv.ts [baseUrl] [jdPath] [--flexible]
  *
  * Requires: running server, TAILOR_API_KEY, MASTER_CV_JSON|PATH, judge model keys.
  * Optional: SMOKE_WRITE_UNREDACTED=1 to write full curated JSON locally (default redacts).
+ * Optional: SMOKE_CURATION_MODE=strict|flexible (default strict); --flexible forces flexible.
  */
 
 import "dotenv/config";
 import { readFileSync, mkdirSync, writeFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { loadMasterCv } from "../app/api/lib/master-cv";
+import {
+  DEFAULT_CURATION_MODE,
+  isCurationMode,
+  type CurationMode,
+} from "../app/api/lib/curation-mode";
 import { getEvalJudgeModel } from "../lib/env";
 import {
   scoreJsonGrounding,
@@ -26,9 +32,29 @@ import {
   getSmokeJdFitMin,
 } from "../app/api/lib/smoke-helpers";
 
+const argv = process.argv.slice(2);
+const wantFlexible = argv.includes("--flexible");
+const positional = argv.filter((a) => a !== "--flexible");
+
 const BASE_URL =
-  process.argv[2] || process.env.E2E_BASE_URL || "http://localhost:3000";
-const JD_PATH_ARG = process.argv[3];
+  positional[0] || process.env.E2E_BASE_URL || "http://localhost:3000";
+const JD_PATH_ARG = positional[1];
+
+function resolveCurationMode(): CurationMode {
+  if (wantFlexible) return "flexible";
+  const fromEnv = process.env.SMOKE_CURATION_MODE?.trim();
+  if (fromEnv) {
+    if (!isCurationMode(fromEnv)) {
+      throw new Error(
+        `SMOKE_CURATION_MODE must be "strict" or "flexible" (got ${fromEnv})`
+      );
+    }
+    return fromEnv;
+  }
+  return DEFAULT_CURATION_MODE;
+}
+
+const CURATION_MODE = resolveCurationMode();
 
 function defaultJdPath(): string {
   const dir = join(process.cwd(), "knowledge-base", "test-jds");
@@ -61,6 +87,7 @@ type TailorSmokeResponse = {
   cv?: unknown;
   curatedJson?: unknown;
   builderVersion?: unknown;
+  curationMode?: unknown;
   model?: unknown;
   error?: string;
 };
@@ -90,6 +117,7 @@ async function postTailor(jd: string): Promise<{
     body: JSON.stringify({
       jobDescription: jd,
       sessionId: `smoke-${Date.now()}`,
+      curationMode: CURATION_MODE,
     }),
   });
 
@@ -173,6 +201,7 @@ async function main(): Promise<void> {
 
   const jd = loadJd();
   console.log(`JD: ${jd.path}`);
+  console.log(`curationMode: ${CURATION_MODE}`);
 
   const tailor = await postTailor(jd.text);
   console.log(tailor.ok ? "PASS tailor" : "FAIL tailor", tailor.detail);
@@ -198,7 +227,8 @@ async function main(): Promise<void> {
       master.data,
       tailor.data.curatedJson,
       jd.text,
-      judgeModel
+      judgeModel,
+      { curationMode: CURATION_MODE }
     );
     jdFit = await scoreJsonJdFit(
       master.data,

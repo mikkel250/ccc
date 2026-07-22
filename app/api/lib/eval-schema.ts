@@ -277,7 +277,9 @@ Respond with JSON only:
 {"score": <0.0-1.0 number>, "reasoning": "<brief explanation>", "gaps": ["<gap 1>", "<gap 2>"]}`
 )!;
 
-/** Smoke grounding judge: higher is better (1 = fully grounded in master JSON). */
+/** Smoke grounding judge: higher is better (1 = fully grounded in master JSON).
+ * Mode-specific collapse rules are appended at judge time via groundingJudgeModeAddendum.
+ */
 export const JSON_GROUNDING_JUDGE_PROMPT = getEnvString(
   "JSON_GROUNDING_JUDGE_PROMPT",
   `You are an expert fact-checker. Compare curated CV JSON against master CV JSON (ground truth).
@@ -285,10 +287,14 @@ export const JSON_GROUNDING_JUDGE_PROMPT = getEnvString(
 The job description is context only — never treat JD text as permission to invent facts.
 
 Flag identity-breaking claims in curated JSON that are absent from master:
-- employers, titles, dates, tools/skills, certifications, numeric metrics
+- named employers, tools/skills, certifications, numeric metrics
+- promotions, titles, or dates that assert a false employment relationship
 
-Acceptable: subsetting, reordering, emphasis shifts, omitting master content.
-Unacceptable: new employers/tools/certs/metrics or changed numeric claims.
+Acceptable by default (strict): subsetting, reordering, emphasis shifts, omitting master content.
+Do not accept category-style collapsed experience entries unless the mode addendum below
+explicitly allows flexible collapse.
+
+Unacceptable: new named employers/tools/certs/metrics or changed numeric claims.
 
 Score grounding quality on 0.0–1.0 (higher is better):
 1.0 — Fully grounded; no identity-breaking fabrication.

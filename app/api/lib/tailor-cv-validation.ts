@@ -2,16 +2,27 @@
  * Request boundary validation for POST /api/tailor-cv.
  * Keeps parsing/typing out of the route handler — the route maps `{ ok: false }` to HTTP 400.
  */
+import {
+  DEFAULT_CURATION_MODE,
+  isCurationMode,
+  type CurationMode,
+} from "./curation-mode";
 import { getTailorJdMaxChars } from "./cv-schema";
 
 export interface TailorCvRequestBody {
   jobDescription?: unknown;
   sessionId?: unknown;
+  curationMode?: unknown;
   [key: string]: unknown;
 }
 
 export type ValidateTailorCvResult =
-  | { ok: true; jobDescription: string; sessionId: string }
+  | {
+      ok: true;
+      jobDescription: string;
+      sessionId: string;
+      curationMode: CurationMode;
+    }
   | { ok: false; error: string };
 
 function isTailorCvRequestBody(record: Record<string, unknown>): record is TailorCvRequestBody {
@@ -47,10 +58,22 @@ export function validateTailorCvBody(
     return { ok: false, error: "jobDescription exceeds configured size limit." };
   }
 
+  const rawMode = record.curationMode;
+  let curationMode: CurationMode = DEFAULT_CURATION_MODE;
+  if (rawMode !== undefined && rawMode !== null) {
+    if (!isCurationMode(rawMode)) {
+      return {
+        ok: false,
+        error: 'curationMode must be "strict" or "flexible".',
+      };
+    }
+    curationMode = rawMode;
+  }
+
   const sessionId =
     typeof record.sessionId === "string" && record.sessionId.trim().length > 0
       ? record.sessionId.trim()
       : fallbackSessionId;
 
-  return { ok: true, jobDescription: trimmed, sessionId };
+  return { ok: true, jobDescription: trimmed, sessionId, curationMode };
 }

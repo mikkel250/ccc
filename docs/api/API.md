@@ -67,6 +67,7 @@ Headers: `Content-Type: application/json`, `Authorization: Bearer <TAILOR_API_KE
 |-------|------|----------|-------------|
 | `jobDescription` | `string` | Yes | Untrusted JD text; size capped by `TAILOR_JD_MAX_CHARS` (default 50000) |
 | `sessionId` | `string` | No | Optional caller ID (not used for rate limiting) |
+| `curationMode` | `"strict"` \| `"flexible"` | No | Default `strict`: Struan subset only. `flexible`: allow grounded category-style collapse of weak-fit role clusters |
 
 Request body size capped by `TAILOR_REQUEST_MAX_BYTES` (default 65536).
 
@@ -79,6 +80,7 @@ Request body size capped by `TAILOR_REQUEST_MAX_BYTES` (default 65536).
   "cv": "<base64-encoded .docx>",
   "curatedJson": { "name": "…", "contact": {}, "summary": [], "…": "…" },
   "builderVersion": "1.0.0",
+  "curationMode": "strict",
   "model": "anthropic/sonnet",
   "usage": {
     "promptTokens": 12000,
@@ -95,6 +97,7 @@ Request body size capped by `TAILOR_REQUEST_MAX_BYTES` (default 65536).
 | `cv` | Base64 `.docx` |
 | `curatedJson` | Schema-valid curated CV (caller-owned for history/regen) |
 | `builderVersion` | Mechanical builder semver; keep with JSON for style-stable regen |
+| `curationMode` | Echo of the mode used for this tailor (`strict` or `flexible`) |
 | `remaining` / `resetTime` | More restrictive of dual rate-limit buckets |
 
 Total JSON response size capped by `TAILOR_RESPONSE_MAX_BYTES` (default 2MiB).
