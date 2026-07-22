@@ -5,19 +5,24 @@
  * Production CV generation uses `getTailorModel()` (TAILOR_MODEL); generic chat
  * defaults use `getDefaultLlmModel()` (AI_MODEL). See .env.example for the catalog.
  */
-export function getEnvNumber(key: string, defaultValue: number): number {
+function parseEnvNumeric(
+  key: string,
+  defaultValue: number,
+  parser: (raw: string) => number
+): number {
   const raw = process.env[key];
   if (!raw) return defaultValue;
-  const parsed = parseInt(raw, 10);
+  const parsed = parser(raw);
   return Number.isFinite(parsed) ? parsed : defaultValue;
+}
+
+export function getEnvNumber(key: string, defaultValue: number): number {
+  return parseEnvNumeric(key, defaultValue, (raw) => parseInt(raw, 10));
 }
 
 /** Float env parse — use for fractional thresholds (getEnvNumber uses parseInt). */
 export function getEnvFloat(key: string, defaultValue: number): number {
-  const raw = process.env[key];
-  if (!raw) return defaultValue;
-  const parsed = parseFloat(raw);
-  return Number.isFinite(parsed) ? parsed : defaultValue;
+  return parseEnvNumeric(key, defaultValue, parseFloat);
 }
 
 export function getEnvString(key: string, defaultValue?: string): string | undefined {

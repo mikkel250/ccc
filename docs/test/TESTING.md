@@ -84,15 +84,10 @@ curl -s http://localhost:3000/api/tailor-cv
 
 ### Manual tailor (uses LLM + master JSON)
 
-Prefer smoke (includes judges). Ad-hoc curl:
-
-```bash
-curl -s -X POST http://localhost:3000/api/tailor-cv \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TAILOR_API_KEY" \
-  -d '{"jobDescription": "Senior React engineer. Requirements: TypeScript, React, Node."}' \
-  | jq -r '.cv' | base64 -d > /tmp/tailored-cv.docx
-```
+Use `npm run smoke`; it authenticates the request, validates both artifacts,
+and always runs the grounding and JD-fit judges. Ad-hoc `curl` to
+`POST /api/tailor-cv` is not a supported operator method (see product contract
+and README). Keep curl examples limited to health checks.
 
 ---
 
@@ -145,7 +140,7 @@ npm run regen-docx -- curated.json out.docx --builder-version=1.0.0
 npm run test:e2e
 ```
 
-Bearer required (or `TAILOR_AUTH_INSECURE_BYPASS=1` with `TAILOR_API_KEY` unset for bypass cases). Optional LLM path gated by `RUN_E2E_LLM_TESTS=true`.
+Bearer required (or `TAILOR_AUTH_INSECURE_BYPASS=1` with `TAILOR_API_KEY` unset for local/dev/test bypass cases — hard-blocked in production-like deploys). Optional LLM path gated by `RUN_E2E_LLM_TESTS=true`.
 
 ---
 

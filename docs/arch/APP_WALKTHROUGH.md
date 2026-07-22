@@ -62,7 +62,7 @@ The root page (`app/page.tsx :: Home`) calls `notFound()` — there is intention
 
 | Step | File | Function |
 |------|------|----------|
-| Burst limit | `app/api/lib/rate-limit.ts` | `checkRateLimit(sessionId, ip, secretBucketKey)` |
+| Burst limit | `app/api/lib/rate-limit.ts` | `checkRateLimit("pre-body", ipAddress, secretBucketKey)` |
 
 Upstash Redis dual sliding windows (`RATE_LIMIT_MAX` + `RATE_LIMIT_SECRET_MAX`). Secret bucket is checked first so secret exhaustion does not burn IP quota. Runs after auth/IP resolution and **before** body parse so invalid authorized floods still count. **Quota exhaustion → 429** with more-restrictive `remaining`/`resetTime`. **Redis / rate-limit service failure → 503**. Unresolvable IP → **400** before rate limiting.
 

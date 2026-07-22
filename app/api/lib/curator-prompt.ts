@@ -129,7 +129,7 @@ export async function getCuratorPrompt(): Promise<{
   } catch (error) {
     console.warn(
       "Langfuse curator prompt fetch failed, using hardcoded fallback:",
-      (error as Error).message
+      error instanceof Error ? error.message : String(error)
     );
     return {
       systemPrompt: FALLBACK_PROMPT,

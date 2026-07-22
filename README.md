@@ -84,7 +84,7 @@ Ad-hoc `curl` to `POST /api/tailor-cv` is **not** a supported operator method on
 npm test                 # unit — no live tailor/smoke LLM
 npm run smoke -- http://localhost:3000   # manual live API + judges (not CI)
 npm run regen-docx -- curated.json out.docx --builder-version=1.0.0
-npm run test:e2e         # Playwright HTTP checks (Bearer or bypass env)
+npm run test:e2e         # Playwright HTTP checks (Bearer; TAILOR_AUTH_INSECURE_BYPASS is local/dev/test-only and rejected in production)
 ```
 
 Live quality uses `npm run smoke` (not CI). Judge helpers used by smoke live under `app/api/lib/eval-*.ts`.

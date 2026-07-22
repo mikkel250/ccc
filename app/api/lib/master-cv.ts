@@ -32,14 +32,18 @@ function validateParsed(parsed: unknown, source: "env" | "path"): MasterCvLoadRe
   return { ok: true, data: validated.data, source };
 }
 
-function loadFromEnvBody(raw: string): MasterCvLoadResult {
+function parseAndValidate(raw: string, source: "env" | "path"): MasterCvLoadResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
     return { ok: false, error: "Master CV configuration is invalid" };
   }
-  return validateParsed(parsed, "env");
+  return validateParsed(parsed, source);
+}
+
+function loadFromEnvBody(raw: string): MasterCvLoadResult {
+  return parseAndValidate(raw, "env");
 }
 
 async function loadFromPathAsync(filePath: string): Promise<MasterCvLoadResult> {
@@ -63,13 +67,7 @@ async function loadFromPathAsync(filePath: string): Promise<MasterCvLoadResult> 
     return { ok: false, error: "Master CV configuration is unavailable" };
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return { ok: false, error: "Master CV configuration is invalid" };
-  }
-  return validateParsed(parsed, "path");
+  return parseAndValidate(raw, "path");
 }
 
 /** Sync path load for smoke CLI / unit tests only — not used on the HTTP request path. */
@@ -94,13 +92,7 @@ function loadFromPathSync(filePath: string): MasterCvLoadResult {
     return { ok: false, error: "Master CV configuration is unavailable" };
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return { ok: false, error: "Master CV configuration is invalid" };
-  }
-  return validateParsed(parsed, "path");
+  return parseAndValidate(raw, "path");
 }
 
 async function resolveMasterCvAsync(): Promise<MasterCvLoadResult> {
