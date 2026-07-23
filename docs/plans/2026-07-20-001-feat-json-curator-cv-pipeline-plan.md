@@ -649,30 +649,5 @@ sequenceDiagram
 
 ## Review — Tier 3: 2026-07-20
 
-**Validation Summary:** 5 confirmed, 0 refuted, 0 needs human review
-
-**Assessed Findings:**
-- **Under-200 employer blurbs revive salary/auth canned FPs:** Confirmed
-  - **Evidence:** `lib/input-filter.ts` line 79 (`looksLikeFaqAsk`) matches `\bsalary expectation\b` anywhere in the text.
-  - **Notes:** The regex incorrectly matches employer copy substrings, bypassing the strict interrogative gate requirement.
-- **role_mismatch dead for typical Hiring openings via filterInput:** Confirmed
-  - **Evidence:** `lib/input-filter.ts` line 404 block for `isShortCircuitEligible` gates `filterJobCriteria`.
-  - **Notes:** Standard opening blurbs (no trailing question marks) fail the FAQ gate altogether and bypass the role mismatch decline.
-- **Single SE whitelist token launders non-SE openings:** Confirmed
-  - **Evidence:** `lib/input-filter.ts` line 202 inside `hasSoftwareEngineeringSignals` includes broad tokens like `\bapi\b/i`.
-  - **Notes:** An attacker or generic JD can include universally-used tech acronyms like API in an unrelated job role to bypass the hard filter.
-- **Employer salary-expectation copy triggers canned reply:** Confirmed
-  - **Evidence:** `lib/input-filter.ts` lines 90 and 144 both match `\bsalary expectation\b` without requiring a leading interrogative.
-  - **Notes:** Corroborates the adversarial finding; employer text is incorrectly marked as a short-circuit FAQ.
-- **Non-FAQ role openings bypass role_mismatch:** Confirmed
-  - **Evidence:** `lib/input-filter.ts` lines 197-211 and 404.
-  - **Notes:** Corroborates the adversarial finding; non-question blurbs are skipped over the role_mismatch engine entirely due to strict nesting rules.
-
-**Spot-Check Results:**
-- Security & Auth: Clean
-- Supply Chain Risks: Clean
-- Error Handling & State Recovery: Clean
-- Async / Concurrency: Clean
-- API Contract Drift: Clean
-- Data Model Mutations: Clean
-- Untagged Coupling & Lifecycle: Clean
+*(Resolved by deletion of `lib/input-filter.ts` — commit 6258113. All five confirmed findings
+referenced the legacy chat-bot RAG filter which is no longer in the codebase.)*

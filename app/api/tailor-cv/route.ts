@@ -22,12 +22,26 @@ import { CURATOR_LANGFUSE_PROMPT_NAME } from "../lib/curator-prompt";
 
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" } as const;
 
-function jsonResponse(body: unknown, status: number): NextResponse {
-  return NextResponse.json(body, { status, headers: NO_STORE_HEADERS });
+function jsonResponse(
+  body: unknown,
+  status: number,
+  extraHeaders?: Record<string, string>
+): NextResponse {
+  return NextResponse.json(body, {
+    status,
+    headers: extraHeaders
+      ? { ...NO_STORE_HEADERS, ...extraHeaders }
+      : NO_STORE_HEADERS,
+  });
 }
 
+function retryAfterSeconds(resetTime: number): string {
+  return String(Math.max(1, Math.ceil(resetTime - Date.now() / 1000)));
+}
+
+/** Reject values too long to be valid IP addresses (IPv6 with zone ID ≤ 55 chars). */
 function isValidIp(value: string): boolean {
-  if (value.length > 45) return false;
+  if (value.length > 55) return false;
   return isIP(value) !== 0;
 }
 
@@ -152,7 +166,8 @@ export async function POST(request: NextRequest) {
           remaining: rateLimit.remaining,
           resetTime: rateLimit.resetTime,
         },
-        429
+        429,
+        { "Retry-After": retryAfterSeconds(rateLimit.resetTime) }
       );
     }
 

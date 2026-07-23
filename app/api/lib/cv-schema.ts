@@ -35,7 +35,7 @@ function loadValidator(): ValidateFunction {
   const schemaPath =
     schemaPathOverride ?? join(process.cwd(), SCHEMA_RELATIVE);
   const schema = JSON.parse(readFileSync(schemaPath, "utf8")) as object;
-  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  const ajv = new Ajv2020({ allErrors: true });
   validateFn = ajv.compile(schema);
   return validateFn;
 }

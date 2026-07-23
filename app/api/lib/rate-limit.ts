@@ -158,6 +158,9 @@ export async function checkRateLimit(
 ): Promise<RateLimitResult> {
   const ipRl = getIpRatelimit();
   const secretRl = getSecretRatelimit();
+  // Sequential: secret-first, then IP. Secret exhaustion must not burn IP quota
+  // (R21 / plan design decision), so we cannot fire both in parallel. The ~50ms
+  // extra latency in the common (both-allowed) case is an intentional tradeoff.
   const secretResult = await runLimit(secretRl, secretBucketKey);
   if (!secretResult.allowed) {
     return secretResult;

@@ -58,9 +58,15 @@ const CURATION_MODE = resolveCurationMode();
 
 function defaultJdPath(): string {
   const dir = join(process.cwd(), "knowledge-base", "test-jds");
-  const files = readdirSync(dir)
-    .filter((f) => f.endsWith(".md"))
-    .sort();
+  let files: string[];
+  try {
+    files = readdirSync(dir).filter((f) => f.endsWith(".md")).sort();
+  } catch {
+    throw new Error(
+      `No test-jds directory found at ${dir}. Provide a JD path:\n` +
+        `  npm run smoke -- <baseUrl> <path/to/jd.md>`
+    );
+  }
   if (files.length === 0) {
     throw new Error(`No JD files in ${dir}`);
   }
