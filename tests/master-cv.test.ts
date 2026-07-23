@@ -94,6 +94,40 @@ describe("loadMasterCv", () => {
     assert.equal(typeof data, "object");
   });
 
+  it("preloadMasterCv path branch succeeds for non-world-readable file", async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "master-cv-preload-"));
+    const path = join(tempDir, "master.json");
+    writeFileSync(path, JSON.stringify(validCv), { mode: 0o600 });
+    chmodSync(path, 0o600);
+    process.env.MASTER_CV_PATH = path;
+    delete process.env.MASTER_CV_JSON;
+
+    const pre = await preloadMasterCv();
+    assert.equal(pre.ok, true);
+    if (pre.ok) {
+      assert.equal(pre.source, "path");
+    }
+    const data = requireMasterCv();
+    assert.equal(typeof data, "object");
+    assert.deepEqual(data, validCv);
+  });
+
+  it("preloadMasterCv path branch rejects world-readable file", async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "master-cv-preload-world-"));
+    const path = join(tempDir, "master.json");
+    writeFileSync(path, JSON.stringify(validCv));
+    chmodSync(path, 0o644);
+    process.env.MASTER_CV_PATH = path;
+    delete process.env.MASTER_CV_JSON;
+
+    const pre = await preloadMasterCv();
+    assert.equal(pre.ok, false);
+    if (!pre.ok) {
+      assert.match(pre.error, /unavailable/i);
+    }
+    assert.throws(() => requireMasterCv(), ServiceError);
+  });
+
   it("requireMasterCv throws when nothing was preloaded", () => {
     assert.throws(() => requireMasterCv(), ServiceError);
   });

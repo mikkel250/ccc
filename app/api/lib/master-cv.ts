@@ -6,8 +6,8 @@
  * `requireMasterCv()` serves the preloaded cache only — no sync disk I/O.
  * Smoke CLI / tests may call `loadMasterCv()` which can resolve + cache synchronously.
  */
-import { readFileSync, statSync } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readFileSync, statSync, constants } from "node:fs";
+import { open } from "node:fs/promises";
 import { getEnvString } from "../../../lib/env";
 import { ServiceError } from "./errors";
 import { validateCvJson } from "./cv-schema";
@@ -47,27 +47,30 @@ function loadFromEnvBody(raw: string): MasterCvLoadResult {
 }
 
 async function loadFromPathAsync(filePath: string): Promise<MasterCvLoadResult> {
-  let fileStat;
+  let handle;
   try {
-    fileStat = await stat(filePath);
-  } catch {
-    return { ok: false, error: "Master CV configuration is unavailable" };
-  }
-  if (!fileStat.isFile()) {
-    return { ok: false, error: "Master CV configuration is unavailable" };
-  }
-  if (isWorldReadable(fileStat.mode)) {
-    return { ok: false, error: "Master CV configuration is unavailable" };
-  }
-
-  let raw: string;
-  try {
-    raw = await readFile(filePath, "utf8");
+    // O_NOFOLLOW: refuse to open via symlink; fstat/read use the same descriptor.
+    handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
   } catch {
     return { ok: false, error: "Master CV configuration is unavailable" };
   }
 
-  return parseAndValidate(raw, "path");
+  try {
+    const fileStat = await handle.stat();
+    if (!fileStat.isFile()) {
+      return { ok: false, error: "Master CV configuration is unavailable" };
+    }
+    if (isWorldReadable(fileStat.mode)) {
+      return { ok: false, error: "Master CV configuration is unavailable" };
+    }
+
+    const raw = await handle.readFile("utf8");
+    return parseAndValidate(raw, "path");
+  } catch {
+    return { ok: false, error: "Master CV configuration is unavailable" };
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
 }
 
 /** Sync path load for smoke CLI / unit tests only — not used on the HTTP request path. */
