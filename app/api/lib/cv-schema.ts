@@ -35,7 +35,23 @@ function loadValidator(): ValidateFunction {
   const schemaPath =
     schemaPathOverride ?? join(process.cwd(), SCHEMA_RELATIVE);
   const schema = JSON.parse(readFileSync(schemaPath, "utf8")) as object;
-  const ajv = new Ajv2020({ allErrors: true });
+  const ajv = new Ajv2020({
+    allErrors: true,
+    strict: true,
+    // Experience oneOf uses `not: { required: ["bullets"|"subroles"] }`; Ajv
+    // strictRequired rejects required keys that are not listed under properties.
+    strictRequired: false,
+    validateSchema: true,
+    allowUnionTypes: true,
+  });
+  if (!ajv.validateSchema(schema)) {
+    const schemaErrors = ajv.errors
+      ?.map((e) => `${e.instancePath || "/"} ${e.message ?? "invalid"}`)
+      .join("; ");
+    throw new Error(
+      `CV schema failed Ajv schema validation: ${schemaErrors || "unknown error"}`
+    );
+  }
   validateFn = ajv.compile(schema);
   return validateFn;
 }
