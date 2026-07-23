@@ -13,12 +13,15 @@ describe("curation-mode", () => {
     assert.equal(DEFAULT_CURATION_MODE, "strict");
   });
 
-  it("strict policy forbids collapse; flexible allows grounded collapse", () => {
+  it("strict policy forbids collapse; flexible is JD-fit-first and industry-agnostic", () => {
     const strict = curationModePolicy("strict");
     const flexible = curationModePolicy("flexible");
     assert.match(strict, /Do not collapse/i);
-    assert.match(flexible, /collapse multiple experience/i);
+    assert.match(flexible, /collapse a weak-fit cluster/i);
     assert.match(flexible, /category-style/i);
+    assert.match(flexible, /Lead experience\[\] with the strongest JD-fit/i);
+    assert.match(flexible, /Recency does not override weak JD fit/i);
+    assert.doesNotMatch(flexible, /restaurant|software engineer|non-tech/i);
   });
 
   it("applyCurationModePolicy replaces placeholder when present", () => {
