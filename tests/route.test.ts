@@ -174,6 +174,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
       )
     );
     assert.equal(response.status, 400);
+    assertNoStore(response);
     const json = (await response.json()) as { error: string };
     assert.equal(json.error, "Invalid JSON in request body");
   });
@@ -384,6 +385,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
     });
     const response = await POST(buildPostRequest(body, XFF));
     assert.equal(response.status, 400);
+    assertNoStore(response);
     const json = (await response.json()) as { error: string };
     assert.match(json.error, /size limit/i);
     assert.equal(chatSpy.mock.callCount(), 0);
@@ -487,9 +489,36 @@ describe("POST /api/tailor-cv — request hardening", () => {
     const response = await POST(buildPostRequest(OVERRIDE_JD, XFF));
     assert.equal(response.status, 200);
     const json = (await response.json()) as {
-      curatedJson: { experience?: Array<{ title?: string }>; name?: string };
+      curatedJson: {
+        name?: string;
+        experience?: Array<{ title?: string }>;
+        skills?: Array<{ category?: string; items?: string }>;
+      };
     };
+    const fixtureExperience = FIXTURE_CURATED.experience as Array<{
+      title: string;
+    }>;
+    const fixtureSkills = FIXTURE_CURATED.skills as Array<{
+      category: string;
+      items: string;
+    }>;
     assert.equal(json.curatedJson.name, FIXTURE_CURATED.name);
+    assert.ok(
+      Array.isArray(json.curatedJson.experience) &&
+        json.curatedJson.experience.length > 0
+    );
+    assert.equal(
+      json.curatedJson.experience[0]?.title,
+      fixtureExperience[0]?.title
+    );
+    assert.ok(
+      Array.isArray(json.curatedJson.skills) && json.curatedJson.skills.length > 0
+    );
+    assert.equal(
+      json.curatedJson.skills[0]?.category,
+      fixtureSkills[0]?.category
+    );
+    assert.equal(json.curatedJson.skills[0]?.items, fixtureSkills[0]?.items);
   });
 
   describe("happy path with mocked pipeline", () => {

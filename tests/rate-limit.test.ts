@@ -172,9 +172,19 @@ describe("checkRateLimit", () => {
     for (let i = 0; i < config.secretMaxRequests; i++) {
       const r = await checkRateLimit("s", `${ip}-${i}`, secret);
       assert.equal(r.allowed, true, `secret request ${i + 1} should be allowed`);
+      assert.equal(
+        r.remaining,
+        config.secretMaxRequests - (i + 1),
+        `secret bucket remaining should decrement on request ${i + 1}`
+      );
     }
     const blocked = await checkRateLimit("s", `${ip}-new`, secret);
     assert.equal(blocked.allowed, false);
+    assert.equal(blocked.remaining, 0);
+    assert.equal(typeof blocked.resetTime, "number");
+    const now = Date.now();
+    assert.ok(blocked.resetTime! > now);
+    assert.ok(blocked.resetTime! - now <= config.windowMs);
   });
 
   it("does not consume IP quota when secret bucket alone denies", async () => {
