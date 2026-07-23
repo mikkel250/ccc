@@ -42,6 +42,9 @@ yarn-error.log*
 .env.production.local
 */devpro-build/.env*
 
+# Runtime master CV (career PII) — never commit to this public repo
+/secrets/
+
 # vercel
 .vercel
 

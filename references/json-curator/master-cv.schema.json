@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local/ccc/master-cv.schema.json",
+  "title": "MasterOrCuratedCV",
+  "description": "Schema compatible with Claude Projects master_cv.json / curated subset. Experience entries use either bullets[] or subroles[].",
+  "type": "object",
+  "required": [
+    "name",
+    "contact",
+    "summary",
+    "skills",
+    "experience",
+    "education"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "contact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "location",
+        "phone",
+        "email",
+        "links"
+      ],
+      "properties": {
+        "location": {
+          "type": "string"
+        },
+        "phone": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "label",
+              "url"
+            ],
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "category",
+          "items"
+        ],
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "experience": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "dates"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "dates": {
+            "type": "string"
+          },
+          "blurb": {
+            "type": "string"
+          },
+          "bullets": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "subroles": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "heading",
+                "bullets"
+              ],
+              "properties": {
+                "heading": {
+                  "type": "string"
+                },
+                "bullets": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "oneOf": [
+          {
+            "required": ["bullets"],
+            "not": { "required": ["subroles"] }
+          },
+          {
+            "required": ["subroles"],
+            "not": { "required": ["bullets"] }
+          }
+        ]
+      }
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "bullets"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "linkLabel": {
+            "type": "string"
+          },
+          "linkUrl": {
+            "type": "string"
+          },
+          "bullets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "portfolioSites": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "education": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "certifications": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

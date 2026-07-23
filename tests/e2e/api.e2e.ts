@@ -1,47 +1,107 @@
 import { test, expect } from "@playwright/test";
+import { getEnvBoolean } from "../../lib/env";
+
+const tailorApiKey = process.env.TAILOR_API_KEY?.trim();
+
+function authHeaders(): Record<string, string> {
+  if (!tailorApiKey) {
+    throw new Error("TAILOR_API_KEY must be set for authorized Playwright tailor tests");
+  }
+  return { Authorization: `Bearer ${tailorApiKey}` };
+}
+
+function assertErrorBody(json: unknown): asserts json is { error: string } {
+  expect(json).toEqual(expect.objectContaining({ error: expect.any(String) }));
+}
+
+function assertHelloBody(json: unknown): asserts json is {
+  service: string;
+  status: string;
+} {
+  expect(json).toEqual(
+    expect.objectContaining({
+      service: expect.any(String),
+      status: expect.any(String),
+    })
+  );
+}
+
+function assertTailorSuccessBody(json: unknown): asserts json is {
+  cv: string;
+  curatedJson: unknown;
+  builderVersion: string;
+} {
+  expect(json).toEqual(
+    expect.objectContaining({
+      cv: expect.any(String),
+      curatedJson: expect.anything(),
+      builderVersion: expect.any(String),
+    })
+  );
+}
 
 test("GET /api/hello returns 200 with service and status", async ({ request }) => {
   const response = await request.get("/api/hello");
   expect(response.status()).toBe(200);
 
-  const json = await response.json();
+  const json: unknown = await response.json();
+  assertHelloBody(json);
   expect(json.service).toBe("cv-tailoring-api");
   expect(json.status).toBe("ok");
 });
 
-test("POST /api/tailor-cv with missing body returns 400", async ({ request }) => {
+test("POST /api/tailor-cv without Authorization returns 401", async ({ request }) => {
+  const bypassOn =
+    process.env.TAILOR_AUTH_INSECURE_BYPASS === "1" ||
+    process.env.TAILOR_AUTH_INSECURE_BYPASS === "true";
+  test.skip(bypassOn, "Bypass mode allows requests without Bearer");
+  test.skip(!tailorApiKey, "Requires TAILOR_API_KEY so missing Bearer yields 401 not 503");
+
+  const response = await request.post("/api/tailor-cv", {
+    data: { jobDescription: "Senior TypeScript engineer." },
+  });
+  expect(response.status()).toBe(401);
+  expect(response.headers()["cache-control"]).toBe("no-store");
+
+  const json: unknown = await response.json();
+  assertErrorBody(json);
+  expect(json.error).toMatch(/unauthorized/i);
+});
+
+test("POST /api/tailor-cv with insecure bypass and no Bearer reaches validation", async ({
+  request,
+}) => {
+  const bypassOn =
+    process.env.TAILOR_AUTH_INSECURE_BYPASS === "1" ||
+    process.env.TAILOR_AUTH_INSECURE_BYPASS === "true";
+  test.skip(!bypassOn, "Set TAILOR_AUTH_INSECURE_BYPASS=1 to run bypass e2e");
+  test.skip(
+    Boolean(tailorApiKey),
+    "Unset TAILOR_API_KEY so this case exercises bypass-only auth"
+  );
+
+  // No Authorization — auth must pass via bypass, then body validation fails.
   const response = await request.post("/api/tailor-cv", {
     data: {},
   });
   expect(response.status()).toBe(400);
-
-  const json = await response.json();
+  expect(response.headers()["cache-control"]).toBe("no-store");
+  const json: unknown = await response.json();
+  assertErrorBody(json);
   expect(json.error).toMatch(/required/i);
 });
 
-test("POST /api/tailor-cv with empty jobDescription returns 400", async ({
-  request,
-}) => {
-  const response = await request.post("/api/tailor-cv", {
-    data: { jobDescription: "" },
-  });
-  expect(response.status()).toBe(400);
-
-  const json = await response.json();
-  expect(typeof json.error).toBe("string");
-});
-
-test("GET /api/tailor-cv returns 405", async ({ request }) => {
-  const response = await request.get("/api/tailor-cv");
-  expect(response.status()).toBe(405);
-
-  const json = await response.json();
-  expect(json.error).toMatch(/method not allowed/i);
-});
-
-test("POST /api/tailor-cv happy path (guarded)", async ({ request }) => {
+test("POST /api/tailor-cv bypass happy path (guarded)", async ({ request }) => {
+  const bypassOn =
+    process.env.TAILOR_AUTH_INSECURE_BYPASS === "1" ||
+    process.env.TAILOR_AUTH_INSECURE_BYPASS === "true";
+  test.skip(!bypassOn, "Set TAILOR_AUTH_INSECURE_BYPASS=1 to run bypass e2e");
   test.skip(
-    !process.env.RUN_E2E_LLM_TESTS,
+    Boolean(tailorApiKey),
+    "Unset TAILOR_API_KEY so this case exercises bypass-only auth"
+  );
+  test.skip(
+    !getEnvBoolean("RUN_E2E_LLM_TESTS", false),
     "Set RUN_E2E_LLM_TESTS=true to run"
   );
 
@@ -52,10 +112,80 @@ test("POST /api/tailor-cv happy path (guarded)", async ({ request }) => {
     },
   });
   expect(response.status()).toBe(200);
+  expect(response.headers()["cache-control"]).toBe("no-store");
 
-  const json = await response.json();
-  expect(typeof json.cv).toBe("string");
+  const json: unknown = await response.json();
+  assertTailorSuccessBody(json);
   expect(json.cv.length).toBeGreaterThan(0);
+  expect(json.curatedJson).toBeTruthy();
+  expect(json.builderVersion.length).toBeGreaterThan(0);
+  const magic = Buffer.from(json.cv, "base64").slice(0, 2).toString();
+  expect(magic).toBe("PK");
+});
+
+test("POST /api/tailor-cv with Bearer and missing body returns 400", async ({
+  request,
+}) => {
+  test.skip(!tailorApiKey, "Set TAILOR_API_KEY to run authorized tailor e2e");
+
+  const response = await request.post("/api/tailor-cv", {
+    headers: authHeaders(),
+    data: {},
+  });
+  expect(response.status()).toBe(400);
+
+  const json: unknown = await response.json();
+  assertErrorBody(json);
+  expect(json.error).toMatch(/required/i);
+});
+
+test("POST /api/tailor-cv with Bearer and empty jobDescription returns 400", async ({
+  request,
+}) => {
+  test.skip(!tailorApiKey, "Set TAILOR_API_KEY to run authorized tailor e2e");
+
+  const response = await request.post("/api/tailor-cv", {
+    headers: authHeaders(),
+    data: { jobDescription: "" },
+  });
+  expect(response.status()).toBe(400);
+
+  const json: unknown = await response.json();
+  assertErrorBody(json);
+  expect(typeof json.error).toBe("string");
+});
+
+test("GET /api/tailor-cv returns 405", async ({ request }) => {
+  const response = await request.get("/api/tailor-cv");
+  expect(response.status()).toBe(405);
+
+  const json: unknown = await response.json();
+  assertErrorBody(json);
+  expect(json.error).toMatch(/method not allowed/i);
+});
+
+test("POST /api/tailor-cv happy path (guarded)", async ({ request }) => {
+  test.skip(
+    !getEnvBoolean("RUN_E2E_LLM_TESTS", false),
+    "Set RUN_E2E_LLM_TESTS=true to run"
+  );
+  test.skip(!tailorApiKey, "Set TAILOR_API_KEY to run authorized tailor e2e");
+
+  const response = await request.post("/api/tailor-cv", {
+    headers: authHeaders(),
+    data: {
+      jobDescription:
+        "Senior TypeScript engineer. Must have: React, Node, TypeScript.",
+    },
+  });
+  expect(response.status()).toBe(200);
+  expect(response.headers()["cache-control"]).toBe("no-store");
+
+  const json: unknown = await response.json();
+  assertTailorSuccessBody(json);
+  expect(json.cv.length).toBeGreaterThan(0);
+  expect(json.curatedJson).toBeTruthy();
+  expect(json.builderVersion.length).toBeGreaterThan(0);
 
   const magic = Buffer.from(json.cv, "base64").slice(0, 2).toString();
   expect(magic).toBe("PK");

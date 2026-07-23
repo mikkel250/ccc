@@ -1,11 +1,11 @@
 /**
- * LLM-as-Judge scorers for the offline eval pipeline (scripts/eval-cv.ts).
+ * LLM-as-Judge scorers for smoke (JSON master+curated) and legacy markdown helpers.
  *
- * scoreExtraction — validates Stage 1 JD parsing
- * scoreRelevance / scoreHallucination — judge generated CVs against KB + extraction
- * resolveJudgeModel — maps generator model → judge model via getJudgeMap() (eval-schema.ts)
+ * scoreJsonGrounding / scoreJsonJdFit — smoke path (npm run smoke)
+ * scoreExtraction / scoreRelevance / scoreHallucination — legacy offline helpers
+ * resolveJudgeModel — maps generator model → judge model via getJudgeMap()
  *
- * Not invoked by POST /api/tailor-cv; used only to pick TAILOR_MODEL.
+ * Not invoked by POST /api/tailor-cv.
  */
 import { chat, type ChatMessage, type ChatResponse } from "./llm";
 import { getEvalJudgeModel } from "../../../lib/env";
@@ -15,12 +15,19 @@ import {
   getJudgeMap,
   warnUnmappedJudgeModels,
   RELEVANCE_JUDGE_PROMPT,
+  JSON_GROUNDING_JUDGE_PROMPT,
+  JSON_JD_FIT_JUDGE_PROMPT,
   type ExtractionScore,
   type HallucinationScore,
   type JdExtraction,
   type RelevanceScore,
 } from "./eval-schema";
 import { extractStructuredJson, parseStringArray } from "./eval-parse";
+import {
+  DEFAULT_CURATION_MODE,
+  groundingJudgeModeAddendum,
+  type CurationMode,
+} from "./curation-mode";
 
 export { extractStructuredJson } from "./eval-parse";
 
@@ -32,6 +39,7 @@ type ChatFn = (
 
 export interface JudgeScoreOptions {
   chat?: ChatFn;
+  curationMode?: CurationMode;
 }
 
 function formatKbContext(kbFiles: Record<string, string>): string {
@@ -70,16 +78,26 @@ export function resolveJudgeModel(generatorModel: string): string {
   return getEvalJudgeModel();
 }
 
-function clampRelevanceScore(value: unknown): number {
+function parseRelevanceScore(
+  value: unknown
+): { ok: true; score: number } | { ok: false } {
   const num = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(num)) return 3;
-  return Math.min(5, Math.max(1, Math.round(num)));
+  if (!Number.isFinite(num)) return { ok: false };
+  return { ok: true, score: Math.min(5, Math.max(1, Math.round(num))) };
 }
 
 function clampUnitScore(value: unknown, fallback = 0.5): number {
   const num = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(num)) return fallback;
   return Math.min(1, Math.max(0, num));
+}
+
+function parseUnitScore(
+  value: unknown
+): { ok: true; score: number } | { ok: false } {
+  const num = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(num)) return { ok: false };
+  return { ok: true, score: Math.min(1, Math.max(0, num)) };
 }
 
 export async function scoreExtraction(
@@ -151,8 +169,20 @@ export async function scoreRelevance(
       reasoning?: unknown;
     };
 
+    const score = parseRelevanceScore(parsed.score);
+    if (!score.ok) {
+      return {
+        score: 1,
+        reasoning:
+          typeof parsed.reasoning === "string"
+            ? parsed.reasoning
+            : "Missing or invalid relevance score",
+        parseFailed: true,
+      };
+    }
+
     return {
-      score: clampRelevanceScore(parsed.score),
+      score: score.score,
       reasoning:
         typeof parsed.reasoning === "string"
           ? parsed.reasoning
@@ -163,7 +193,7 @@ export async function scoreRelevance(
     const message = error instanceof Error ? error.message : String(error);
     console.warn("scoreRelevance parse failure:", message);
     return {
-      score: 3,
+      score: 1,
       reasoning: `Parse failure: ${message}`,
       parseFailed: true,
     };
@@ -210,5 +240,125 @@ export async function scoreHallucination(
       flaggedClaims: [],
       parseFailed: true,
     };
+  }
+}
+
+export type JsonGroundingScore = {
+  score: number;
+  flaggedClaims: string[];
+  parseFailed: boolean;
+};
+
+export type JsonJdFitScore = {
+  score: number;
+  reasoning: string;
+  parseFailed: boolean;
+};
+
+/** Grounding judge for smoke: master + curated JSON (+ JD context). Higher score = better. */
+export async function scoreJsonGrounding(
+  masterCv: unknown,
+  curatedCv: unknown,
+  jobDescription: string,
+  judgeModel: string,
+  options: JudgeScoreOptions = {}
+): Promise<JsonGroundingScore> {
+  const chatFn = options.chat ?? chat;
+  const curationMode = options.curationMode ?? DEFAULT_CURATION_MODE;
+  const systemPrompt = [
+    JSON_GROUNDING_JUDGE_PROMPT,
+    "",
+    groundingJudgeModeAddendum(curationMode),
+  ].join("\n");
+  const userContent = [
+    "## Job description (untrusted context only)",
+    jobDescription,
+    "",
+    "## Master CV JSON (ground truth)",
+    JSON.stringify(masterCv),
+    "",
+    "## Curated CV JSON",
+    JSON.stringify(curatedCv),
+  ].join("\n");
+
+  try {
+    const response = await chatFn(
+      [{ role: "user", content: userContent }],
+      systemPrompt,
+      { model: judgeModel, source: "smoke-grounding" }
+    );
+    const parsed = extractStructuredJson(response.content) as {
+      score?: unknown;
+      flaggedClaims?: unknown;
+    };
+    const score = parseUnitScore(parsed.score);
+    if (!score.ok) {
+      return { score: 0, flaggedClaims: [], parseFailed: true };
+    }
+    return {
+      score: score.score,
+      flaggedClaims: parseStringArray(parsed.flaggedClaims),
+      parseFailed: false,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("scoreJsonGrounding parse failure:", message);
+    return { score: 0, flaggedClaims: [], parseFailed: true };
+  }
+}
+
+/** JD-fit judge for smoke: curated JSON vs JD (master for availability context). */
+export async function scoreJsonJdFit(
+  masterCv: unknown,
+  curatedCv: unknown,
+  jobDescription: string,
+  judgeModel: string,
+  options: JudgeScoreOptions = {}
+): Promise<JsonJdFitScore> {
+  const chatFn = options.chat ?? chat;
+  const userContent = [
+    "## Job description",
+    jobDescription,
+    "",
+    "## Master CV JSON (available content)",
+    JSON.stringify(masterCv),
+    "",
+    "## Curated CV JSON",
+    JSON.stringify(curatedCv),
+  ].join("\n");
+
+  try {
+    const response = await chatFn(
+      [{ role: "user", content: userContent }],
+      JSON_JD_FIT_JUDGE_PROMPT,
+      { model: judgeModel, source: "smoke-jd-fit" }
+    );
+    const parsed = extractStructuredJson(response.content) as {
+      score?: unknown;
+      reasoning?: unknown;
+    };
+    const score = parseRelevanceScore(parsed.score);
+    if (!score.ok) {
+      return {
+        score: 1,
+        reasoning:
+          typeof parsed.reasoning === "string"
+            ? parsed.reasoning
+            : "Missing or invalid jd-fit score",
+        parseFailed: true,
+      };
+    }
+    return {
+      score: score.score,
+      reasoning:
+        typeof parsed.reasoning === "string"
+          ? parsed.reasoning
+          : "No reasoning provided",
+      parseFailed: false,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("scoreJsonJdFit parse failure:", message);
+    return { score: 1, reasoning: `Parse failure: ${message}`, parseFailed: true };
   }
 }

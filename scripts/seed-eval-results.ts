@@ -6,7 +6,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { parseEvalModels, buildScoresPayload, buildUsagePayload } from "./eval-cv";
+import { parseEvalModels, buildScoresPayload, buildUsagePayload } from "../app/api/lib/eval-cv-helpers";
 
 const EVAL_RESULTS_DIR = path.join(process.cwd(), "eval-results");
 const TEST_JDS_DIR = path.join(process.cwd(), "knowledge-base", "test-jds");

@@ -1,19 +1,46 @@
 /**
- * Mutable dependency bag for POST /api/tailor-cv — enables route-level tests to mock
- * pipeline steps via mock.method on plain object properties (ESM namespace getters are not mockable).
+ * Mutable dependency bag for POST /api/tailor-cv.
+ *
+ * Every pipeline function the route handler calls is re-exported as a property
+ * of this plain object. Tests use `mock.method(tailorCvDeps, ...)` to swap
+ * individual steps without reaching into compiled ESM namespace getters, which
+ * Node's `mock.method` cannot intercept. Each property name matches the
+ * function name so route code reads naturally (`tailorCvDeps.requireMasterCv()`).
+ *
+ * This is NOT a general-purpose DI container — there is no interface, no
+ * dynamic resolution, and no runtime swapping outside tests. It exists solely
+ * because ES module namespace exports are not mockable in Node ≥22.
  */
 import { checkRateLimit as checkRateLimitImpl } from "./rate-limit";
-import { getAllContext as getAllContextImpl } from "./knowledge-base";
-import { getCvPrompt as getCvPromptImpl, compileCvPrompt as compileCvPromptImpl } from "./cv-prompt";
 import { chat as chatImpl, isLlmServiceError as isLlmServiceErrorImpl } from "./llm";
-import { markdownToDocxBase64 as markdownToDocxBase64Impl } from "./markdown-docx";
+import { authenticateTailorRequest as authenticateTailorRequestImpl } from "./tailor-auth";
+import { requireMasterCv as requireMasterCvImpl } from "./master-cv";
+import {
+  getCuratorPrompt as getCuratorPromptImpl,
+  compileCuratorPrompt as compileCuratorPromptImpl,
+  buildCuratorUserMessage as buildCuratorUserMessageImpl,
+} from "./curator-prompt";
+import { applyCurationModePolicy as applyCurationModePolicyImpl } from "./curation-mode";
+import {
+  validateCvJson as validateCvJsonImpl,
+  assertCuratedJsonSize as assertCuratedJsonSizeImpl,
+} from "./cv-schema";
+import { extractStructuredJson as extractStructuredJsonImpl } from "./eval-parse";
+import { buildJsonDocxBase64 as buildJsonDocxBase64Impl, sanitizeCvJson } from "./json-docx-builder";
 
 export const tailorCvDeps = {
+  authenticateTailorRequest: authenticateTailorRequestImpl,
   checkRateLimit: checkRateLimitImpl,
-  getAllContext: getAllContextImpl,
-  getCvPrompt: getCvPromptImpl,
-  compileCvPrompt: compileCvPromptImpl,
+  requireMasterCv: requireMasterCvImpl,
+  getCuratorPrompt: getCuratorPromptImpl,
+  applyCurationModePolicy: applyCurationModePolicyImpl,
+  compileCuratorPrompt: compileCuratorPromptImpl,
+  buildCuratorUserMessage: buildCuratorUserMessageImpl,
   chat: chatImpl,
   isLlmServiceError: isLlmServiceErrorImpl,
-  markdownToDocxBase64: markdownToDocxBase64Impl,
+  extractStructuredJson: extractStructuredJsonImpl,
+  validateCvJson: validateCvJsonImpl,
+  assertCuratedJsonSize: assertCuratedJsonSizeImpl,
+  buildJsonDocxBase64: buildJsonDocxBase64Impl,
+  sanitizeForResponse: sanitizeCvJson,
 };

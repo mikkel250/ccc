@@ -86,4 +86,60 @@ describe("validateTailorCvBody", () => {
     assert.equal(result.ok, true);
     if (result.ok) assert.equal(result.sessionId, "ip:fallback");
   });
+
+  it("rejects jobDescription over TAILOR_JD_MAX_CHARS", () => {
+    const previous = process.env.TAILOR_JD_MAX_CHARS;
+    process.env.TAILOR_JD_MAX_CHARS = "10";
+    try {
+      const result = validateTailorCvBody(
+        { jobDescription: "abcdefghijk" },
+        "fallback"
+      );
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.match(result.error, /size limit/i);
+    } finally {
+      if (previous === undefined) delete process.env.TAILOR_JD_MAX_CHARS;
+      else process.env.TAILOR_JD_MAX_CHARS = previous;
+    }
+  });
+
+  it("defaults curationMode to strict when omitted", () => {
+    const result = validateTailorCvBody(
+      { jobDescription: "Senior React engineer role" },
+      "ip:1.2.3.4"
+    );
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.curationMode, "strict");
+    }
+  });
+
+  it("accepts curationMode strict and flexible", () => {
+    for (const curationMode of ["strict", "flexible"] as const) {
+      const result = validateTailorCvBody(
+        { jobDescription: "JD text", curationMode },
+        "fallback"
+      );
+      assert.equal(result.ok, true);
+      if (result.ok) assert.equal(result.curationMode, curationMode);
+    }
+  });
+
+  it("rejects invalid curationMode", () => {
+    const result = validateTailorCvBody(
+      { jobDescription: "JD text", curationMode: "loose" },
+      "fallback"
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.error, /curationMode/i);
+  });
+
+  it("rejects null curationMode", () => {
+    const result = validateTailorCvBody(
+      { jobDescription: "JD text", curationMode: null },
+      "fallback"
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.error, /curationMode/i);
+  });
 });

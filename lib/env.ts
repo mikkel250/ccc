@@ -5,11 +5,28 @@
  * Production CV generation uses `getTailorModel()` (TAILOR_MODEL); generic chat
  * defaults use `getDefaultLlmModel()` (AI_MODEL). See .env.example for the catalog.
  */
-export function getEnvNumber(key: string, defaultValue: number): number {
+function parseEnvNumeric(
+  key: string,
+  defaultValue: number,
+  parser: (raw: string) => number
+): number {
   const raw = process.env[key];
   if (!raw) return defaultValue;
-  const parsed = parseInt(raw, 10);
+  const parsed = parser(raw);
   return Number.isFinite(parsed) ? parsed : defaultValue;
+}
+
+export function getEnvNumber(key: string, defaultValue: number): number {
+  return parseEnvNumeric(key, defaultValue, (raw) => parseInt(raw, 10));
+}
+
+/** Float env parse — use for fractional thresholds (getEnvNumber uses parseInt). */
+export function getEnvFloat(key: string, defaultValue: number): number {
+  return parseEnvNumeric(key, defaultValue, (raw) => {
+    const trimmed = raw.trim();
+    // Number rejects partial junk ("0.7junk") that parseFloat would accept.
+    return trimmed === "" ? Number.NaN : Number(trimmed);
+  });
 }
 
 export function getEnvString(key: string, defaultValue?: string): string | undefined {
@@ -115,4 +132,14 @@ export function getEvalExtractionMinScore(): number {
   if (!raw) return DEFAULT_EVAL_EXTRACTION_MIN_SCORE;
   const parsed = parseFloat(raw);
   return Number.isFinite(parsed) ? parsed : DEFAULT_EVAL_EXTRACTION_MIN_SCORE;
+}
+
+/**
+ * Default tailor curation posture when the request omits `curationMode`.
+ * Invalid/empty env falls back to strict.
+ */
+export function getDefaultCurationMode(): "strict" | "flexible" {
+  const raw = getEnvString("TAILOR_DEFAULT_CURATION_MODE", "strict")?.trim();
+  if (raw === "strict" || raw === "flexible") return raw;
+  return "strict";
 }

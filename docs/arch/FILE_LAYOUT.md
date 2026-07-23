@@ -12,8 +12,14 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │       ├── hello/route.ts        # Health check GET /api/hello
 │       ├── tailor-cv/route.ts    # POST /api/tailor-cv — main CV generation endpoint
 │       └── lib/                  # All business logic lives here
-│           ├── llm.ts            # Multi-provider LLM client (531 lines)
-│           ├── cv-prompt.ts      # CV tailoring prompt (Langfuse + hardcoded fallback)
+│           ├── llm.ts            # Multi-provider LLM client
+│           ├── curator-prompt.ts # JSON curator prompt (Langfuse cv-curator-json + fallback)
+│           ├── curation-mode.ts  # strict|flexible curation policy + judge addendum
+│           ├── master-cv.ts      # MASTER_CV_JSON / MASTER_CV_PATH loader
+│           ├── cv-schema.ts      # Ajv draft-2020-12 validation + size limits
+│           ├── json-docx-builder.ts # Mechanical JSON → .docx (BUILDER_VERSION)
+│           ├── tailor-auth.ts    # Bearer shared-secret gate
+│           ├── smoke-helpers.ts  # Smoke judge gates + artifact redaction
 │           ├── chat-prompt.ts    # Chat assistant system prompt (legacy, no route yet)
 │           ├── jd-prompt.ts      # Job description analysis prompt (evaluation rubric inside)
 │           ├── prompts.ts        # Chat prompt builder (legacy, no route yet)
@@ -24,53 +30,41 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           │   ├── langfuse.ts   # Langfuse adapter (+ initLangFuse export)
 │           │   └── index.ts      # recordLangSmithTrace / recordLangfuseTrace
 │           ├── langfuse-otel.ts  # OTEL bootstrap (lazy)
-│           ├── knowledge-base.ts # Full KB load for tailor-cv (getAllContext)
-│           ├── markdown-docx.ts  # Markdown → .docx conversion
+│           ├── knowledge-base.ts # Legacy markdown KB helpers (not tailor hot path)
+│           ├── markdown-docx.ts  # Legacy markdown → .docx (not tailor hot path)
+│           ├── cv-prompt.ts      # Legacy markdown tailor prompt (not hot path)
 │           ├── redis.ts          # Shared Upstash Redis client singleton
-│           ├── rate-limit.ts     # IP-based burst rate limiter (Upstash Redis-backed)
+│           ├── rate-limit.ts     # Dual IP + secret-hash rate limiter
 │           ├── tailor-cv-validation.ts  # Request body validation
-│           ├── eval-schema.ts     # Eval scoring dimensions, judge prompts, JUDGE_MAP
-│           ├── eval-extract.ts    # JD metadata extraction for eval stage 1
+│           ├── eval-schema.ts     # Judge prompts (incl. JSON smoke), JUDGE_MAP
+│           ├── eval-extract.ts    # JD metadata extraction (legacy eval helpers)
 │           ├── eval-format.ts     # 8-part format compliance checker
-│           └── eval-judge.ts      # LLM-as-Judge scorers (extraction, relevance, hallucination)
-├── knowledge-base/               # Candidate profile data (Markdown files)
-│   ├── career-story.md           # ~~28KB career narrative
-│   ├── experience.md             # 25KB work experience
-│   ├── skills.md                 # 28KB skills inventory
-│   ├── projects.md               # 12KB project details
-│   ├── meta-project.md           # 19KB about this project itself
-│   └── test-jds/                 # Real JDs for eval (MVP)
+│           ├── eval-judge.ts      # LLM judges (JSON smoke + legacy markdown scorers)
+│           └── eval-cv-helpers.ts # parseEvalModels / artifact payload helpers
+├── knowledge-base/               # Legacy markdown corpus + test-jds/ for smoke defaults
+│   └── test-jds/                 # Raw recruiter JD fixtures (smoke default)
+├── references/json-curator/      # Port refs: schema, sample, resume_builder.js, curator prompt
 ├── lib/
 │   ├── env.ts                    # Env var parsing and model getters
 │   ├── providers.ts              # Provider type + KNOWN_PROVIDERS leaf registry
 │   └── formatDate.ts             # Date formatting utility
 ├── scripts/
 │   ├── create-langfuse-prompts.ts  # Upload prompts to Langfuse
-│   ├── e2e-tailor-cv.ts           # End-to-end smoke tests for /api/tailor-cv
-│   ├── eval-cv.ts                 # LLM-as-Judge evaluation pipeline (MVP)
-│   └── seed-eval-results.ts       # Seed eval-results artifacts for local/dev review
+│   ├── e2e-tailor-cv.ts           # npm run smoke — live API + JSON judges
+│   ├── regen-docx.ts              # npm run regen-docx — mechanical rebuild
+│   ├── seed-eval-results.ts       # Seed historical eval-results artifacts
+│   └── verify-rate-limit.ts       # Live Upstash rate-limit check
 ├── tests/
-│   ├── cv-prompt.test.ts                  # compileCvPrompt() unit tests
-│   ├── cv-prompt-struan-fallback.test.ts  # Struan 8-part framework contract tests
-│   ├── tailor-cv-validation.test.ts       # Request validation tests
-│   ├── llm-chat-dispatch.test.ts          # LLM provider routing tests
-│   ├── llm-openrouter.test.ts             # OpenRouter-specific tests
-│   ├── llm-provider-detection.test.ts     # detectProvider() tests
-│   ├── redis.test.ts                      # Upstash Redis client tests
-│   ├── rate-limit.test.ts                 # Rate limiter tests (mock-based)
-│   ├── markdown-docx.test.ts              # DOCX conversion tests
-│   ├── langsmith-tracer.test.ts           # LangSmith tracer isEnabled + dispatcher tests
-│   ├── langfuse-tracer.test.ts            # Langfuse tracer isEnabled + dispatcher tests
-│   ├── llm-chat-tracing.test.ts           # chat() tracer flush-semantics integration tests
-│   ├── eslint-config.test.ts              # ESLint config tests
-│   ├── eval-architecture-docs.test.ts     # MODEL_SELECTION.md / .env.example contract tests
-│   ├── eval-cv.test.ts                    # eval-cv.ts runner unit tests
-│   ├── eval-extract.test.ts               # JD extraction unit tests
-│   ├── eval-format.test.ts                # Format compliance checker tests
-│   ├── eval-judge.test.ts                 # LLM-as-Judge scorer unit tests (mock LLM)
-│   ├── eval-schema.test.ts                # eval-schema types, JUDGE_MAP, prompts
-│   ├── eval-tailor-model-default.test.ts  # TAILOR_MODEL default vs eval model set
-│   └── test-jds.test.ts                   # knowledge-base/test-jds fixture contract tests
+│   ├── e2e/api.e2e.ts                     # Playwright API checks (Bearer / bypass)
+│   ├── curator-prompt.test.ts             # Curator prompt contract
+│   ├── json-docx-builder.test.ts          # Builder + regen CLI
+│   ├── smoke-helpers.test.ts              # Judge gates + redaction
+│   ├── master-cv.test.ts / cv-schema.test.ts
+│   ├── tailor-auth.test.ts
+│   ├── route.test.ts                      # Tailor route (mocked curator)
+│   ├── cv-prompt*.test.ts                 # Legacy markdown prompt tests
+│   ├── markdown-docx.test.ts              # Legacy markdown→docx
+│   └── …                                  # LLM, rate-limit, env, etc.
 ├── eval-results/                 # Eval output artifacts per JD×model
 ├── docs/
 │   ├── arch/
@@ -78,7 +72,8 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   │   └── …
 │   ├── struan-8-part-cv-framework.md     # Reference for CV output structure
 │   └── plan/llm-eval-pipeline/           # Active eval pipeline plan
-├── instrumentation.ts           # Next.js instrument hook (no-op)
+├── instrumentation.ts           # Next.js register (nodejs-only gate)
+├── instrumentation.node.ts      # ensureSecureStartup (R5d) + preloadMasterCv
 ├── next.config.mjs              # Next.js config (OTEL external packages)
 ├── railway.toml                 # Railway deployment config
 ├── .coderabbit.yaml             # CodeRabbit review config

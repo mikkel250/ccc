@@ -4,9 +4,9 @@ Canonical instructions for AI coding agents working in this repository.
 
 ## Project
 
-- Name: TODO
-- Purpose: TODO: describe the product, service, or library.
-- Primary stack: TODO: list runtime, framework, database, and package manager.
+- Name: CCC (Career Command Center)
+- Purpose: The eventual purpose of this project is to provide an endpoint that can be called by a separate frontend. This endpoint will take in a Job Description (JD), and return a CV (AKA resume) that is tailored to that role.
+- Primary stack: Node.js 22, TypeScript 5, Next.js 15 (App Router, API-only), npm; SQLite planned post-MVP (stateless today), Upstash Redis for rate limiting.
 
 ## Working Rules
 
@@ -17,6 +17,7 @@ Canonical instructions for AI coding agents working in this repository.
 - Update docs when behavior, architecture, or test strategy changes.
 - Run the validation command in `## Commands` after docs changes when the CLI is available, and follow its traceability guidance for behavior specs.
 - Follow the project code conventions in `docs/arch/CODE_CONVENTIONS.md`.
+- Follow TDD for new behavior and bug fixes (see Testing Philosophy).
 - For complex multi-step tasks (intake, decomposition, review), reason through fully before producing any artifact. Do not narrate the reasoning process in output — lead with conclusions and artifacts.
 
 # Git Branch Safety
@@ -145,6 +146,19 @@ npm run build
 
 ### Testing Philosophy
 
+**TDD is the default.** For new behavior and bug fixes: write a failing test first, then the minimum implementation to pass, then refactor. Do not write production code for a behavior that has no failing test yet.
+
+**Plan-driven work:** `/ce-work-tiered` enforces a hard TDD gate (failing suite on disk before any implementation). That command is the operational form of this policy for CE plans; this section is the always-on rule for ad-hoc Cursor work too.
+
+**Red → Green → Refactor.**
+1. **Red** — add or extend a test that expresses the desired behavior; run it and confirm it fails for the right reason.
+2. **Green** — implement the minimum to make that test pass; do not expand scope while red.
+3. **Refactor** — clean up structure and duplication while keeping the suite green.
+
+**Never ship green without having seen red.** If a test was written after the implementation, temporarily break the assertion (or the code) and re-run to confirm it would catch the regression.
+
+**Exceptions (document why in the PR/plan when used):** thin route/wiring glue that only composes already-tested units; time-boxed spikes (backfill tests before merge); pure docs/config with no runtime behavior. When using `/ce-work-tiered`, the gate has no exceptions — missing or passing-too-soon tests block the pass.
+
 **Test behavior, not prose.** Tests assert what the code does — inputs, outputs, side effects, error paths. Do not write tests that assert documentation content, heading names, or the presence of strings in markdown files. Those tests are fragile (fail on reorganization), slow to maintain, and catch no real bugs.
 
 **Cross-file contracts are the exception.** The only legitimate doc-touching test is one that enforces a cross-file invariant with a real runtime consequence — e.g. the documented `TAILOR_MODEL` default must match `.env.example` because a mismatch would silently misconfigure production. Write one targeted assertion for the invariant, not a suite of prose checks.
@@ -183,7 +197,7 @@ npm run build
 - `docs/test/`: test strategy, regression cases, manual verification notes.
 - `docs/arch/`: architecture decisions, code conventions, module boundaries, data flow, infrastructure/runtime dependencies, integration boundaries, and migration design.
 - `docs/`: all directories and markdown filenames use kebab-case (matching compound-engineering conventions). `README.md` filenames are the only exception — kept as-is for discoverability.
-- `docs/`: prefer keeping individual markdown files under the configured markdown validation budgets (default 200 lines and 10,000 characters); split larger docs into focused kebab-case files and keep `README.md` as the index/overview unless a narrow size-check exception is configured.
+- `docs/`: prefer keeping individual markdown files; split larger docs into focused kebab-case files and keep `README.md` as the index/overview unless a narrow size-check exception is configured.
 - `docs/`: when adding, renaming, splitting, moving, or archiving docs, update the nearest relevant `README.md` index/table of contents in the same change.
 - `docs/`: each docs subdirectory `README.md` acts as the local table of contents; list important files, task directories, status, and a one-line purpose for each entry.
 - `docs/`: start small with a single focused markdown file; when one domain grows into multiple docs, promote it to `docs/<area>/<domain>/README.md` plus related kebab-case files in that directory.
@@ -193,6 +207,8 @@ npm run build
 - `docs/solutions/`: compound-engineering institutional learnings. Category subdirectories (`performance-issues/`, `database-issues/`, etc.) with kebab-case solution files. Protected artifacts — never flag for deletion.
 - `docs/brainstorms/`: compound-engineering brainstorm artifacts. Generated by `/workflows-brainstorm`, named with kebab-case topic slug.
 - `docs/archive/`: local completed plans, temporary reports, historical notes, payload captures. Move completed plan task directories to `docs/archive/plan/<task-slug>/`; put temporary reports and investigations under `docs/archive/report/<report-slug>/`. Ignored by git by default.
+
+
 
 ## Agent-Specific Entrypoints
 
@@ -214,7 +230,7 @@ This project uses the compound-engineering skill suite for planning, implementat
 | `/workflows-review` | Multi-agent code review, outputs to `todos/` |
 | `/workflows-compound` | Document learnings to `docs/solutions/` |
 
-Skills available for targeted tasks: `code-simplicity-reviewer`, `security-sentinel`, `performance-oracle`, `architecture-strategist`, `pattern-recognition-specialist`, `bug-reproduction-validator`, `design-implementation-reviewer`, and more. Run `pi skills` for the full list.
+Skills available for targeted tasks: `code-simplicity-reviewer`, `security-sentinel`, `performance-oracle`, `architecture-strategist`, `pattern-recognition-specialist`, `bug-reproduction-validator`, `design-implementation-reviewer`, and more. Run `pi skills` for the full list if within the Pi agent harness. If within Cursor, there is a compound engineering MCP server available. 
 
 When using these workflows and skills, the whole of this rules file applies (Communication, Scope, Uncertainty, Context Discipline, Review Philosophy). **Do not restate** those policies in chat unless the user asks.
 
@@ -242,6 +258,9 @@ Before committing, run lint and tests:
 npm run lint
 npm test
 ```
+
+# Subagents
+When calling subagents from within Pi, use `model: "openrouter/auto-beta"` by default, or make suggestions if you believe a specific model will excel at the current task.
 
 # Review Philosophy
 

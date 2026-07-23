@@ -1,17 +1,23 @@
 /**
  * Rate limiter backed by Upstash Redis via @upstash/ratelimit SDK.
  *
- * Sliding-window IP-burst detection — one Redis INCR/Lua eval per check.
- * sessionId is accepted for future auth integration; limiting is keyed on
- * the identifier argument (currently IP from x-forwarded-for).
- * State is durable across deploys — lives in Upstash Redis, not process memory.
+ * Dual fail-closed ceilings (R21 / KTD7): per-IP and per-shared-secret hash.
+ * Success responses return the more restrictive remaining/resetTime.
+ * sessionId is accepted for future auth integration; not used as an anti-exfil key.
  */
+import { createHash } from "node:crypto";
 import { Ratelimit } from "@upstash/ratelimit";
 import { ServiceError } from "./errors";
 import { getRedisClient } from "./redis";
 import { getEnvNumber, getEnvString } from "../../../lib/env";
 
 const RATE_LIMIT_MAX = Math.max(1, Math.floor(getEnvNumber("RATE_LIMIT_MAX", 5)));
+// Per-secret ceiling defaults to half the per-IP cap so key sharing cannot
+// inflate overall throughput beyond a single authenticated consumer.
+const RATE_LIMIT_SECRET_MAX = Math.max(
+  1,
+  Math.floor(getEnvNumber("RATE_LIMIT_SECRET_MAX", Math.max(1, Math.floor(RATE_LIMIT_MAX / 2))))
+);
 const RATE_LIMIT_WINDOW_MS = Math.max(1, Math.floor(getEnvNumber("RATE_LIMIT_WINDOW", 60000)));
 const RATE_LIMIT_REDIS_PREFIX = getEnvString("RATE_LIMIT_REDIS_PREFIX", "ratelimit") ?? "ratelimit";
 const RATE_LIMIT_TIMEOUT_MS = Math.max(
@@ -29,66 +35,77 @@ export interface RateLimitResult {
 export function getRateLimitConfig() {
   return {
     maxRequests: RATE_LIMIT_MAX,
+    secretMaxRequests: RATE_LIMIT_SECRET_MAX,
     windowMs: RATE_LIMIT_WINDOW_MS,
     timeoutMs: RATE_LIMIT_TIMEOUT_MS,
   };
 }
 
-// ---- Ratelimit singleton (lazy, same pattern as redis.ts and llm.ts) ----
+/** Stable Redis key material from the shared secret — never store the raw key. */
+export function hashTailorApiKeyForRateLimit(apiKey: string): string {
+  return createHash("sha256").update(apiKey, "utf8").digest("hex").slice(0, 32);
+}
 
 type RatelimitLike = Pick<Ratelimit, "limit">;
 
-let ratelimit: RatelimitLike | null = null;
+let ipRatelimit: RatelimitLike | null = null;
+let secretRatelimit: RatelimitLike | null = null;
 
-function getRatelimit(): RatelimitLike {
-  if (!ratelimit) {
-    // [SHARED-STATE] Lazy singleton — one Ratelimit instance reused across requests.
-    ratelimit = new Ratelimit({
+function getIpRatelimit(): RatelimitLike {
+  if (!ipRatelimit) {
+    ipRatelimit = new Ratelimit({
       redis: getRedisClient(),
       limiter: Ratelimit.slidingWindow(
         RATE_LIMIT_MAX,
         `${RATE_LIMIT_WINDOW_MS} ms`
       ),
       prefix: RATE_LIMIT_REDIS_PREFIX,
-      // SDK default 5s fail-opens (success:true). Bounded timeout + reason check below fails closed.
       timeout: RATE_LIMIT_TIMEOUT_MS,
     });
   }
-  return ratelimit;
+  return ipRatelimit;
+}
+
+function getSecretRatelimit(): RatelimitLike {
+  if (!secretRatelimit) {
+    secretRatelimit = new Ratelimit({
+      redis: getRedisClient(),
+      limiter: Ratelimit.slidingWindow(
+        RATE_LIMIT_SECRET_MAX,
+        `${RATE_LIMIT_WINDOW_MS} ms`
+      ),
+      prefix: `${RATE_LIMIT_REDIS_PREFIX}:secret`,
+      timeout: RATE_LIMIT_TIMEOUT_MS,
+    });
+  }
+  return secretRatelimit;
 }
 
 /**
- * Inject or reset the Ratelimit singleton for tests.
+ * Inject or reset the IP Ratelimit singleton for tests.
  * Pass a mock to replace, or null to force re-creation on next call.
- * Not part of the runtime API.
  */
 export function __injectRatelimitForTest(r: RatelimitLike | null): void {
   if (process.env.NODE_ENV !== "test") {
     throw new Error("__injectRatelimitForTest is only available in the test environment");
   }
-  ratelimit = r;
+  ipRatelimit = r;
 }
 
-// ---- Public API ----
+/** Inject or reset the secret-bucket Ratelimit singleton for tests. */
+export function __injectSecretRatelimitForTest(r: RatelimitLike | null): void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("__injectSecretRatelimitForTest is only available in the test environment");
+  }
+  secretRatelimit = r;
+}
 
-/**
- * Check if a request should be rate-limited.
- *
- * @param _sessionId Reserved for future per-user rate limiting when auth is added.
- *                    Currently unused — rate limiting is keyed on `identifier` only.
- * @param identifier The rate-limit key (currently IP address from x-forwarded-for).
- * @returns Rate limit result with allowed/remaining/resetTime.
- */
-export async function checkRateLimit(
-  _sessionId: string,
-  identifier: string
+async function runLimit(
+  rl: RatelimitLike,
+  key: string
 ): Promise<RateLimitResult> {
-  // getRatelimit() is outside the try block — config errors (missing env vars,
-  // invalid SDK parameters) propagate with clear messages rather than being
-  // swallowed by the ServiceError wrapper.
-  const rl = getRatelimit();
   try {
-    const result = await rl.limit(identifier);
+    const result = await rl.limit(key);
     if (result.reason === "timeout") {
       throw new ServiceError("Rate limit service unavailable");
     }
@@ -106,4 +123,48 @@ export async function checkRateLimit(
     }
     throw new ServiceError("Rate limit service unavailable", { cause: error });
   }
+}
+
+function moreRestrictive(
+  a: RateLimitResult,
+  b: RateLimitResult
+): RateLimitResult {
+  const allowed = a.allowed && b.allowed;
+  const remaining = Math.min(a.remaining, b.remaining);
+  const resetTime = Math.max(a.resetTime, b.resetTime);
+  if (!allowed) {
+    return {
+      allowed: false,
+      remaining,
+      resetTime,
+      message: "Too many requests. Please wait before trying again.",
+    };
+  }
+  return { allowed: true, remaining, resetTime };
+}
+
+/**
+ * Check IP and shared-secret rate-limit buckets (both must succeed).
+ * Secret bucket is checked first so secret exhaustion does not burn IP quota.
+ *
+ * @param _sessionId Reserved — not used as an anti-exfil identity.
+ * @param ipIdentifier Client IP from x-forwarded-for.
+ * @param secretBucketKey Hash of the presented shared secret (or bypass token).
+ */
+export async function checkRateLimit(
+  _sessionId: string,
+  ipIdentifier: string,
+  secretBucketKey: string
+): Promise<RateLimitResult> {
+  const ipRl = getIpRatelimit();
+  const secretRl = getSecretRatelimit();
+  // Sequential: secret-first, then IP. Secret exhaustion must not burn IP quota
+  // (R21 / plan design decision), so we cannot fire both in parallel. The ~50ms
+  // extra latency in the common (both-allowed) case is an intentional tradeoff.
+  const secretResult = await runLimit(secretRl, secretBucketKey);
+  if (!secretResult.allowed) {
+    return secretResult;
+  }
+  const ipResult = await runLimit(ipRl, ipIdentifier);
+  return moreRestrictive(ipResult, secretResult);
 }

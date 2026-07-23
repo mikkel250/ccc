@@ -12,7 +12,9 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "node --import ./tests/set-node-env-test.mjs --import tsx --test tests/**/*.test.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "regen-docx": "tsx scripts/regen-docx.ts",
+    "smoke": "tsx scripts/e2e-tailor-cv.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.67.1",
@@ -24,6 +26,7 @@
     "@types/node": "^22.15.0",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.0",
+    "ajv": "^8.20.0",
     "docx": "^9.5.0",
     "langsmith": "0.6.3",
     "next": "^15.5.7",
