@@ -259,6 +259,9 @@ npm run lint
 npm test
 ```
 
+# Subagents
+When calling subagents from within Pi, use `model: "openrouter/auto-beta"` by default, or make suggestions if you believe a specific model will excel at the current task.
+
 # Review Philosophy
 
 - Optimize for correctness over cleverness
