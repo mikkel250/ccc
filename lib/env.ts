@@ -22,7 +22,11 @@ export function getEnvNumber(key: string, defaultValue: number): number {
 
 /** Float env parse — use for fractional thresholds (getEnvNumber uses parseInt). */
 export function getEnvFloat(key: string, defaultValue: number): number {
-  return parseEnvNumeric(key, defaultValue, parseFloat);
+  return parseEnvNumeric(key, defaultValue, (raw) => {
+    const trimmed = raw.trim();
+    // Number rejects partial junk ("0.7junk") that parseFloat would accept.
+    return trimmed === "" ? Number.NaN : Number(trimmed);
+  });
 }
 
 export function getEnvString(key: string, defaultValue?: string): string | undefined {

@@ -11,7 +11,7 @@
  * the Edge instrumentation compile from pulling that module (node:crypto / fs).
  */
 
-export async function register() {
+export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
   const { registerNode } = await import("./instrumentation.node");

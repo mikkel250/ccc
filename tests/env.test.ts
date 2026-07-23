@@ -40,6 +40,11 @@ describe("getEnvFloat", () => {
     process.env[key] = "not-a-number";
     assert.equal(getEnvFloat(key, 0.7), 0.7);
   });
+
+  it("returns default for partially numeric junk (rejects parseFloat prefix)", () => {
+    process.env[key] = "0.7junk";
+    assert.equal(getEnvFloat(key, 0.5), 0.5);
+  });
 });
 
 describe("getEnvString", () => {

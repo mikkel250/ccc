@@ -10,8 +10,9 @@ import {
 import { getDefaultCurationMode } from "../lib/env";
 
 describe("curation-mode", () => {
-  it("DEFAULT_CURATION_MODE constant is strict", () => {
-    assert.equal(DEFAULT_CURATION_MODE, "strict");
+  it("DEFAULT_CURATION_MODE matches getDefaultCurationMode for current env", () => {
+    // Import-time snapshot of getDefaultCurationMode(); do not assume "strict".
+    assert.equal(DEFAULT_CURATION_MODE, getDefaultCurationMode());
   });
 
   it("getDefaultCurationMode returns strict when env is unset", () => {
