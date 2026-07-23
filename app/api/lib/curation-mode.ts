@@ -1,5 +1,5 @@
 /**
- * Tailor curation posture: strict Struan subset vs flexible grounded collapse.
+ * Tailor curation posture: strict discrete-role subset vs flexible grounded collapse.
  */
 import { getDefaultCurationMode } from "../../../lib/env";
 
@@ -18,7 +18,7 @@ export function isCurationMode(value: unknown): value is CurationMode {
 /** Authoritative mode block injected into the curator system prompt. */
 export function curationModePolicy(mode: CurationMode): string {
   if (mode === "strict") {
-    return `MODE: strict (default Struan subset).
+    return `MODE: strict (discrete-role subset).
 - Keep or drop discrete master experience entries only.
 - Do not collapse, merge, or rewrite multiple roles into a category-style summary entry.
 - When a role is kept: title, location, dates, and blurb stay unchanged; bullets may be

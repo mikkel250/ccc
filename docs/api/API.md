@@ -67,7 +67,7 @@ Headers: `Content-Type: application/json`, `Authorization: Bearer <TAILOR_API_KE
 |-------|------|----------|-------------|
 | `jobDescription` | `string` | Yes | Untrusted JD text; size capped by `TAILOR_JD_MAX_CHARS` (default 50000) |
 | `sessionId` | `string` | No | Optional caller ID (not used for rate limiting) |
-| `curationMode` | `"strict"` \| `"flexible"` | No | Defaults to `TAILOR_DEFAULT_CURATION_MODE` (or `strict`). `strict`: Struan subset only. `flexible`: allow grounded category-style collapse of weak-fit role clusters |
+| `curationMode` | `"strict"` \| `"flexible"` | No | Defaults to `TAILOR_DEFAULT_CURATION_MODE` (or `strict`). `strict`: cut/reorder/trim discrete master roles only (no category-style collapse). `flexible`: allow grounded category-style collapse of weak-fit role clusters |
 
 Request body size capped by `TAILOR_REQUEST_MAX_BYTES` (default 65536).
 
@@ -150,6 +150,7 @@ Errors use `{ "error": string }`. `remaining` / `resetTime` appear on 429 only.
 | `TAILOR_AUTH_INSECURE_BYPASS` | Local/dev skip Bearer (hard-blocked in production-like deploys) | off |
 | `MASTER_CV_JSON` / `MASTER_CV_PATH` | Canonical master CV | Prefer env body; path must not be world-readable |
 | `TAILOR_MODEL` | Curator model (`provider/model`) | `anthropic/sonnet` |
+| `TAILOR_DEFAULT_CURATION_MODE` | Default `curationMode` when omitted (`strict` \| `flexible`) | `strict` |
 | `RATE_LIMIT_MAX` | Per-IP sliding-window ceiling | `5` |
 | `RATE_LIMIT_SECRET_MAX` | Per-shared-secret ceiling | half of `RATE_LIMIT_MAX` (min 1) |
 | `RATE_LIMIT_WINDOW` | Sliding window length (ms) | `60000` |

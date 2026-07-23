@@ -16,7 +16,7 @@ All models use the `provider/model` namespace (see [Provider/model namespace](./
 | `openrouter/google/gemini-3.1-pro-preview` | OpenRouter flex | Google baseline |
 | `openrouter/deepseek/deepseek-v4-pro` | OpenRouter | Credit-fallback when direct DeepSeek quota exhausted |
 
-**Complete:** LLM-as-Judge evaluation pipeline — two-stage judging with JD extraction gate, automated format compliance, relevance and hallucination judges. Results determine the `TAILOR_MODEL` default.
+**Complete:** Live JSON quality via `npm run smoke` (grounding + JD-fit judges). Historical markdown-era composites informed the initial `TAILOR_MODEL` default.
 
 **Deferred:** Anthropic Message Batches API (async submit/poll/retrieve).
 
@@ -30,39 +30,22 @@ OpenAI and Google models go through OpenRouter flex (`service_tier: flex`, overr
 
 ## Evaluation
 
-### Evaluation pipeline
+### Live quality (current)
 
-Live quality for the JSON curator pipeline is **`npm run smoke`** (Bearer + dual artifacts + grounding/JD-fit judges). Historical markdown generation eval artifacts remain under `eval-results/`; judge helpers live in `app/api/lib/eval-*.ts`. Test JDs are raw, unstructured recruiter text in `knowledge-base/test-jds/` (no YAML frontmatter).
+Live quality for the JSON curator pipeline is **`npm run smoke`** (not part of `npm test` / CI):
 
-**Complete (MVP):** LLM-as-Judge evaluation pipeline — two-stage judging with JD extraction gate, automated format compliance, relevance and hallucination judges. Scores pushed to Langfuse; artifacts saved to `eval-results/<jd-slug>/`.
+1. Hit a running server with Bearer auth (`TAILOR_API_KEY`) and a JD (default or path override).
+2. Assert dual artifacts: base64 `.docx` (`cv`) + schema-valid `curatedJson` + `builderVersion`.
+3. Always run JSON judges on master + curated + JD:
+   - **Grounding** (`scoreJsonGrounding`) — identity-preserving claims vs master (0.0–1.0; hard fail below `SMOKE_GROUNDING_MIN`).
+   - **JD-fit** (`scoreJsonJdFit`) — how well curated JSON targets the JD (1–5; hard fail below `SMOKE_JD_FIT_MIN`).
+4. Optional `--flexible` / `SMOKE_CURATION_MODE=flexible` selects curation posture; grounding judge gets a matching mode addendum.
 
-**Two-stage flow:**
+Artifacts (redact-by-default under `tmp/smoke/`): curated JSON snapshot + `.docx`. Test JDs are raw recruiter text in `knowledge-base/test-jds/` (no YAML frontmatter). Judge helpers and prompts live in `app/api/lib/eval-*.ts` / `eval-schema.ts`.
 
-**Stage 1 — JD extraction gate (per JD, cached):**
+### Historical model-selection eval (markdown era)
 
-1. **JD extraction** — `extractJdMetadata()` in `eval-extract.ts` calls an LLM to produce structured `JdExtraction` (requirements, keyword bank, hiring context, role type, implicit success signals).
-2. **Extraction judge** — `scoreExtraction()` in `eval-judge.ts` scores completeness/accuracy against raw JD (0.0–1.0). Extraction is cached per JD slug for the run duration (in-memory `Map`). If score < `EVAL_EXTRACTION_MIN_SCORE` (default 0.7), all model evaluations for that JD are skipped with a warning.
-
-**Stage 2 — CV generation and scoring (per JD×model pair):**
-
-1. **Format compliance** (automated) — `scoreFormatCompliance()` in `eval-format.ts` checks the 8-part Struan structure (0.0–1.0).
-2. **Accomplishment relevance** (LLM-as-Judge) — cross-provider judge scores alignment of Relevant Accomplishments against verified structured extraction (1–5).
-3. **Hallucination rate** (LLM-as-Judge) — cross-provider judge cross-references claims against knowledge base ground truth; extraction provides JD context (0.0–1.0).
-
-Scores are pushed to Langfuse via `@langfuse/client` (`langfuse.score.create()`) on all four dimensions. Artifacts:
-
-- `eval-results/<jd-slug>/extraction.json` — JD-level structured extraction + extraction score
-- `eval-results/<jd-slug>/<model>/raw-cv.md` — generated CV markdown
-- `eval-results/<jd-slug>/<model>/scores.json` — all four dimension scores + metadata
-- `eval-results/<jd-slug>/<model>/usage.json` — token counts, latency, and resolved model id (cost and usage analytics are tracked in Langfuse, not duplicated here)
-
-Schema and judge prompts live in `app/api/lib/eval-schema.ts` (`JUDGE_MAP` defaults in code; optional `EVAL_JUDGE_MAP_JSON` overrides). Extraction in `eval-extract.ts`. Judge scorers in `eval-judge.ts`. Traces are flushed before script exit.
-
-**Future gating (deferred):** When stage 1 extraction is consistently high-confidence, the extraction judge can be skipped or sampled.
-
-### Eval results (composite scores)
-
-Composite score = average of `(formatScore + relevanceScore/5 + (1 - hallucinationScore) + extractionScore) / 4` across all test JDs (2026-06-03).
+The composite scores below come from the pre-cutover markdown CV eval (format / relevance / hallucination / extraction). That workflow is **retired** for day-to-day quality; keep the numbers only as rationale for the current `TAILOR_MODEL` default. Legacy score artifacts may still exist under `eval-results/`.
 
 | Model | Avg composite | Format | Relevance (1–5) | Hallucination (0–1) | Extraction (0–1) |
 |-------|---------------|--------|-----------------|----------------------|------------------|
@@ -71,10 +54,10 @@ Composite score = average of `(formatScore + relevanceScore/5 + (1 - hallucinati
 | `openrouter/openai/gpt-5.4-mini` | 0.812 | 0.90 | 4.0 | 0.20 | 0.85 |
 | `openrouter/google/gemini-2.5-pro` | 0.785 | 0.88 | 4.0 | 0.25 | 0.82 |
 
-JD extraction quality is a gating dimension: pairs are skipped when extraction score < `EVAL_EXTRACTION_MIN_SCORE` (default 0.7).
+Composite (historical) = average of `(formatScore + relevanceScore/5 + (1 - hallucinationScore) + extractionScore) / 4` across test JDs (2026-06-03).
 
 ### TAILOR_MODEL default
 
 **Selected default:** `anthropic/sonnet`
 
-**Rationale:** Highest four-dimension composite eval score across all test JDs — perfect format compliance, strongest extracted-requirement relevance alignment, lowest hallucination rate, and highest extraction quality. Direct Anthropic API avoids OpenRouter flex latency for production CV generation.
+**Rationale:** Highest historical four-dimension composite across test JDs under the retired markdown eval — strong format compliance, requirement relevance, low hallucination, and extraction quality. Direct Anthropic API avoids OpenRouter flex latency for production CV generation. Re-validate with `npm run smoke` when changing the default.

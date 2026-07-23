@@ -7,10 +7,41 @@ import {
   CURATION_MODE_POLICY_PLACEHOLDER,
   DEFAULT_CURATION_MODE,
 } from "../app/api/lib/curation-mode";
+import { getDefaultCurationMode } from "../lib/env";
 
 describe("curation-mode", () => {
-  it("defaults to strict", () => {
+  it("DEFAULT_CURATION_MODE constant is strict", () => {
     assert.equal(DEFAULT_CURATION_MODE, "strict");
+  });
+
+  it("getDefaultCurationMode returns strict when env is unset", () => {
+    const key = "TAILOR_DEFAULT_CURATION_MODE";
+    const previous = process.env[key];
+    delete process.env[key];
+    try {
+      assert.equal(getDefaultCurationMode(), "strict");
+    } finally {
+      if (previous === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = previous;
+      }
+    }
+  });
+
+  it("getDefaultCurationMode honors an explicit flexible override", () => {
+    const key = "TAILOR_DEFAULT_CURATION_MODE";
+    const previous = process.env[key];
+    process.env[key] = "flexible";
+    try {
+      assert.equal(getDefaultCurationMode(), "flexible");
+    } finally {
+      if (previous === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = previous;
+      }
+    }
   });
 
   it("strict policy forbids collapse; flexible is JD-fit-first and industry-agnostic", () => {
