@@ -6,14 +6,14 @@
  * - Langfuse OpenTelemetry stays lazy in app/api/lib/langfuse-otel.ts — loading
  *   @opentelemetry/sdk-node here breaks Next dev webpack (grpc/fs). Per-request
  *   generations still use app/api/lib/langfuse.ts.
+ *
+ * Node-only work lives in instrumentation.node.ts. next.config IgnorePlugin keeps
+ * the Edge instrumentation compile from pulling that module (node:crypto / fs).
  */
 
 export async function register() {
-  if (process.env.NEXT_RUNTIME === "edge") return;
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
-  const { ensureSecureStartup } = await import("./app/api/lib/tailor-auth");
-  ensureSecureStartup();
-
-  const { preloadMasterCv } = await import("./app/api/lib/master-cv");
-  await preloadMasterCv();
+  const { registerNode } = await import("./instrumentation.node");
+  await registerNode();
 }

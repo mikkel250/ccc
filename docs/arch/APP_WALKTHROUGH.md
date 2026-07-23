@@ -143,7 +143,7 @@ Canonical catalog: `.env.example`. Cross-file invariant: documented `TAILOR_MODE
 | Langfuse generations | `app/api/lib/tracers/langfuse.ts :: record` via `recordLangfuseTrace` | Every `chat()` call when `LANGFUSE_TRACING=true`; awaited so flush completes |
 | Langfuse OTEL | `app/api/lib/langfuse-otel.ts :: ensureLangfuseOtel` | Lazy start on first trace; `flushLangfuseTraces()` before response ends |
 | LangSmith runs | `app/api/lib/tracers/langsmith.ts :: record` via `recordLangSmithTrace` | Every `chat()` when `LANGSMITH_TRACING=true`; fire-and-forget |
-| Next.js hook | `instrumentation.ts :: register` | `ensureSecureStartup()` (R5d) + `preloadMasterCv()`; OTEL stays lazy |
+| Next.js hook | `instrumentation.ts` → `instrumentation.node.ts :: registerNode` | `ensureSecureStartup()` (R5d) + `preloadMasterCv()`; OTEL stays lazy; node work isolated so Edge compile avoids `node:crypto` |
 
 Production curator generations link to Langfuse prompt `cv-curator-json` via `langfusePrompt` on `ChatOptions`. Prompt/response content is redacted for export (R8b).
 

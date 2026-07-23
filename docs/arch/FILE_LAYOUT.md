@@ -72,7 +72,8 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   │   └── …
 │   ├── struan-8-part-cv-framework.md     # Reference for CV output structure
 │   └── plan/llm-eval-pipeline/           # Active eval pipeline plan
-├── instrumentation.ts           # Next.js register → ensureSecureStartup (R5d)
+├── instrumentation.ts           # Next.js register (nodejs-only gate)
+├── instrumentation.node.ts      # ensureSecureStartup (R5d) + preloadMasterCv
 ├── next.config.mjs              # Next.js config (OTEL external packages)
 ├── railway.toml                 # Railway deployment config
 ├── .coderabbit.yaml             # CodeRabbit review config
