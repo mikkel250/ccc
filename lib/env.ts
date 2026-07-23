@@ -129,3 +129,13 @@ export function getEvalExtractionMinScore(): number {
   const parsed = parseFloat(raw);
   return Number.isFinite(parsed) ? parsed : DEFAULT_EVAL_EXTRACTION_MIN_SCORE;
 }
+
+/**
+ * Default tailor curation posture when the request omits `curationMode`.
+ * Invalid/empty env falls back to strict.
+ */
+export function getDefaultCurationMode(): "strict" | "flexible" {
+  const raw = getEnvString("TAILOR_DEFAULT_CURATION_MODE", "strict")?.trim();
+  if (raw === "strict" || raw === "flexible") return raw;
+  return "strict";
+}

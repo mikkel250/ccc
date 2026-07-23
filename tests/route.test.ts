@@ -389,7 +389,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
     assert.equal(chatSpy.mock.callCount(), 0);
   });
 
-  it("returns 400 for oversize Content-Length without calling master or LLM", async () => {
+  it("returns 413 for oversize Content-Length without calling master or LLM", async () => {
     const masterSpy = mock.method(tailorCvDeps, "requireMasterCv");
     const chatSpy = mock.method(tailorCvDeps, "chat");
     const response = await POST(
@@ -398,7 +398,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
         "content-length": String(10_000_000),
       })
     );
-    assert.equal(response.status, 400);
+    assert.equal(response.status, 413);
     const json = (await response.json()) as { error: string };
     assert.match(json.error, /too large/i);
     assert.equal(masterSpy.mock.callCount(), 0);

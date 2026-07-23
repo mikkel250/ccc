@@ -10,6 +10,7 @@ import {
   getEvalModels,
   getLLMConfig,
   getTailorModel,
+  getDefaultCurationMode,
 } from "../lib/env";
 import { KNOWN_PROVIDERS as KNOWN_PROVIDERS_FROM_PROVIDERS } from "../lib/providers";
 import { KNOWN_PROVIDERS as KNOWN_PROVIDERS_FROM_LLM } from "../app/api/lib/llm";
@@ -117,6 +118,31 @@ describe("getTailorModel", () => {
     delete process.env.TAILOR_MODEL;
     delete process.env.AI_MODEL;
     assert.doesNotThrow(() => getTailorModel());
+  });
+});
+
+describe("getDefaultCurationMode", () => {
+  const key = "TAILOR_DEFAULT_CURATION_MODE";
+  const original = process.env[key];
+
+  afterEach(() => {
+    if (original === undefined) delete process.env[key];
+    else process.env[key] = original;
+  });
+
+  it("defaults to strict when unset", () => {
+    delete process.env[key];
+    assert.equal(getDefaultCurationMode(), "strict");
+  });
+
+  it("accepts flexible when set", () => {
+    process.env[key] = "flexible";
+    assert.equal(getDefaultCurationMode(), "flexible");
+  });
+
+  it("falls back to strict when invalid", () => {
+    process.env[key] = "loose";
+    assert.equal(getDefaultCurationMode(), "strict");
   });
 });
 

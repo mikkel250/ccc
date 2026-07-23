@@ -59,14 +59,15 @@ export function validateTailorCvBody(
   }
 
   const rawMode = record.curationMode;
-  let curationMode: CurationMode = DEFAULT_CURATION_MODE;
-  if (rawMode !== undefined && rawMode !== null) {
-    if (!isCurationMode(rawMode)) {
-      return {
-        ok: false,
-        error: 'curationMode must be "strict" or "flexible".',
-      };
-    }
+  let curationMode: CurationMode;
+  if (rawMode === undefined) {
+    curationMode = DEFAULT_CURATION_MODE;
+  } else if (!isCurationMode(rawMode)) {
+    return {
+      ok: false,
+      error: 'curationMode must be "strict" or "flexible".',
+    };
+  } else {
     curationMode = rawMode;
   }
 

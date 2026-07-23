@@ -159,7 +159,9 @@ export async function POST(request: NextRequest) {
     const maxRequestBytes = getTailorRequestMaxBytes();
     const bodyRead = await readRequestBodyCapped(request, maxRequestBytes);
     if (!bodyRead.ok) {
-      return jsonResponse({ error: bodyRead.error }, 400);
+      const status =
+        bodyRead.error === "Request body too large" ? 413 : 400;
+      return jsonResponse({ error: bodyRead.error }, status);
     }
 
     let body: unknown;

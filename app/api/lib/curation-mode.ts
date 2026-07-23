@@ -1,11 +1,13 @@
 /**
  * Tailor curation posture: strict Struan subset vs flexible grounded collapse.
  */
+import { getDefaultCurationMode } from "../../../lib/env";
 
 export const CURATION_MODES = ["strict", "flexible"] as const;
 export type CurationMode = (typeof CURATION_MODES)[number];
 
-export const DEFAULT_CURATION_MODE: CurationMode = "strict";
+/** Shared default when request omits curationMode (from TAILOR_DEFAULT_CURATION_MODE). */
+export const DEFAULT_CURATION_MODE: CurationMode = getDefaultCurationMode();
 
 export const CURATION_MODE_POLICY_PLACEHOLDER = "{{CURATION_MODE_POLICY}}";
 

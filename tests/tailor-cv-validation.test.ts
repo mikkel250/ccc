@@ -133,4 +133,13 @@ describe("validateTailorCvBody", () => {
     assert.equal(result.ok, false);
     if (!result.ok) assert.match(result.error, /curationMode/i);
   });
+
+  it("rejects null curationMode", () => {
+    const result = validateTailorCvBody(
+      { jobDescription: "JD text", curationMode: null },
+      "fallback"
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.error, /curationMode/i);
+  });
 });

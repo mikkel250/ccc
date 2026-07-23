@@ -67,7 +67,7 @@ Headers: `Content-Type: application/json`, `Authorization: Bearer <TAILOR_API_KE
 |-------|------|----------|-------------|
 | `jobDescription` | `string` | Yes | Untrusted JD text; size capped by `TAILOR_JD_MAX_CHARS` (default 50000) |
 | `sessionId` | `string` | No | Optional caller ID (not used for rate limiting) |
-| `curationMode` | `"strict"` \| `"flexible"` | No | Default `strict`: Struan subset only. `flexible`: allow grounded category-style collapse of weak-fit role clusters |
+| `curationMode` | `"strict"` \| `"flexible"` | No | Defaults to `TAILOR_DEFAULT_CURATION_MODE` (or `strict`). `strict`: Struan subset only. `flexible`: allow grounded category-style collapse of weak-fit role clusters |
 
 Request body size capped by `TAILOR_REQUEST_MAX_BYTES` (default 65536).
 
@@ -104,7 +104,11 @@ Total JSON response size capped by `TAILOR_RESPONSE_MAX_BYTES` (default 2MiB).
 
 #### 400 Bad Request
 
-Invalid JSON, oversize body/JD, missing IP, or validation errors (client-safe `error` string).
+Invalid JSON, missing IP, or validation errors (client-safe `error` string).
+
+#### 413 Payload Too Large
+
+Request body exceeds `TAILOR_REQUEST_MAX_BYTES` (Content-Length or streamed body).
 
 #### 401 Unauthorized
 
