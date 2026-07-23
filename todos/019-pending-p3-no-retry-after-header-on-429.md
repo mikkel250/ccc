@@ -16,14 +16,14 @@ dependencies: []
 
 - **File:** `app/api/tailor-cv/route.ts` — two 429 response sites (rate-limit deny and `RateLimitError` catch)
 - **Standard:** RFC 7231 §7.1.3 / RFC 6585 §4 — `Retry-After: <http-date>` or `Retry-After: <delay-seconds>`
-- **Data available:** `resetTime` in `RateLimitResult` is a Unix timestamp in seconds — trivially convertible to `delay-seconds = max(1, resetTime - Date.now()/1000)`
+- **Data available:** `resetTime` in `RateLimitResult` is a Unix timestamp in seconds — trivially convertible to `delay-seconds = max(1, resetTime - Date.now()/1000)`. `RateLimitError` has no `resetTime`; use configured `RATE_LIMIT_WINDOW` as delay-seconds.
 
 ## Proposed Solutions
 
 ### Option A: Add `Retry-After` header to both 429 sites
 - **Effort:** Trivial
 - **Risk:** None
-- **Approach:** Compute `retryAfterSeconds = Math.max(1, Math.ceil(resetTime - Date.now() / 1000))` and pass via headers to `jsonResponse` (or add a helper that accepts headers)
+- **Approach:** Primary deny: `retryAfterSeconds = Math.max(1, Math.ceil(resetTime - Date.now() / 1000))`. `RateLimitError` catch: `Math.max(1, Math.ceil(windowMs / 1000))` from `getRateLimitConfig()`.
 
 ## Technical Details
 
@@ -35,15 +35,17 @@ dependencies: []
 
 - [x] Primary 429 path (rate-limit deny) includes `Retry-After` header
 - [x] `retryAfterSeconds` computed as `Math.max(1, Math.ceil(resetTime - now))`
+- [x] `RateLimitError` 429 path includes `Retry-After` using configured window delay-seconds
+- [x] No 429 response lacks `Retry-After`
 - [x] All rate-limit and route tests pass
-- [x] `RateLimitError` path (unexpected throw) omitted — no `resetTime` available on the error class
 
 ## Work Log
 
 | Date | Action | Notes |
 |------|--------|-------|
 | 2026-07-22 | Created from code review | agent-native-reviewer |
-| 2026-07-22 | Resolved — added header | `jsonResponse` extended with optional `extraHeaders`; `retryAfterSeconds` helper computes delay from `resetTime`. Primary rate-limit deny path includes `Retry-After`. `RateLimitError` catch path omitted (no resetTime on the error class). |
+| 2026-07-22 | Resolved — added header | `jsonResponse` extended with optional `extraHeaders`; primary deny path includes `Retry-After` from `resetTime`. |
+| 2026-07-23 | Closed Retry-After gap | `RateLimitError` catch now sends `Retry-After` from `getRateLimitConfig().windowMs` (no resetTime on the error class). |
 
 ## Resources
 

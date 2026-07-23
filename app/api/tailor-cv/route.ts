@@ -13,7 +13,7 @@ import { getTailorModel } from "../../../lib/env";
 import { RateLimitError, ServiceError } from "../lib/errors";
 import { tailorCvDeps } from "../lib/tailor-cv-deps";
 import { getConfiguredTailorApiKey } from "../lib/tailor-auth";
-import { hashTailorApiKeyForRateLimit } from "../lib/rate-limit";
+import { hashTailorApiKeyForRateLimit, getRateLimitConfig } from "../lib/rate-limit";
 import {
   getTailorRequestMaxBytes,
   getTailorResponseMaxBytes,
@@ -293,6 +293,7 @@ type ErrorResponseEntry = {
   matches: (error: unknown) => boolean;
   status: 429 | 503;
   body: (error: unknown) => { error: string };
+  headers?: () => Record<string, string>;
 };
 
 const ERROR_RESPONSES: ErrorResponseEntry[] = [
@@ -300,6 +301,12 @@ const ERROR_RESPONSES: ErrorResponseEntry[] = [
     matches: (error): error is RateLimitError => error instanceof RateLimitError,
     status: 429,
     body: (error) => ({ error: (error as RateLimitError).message }),
+    // No resetTime on the error class — use the configured window as delay-seconds.
+    headers: () => ({
+      "Retry-After": String(
+        Math.max(1, Math.ceil(getRateLimitConfig().windowMs / 1000))
+      ),
+    }),
   },
   {
     matches: (error): error is ServiceError => error instanceof ServiceError,
@@ -319,7 +326,7 @@ const ERROR_RESPONSES: ErrorResponseEntry[] = [
 function mapErrorToResponse(error: unknown) {
   for (const entry of ERROR_RESPONSES) {
     if (!entry.matches(error)) continue;
-    return jsonResponse(entry.body(error), entry.status);
+    return jsonResponse(entry.body(error), entry.status, entry.headers?.());
   }
   return jsonResponse(
     { error: "Internal server error. Please try again later." },

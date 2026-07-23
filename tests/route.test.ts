@@ -321,6 +321,9 @@ describe("POST /api/tailor-cv — request hardening", () => {
     const response = await POST(buildPostRequest(VALID_BODY, XFF));
     assert.equal(response.status, 429);
     assertNoStore(response);
+    const retryAfter = response.headers.get("retry-after");
+    assert.ok(retryAfter);
+    assert.ok(Number(retryAfter) >= 1);
     const json = (await response.json()) as { error: string };
     assert.match(json.error, /too many requests/i);
   });
