@@ -137,9 +137,16 @@ describe("loadMasterCv", () => {
     process.env.MASTER_CV_JSON = JSON.stringify(validCv);
     const pre = await preloadMasterCv();
     assert.equal(pre.ok, true);
-    const shared = (globalThis as { __cccMasterCvCache?: MasterCvLoadResult })
-      .__cccMasterCvCache;
-    assert.equal(shared, pre);
-    assert.equal(requireMasterCv(), shared && shared.ok ? shared.data : undefined);
+
+    const cacheKey =
+      process.env.MASTER_CV_CACHE_KEY?.trim() || "__cccMasterCvCache";
+    const replacement: MasterCvLoadResult = {
+      ok: true,
+      data: { name: "CROSS_BUNDLE_REPLACEMENT" },
+      source: "env",
+    };
+    Reflect.set(globalThis, cacheKey, replacement);
+
+    assert.equal(requireMasterCv(), replacement.data);
   });
 });

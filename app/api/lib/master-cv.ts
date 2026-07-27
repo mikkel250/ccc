@@ -19,22 +19,21 @@ export type MasterCvLoadResult =
   | { ok: true; data: unknown; source: "env" | "path" }
   | { ok: false; error: string };
 
-const MASTER_CV_CACHE_KEY = "__cccMasterCvCache";
-
-type MasterCvGlobal = typeof globalThis & {
-  [MASTER_CV_CACHE_KEY]?: MasterCvLoadResult;
-};
+/** globalThis key for the shared preload cache (overridable via env). */
+const MASTER_CV_CACHE_KEY =
+  getEnvString("MASTER_CV_CACHE_KEY", "__cccMasterCvCache") ?? "__cccMasterCvCache";
 
 function getCachedResult(): MasterCvLoadResult | undefined {
-  return (globalThis as MasterCvGlobal)[MASTER_CV_CACHE_KEY];
+  return Reflect.get(globalThis, MASTER_CV_CACHE_KEY) as
+    | MasterCvLoadResult
+    | undefined;
 }
 
 function setCachedResult(result: MasterCvLoadResult | undefined): void {
-  const g = globalThis as MasterCvGlobal;
   if (result === undefined) {
-    delete g[MASTER_CV_CACHE_KEY];
+    Reflect.deleteProperty(globalThis, MASTER_CV_CACHE_KEY);
   } else {
-    g[MASTER_CV_CACHE_KEY] = result;
+    Reflect.set(globalThis, MASTER_CV_CACHE_KEY, result);
   }
 }
 
