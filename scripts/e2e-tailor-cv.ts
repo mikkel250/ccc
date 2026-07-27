@@ -12,7 +12,13 @@
  */
 
 import "dotenv/config";
-import { readFileSync, mkdirSync, writeFileSync, readdirSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  mkdirSync,
+  writeFileSync,
+  readdirSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 import { loadMasterCv } from "../app/api/lib/master-cv";
 import {
@@ -185,7 +191,12 @@ function writeArtifacts(
 ): void {
   const dir = join(process.cwd(), "tmp", "smoke");
   mkdirSync(dir, { recursive: true });
-  const { curatedPath, docxPath } = smokeArtifactPaths(jdPath, dir);
+  const { slug, curatedPath, docxPath } = smokeArtifactPaths(jdPath, dir);
+  if (existsSync(curatedPath) || existsSync(docxPath)) {
+    console.warn(
+      `Overwriting existing smoke artifacts for JD basename ${JSON.stringify(slug)}`
+    );
+  }
   const unredacted = process.env.SMOKE_WRITE_UNREDACTED === "1";
   const payload = {
     builderVersion,

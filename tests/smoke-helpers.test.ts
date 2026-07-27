@@ -198,9 +198,15 @@ describe("smokeArtifactPaths", () => {
     assert.equal(paths.curatedPath, "/tmp/smoke/wayfare-mgr.curated.json");
   });
 
-  it("strips .md case-insensitively and sanitizes unsafe characters", () => {
+  it("strips the terminal extension and sanitizes unsafe characters", () => {
     const paths = smokeArtifactPaths("Weird JD Name!!.MD", "/out");
     assert.equal(paths.slug, "Weird-JD-Name");
     assert.equal(paths.docxPath, "/out/Weird-JD-Name.docx");
+  });
+
+  it("does not produce a double extension for a non-Markdown input", () => {
+    const paths = smokeArtifactPaths("source.docx", "/out");
+    assert.equal(paths.slug, "source");
+    assert.equal(paths.docxPath, "/out/source.docx");
   });
 });

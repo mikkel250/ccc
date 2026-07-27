@@ -57,9 +57,9 @@ export function evaluateSmokeJudgeGates(
   return reasons.length > 0 ? { ok: false, reasons } : { ok: true };
 }
 
-/** Safe filesystem slug from a JD path (basename without .md). */
+/** Safe filesystem slug from a JD path (basename without its terminal extension). */
 export function smokeArtifactSlug(jdPath: string): string {
-  const base = basename(jdPath).replace(/\.md$/i, "");
+  const base = basename(jdPath).replace(/\.[^.]+$/i, "");
   const slug = base
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
     .replace(/-+/g, "-")

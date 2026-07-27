@@ -27,10 +27,20 @@ const YAML_FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---\r?\n/;
 
 function listTestJdFiles(): string[] {
   if (!fs.existsSync(TEST_JDS_DIR)) return [];
-  return fs
-    .readdirSync(TEST_JDS_DIR)
-    .filter((name) => name.endsWith(".md"))
-    .map((name) => path.join(TEST_JDS_DIR, name));
+  const files: string[] = [];
+
+  function walk(directory: string): void {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) walk(entryPath);
+      else if (entry.isFile() && entry.name.endsWith(".md")) {
+        files.push(entryPath);
+      }
+    }
+  }
+
+  walk(TEST_JDS_DIR);
+  return files;
 }
 
 describe("knowledge-base/test-jds — test JD set", () => {
@@ -39,6 +49,18 @@ describe("knowledge-base/test-jds — test JD set", () => {
     assert.ok(
       files.length >= 2,
       `expected at least 2 test JD files, found ${files.length}`
+    );
+  });
+
+  it("includes JDs in subdirectories", () => {
+    const files = listTestJdFiles();
+    assert.ok(
+      files.includes(path.join(TEST_JDS_DIR, "smoke", "headlands.md")),
+      "expected smoke/headlands.md to be validated"
+    );
+    assert.ok(
+      files.includes(path.join(TEST_JDS_DIR, "smoke", "wayfare-mgr.md")),
+      "expected smoke/wayfare-mgr.md to be validated"
     );
   });
 
