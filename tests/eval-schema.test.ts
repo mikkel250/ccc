@@ -9,6 +9,7 @@ import {
   RELEVANCE_JUDGE_PROMPT,
   HALLUCINATION_JUDGE_PROMPT,
   EXTRACTION_JUDGE_PROMPT,
+  JSON_JD_FIT_JUDGE_PROMPT,
   DEFAULT_EVAL_JUDGE_MODEL,
   DEFAULT_EVAL_EXTRACTION_MIN_SCORE,
   DEFAULT_EVAL_EXTRACTION_MODEL,
@@ -288,6 +289,13 @@ describe("eval-schema — lazy getJudgeMap", () => {
     } finally {
       console.warn = originalWarn;
     }
+  });
+});
+
+describe("eval-schema — JSON_JD_FIT_JUDGE_PROMPT", () => {
+  it("penalizes surviving off-domain clutter, not just must-have coverage", () => {
+    assert.match(JSON_JD_FIT_JUDGE_PROMPT, /clutter/i);
+    assert.match(JSON_JD_FIT_JUDGE_PROMPT, /lower the score/i);
   });
 });
 

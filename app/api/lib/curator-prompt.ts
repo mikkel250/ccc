@@ -74,6 +74,28 @@ Struan's 8-part order (governs what you put IN the JSON):
   stapled together with the irrelevant one left in for completeness.
 </curation_rules>
 
+<example>
+Illustrative pattern only — apply this to any master/JD combination, not a specific industry.
+
+Master CV has two unrelated career tracks: Track A (hands-on/operational) and Track B
+(technical). Summary has one evergreen Objective bullet plus one accomplishment bullet per
+track. Skills has an "Operations Tools" category and a "Technical Stack" category.
+Certifications includes one credential tied to Track B. The JD's must-haves are entirely
+Track A — nothing in the JD calls for Track B.
+
+Correct curation:
+- Summary: keep the Objective bullet and the Track A accomplishment bullet; drop the Track B
+  accomplishment bullet even though it reads well on its own — it fights the JD's domain.
+- Skills: keep "Operations Tools"; drop "Technical Stack" entirely.
+- Certifications: drop the Track B credential — it doesn't support this JD's must-haves.
+- Experience: apply <curation_mode>'s cut/collapse rules to Track B roles as usual.
+
+Incorrect (reject this pattern): keeping the Track B summary bullet, "Technical Stack"
+skills, and its certification — just reordered lower or left in "for completeness." That
+produces a CV that reads like two unrelated careers stapled together, which fails
+<curation_rules> even if every fact is individually true and grounded.
+</example>
+
 <process>
 1. Ingest <master_cv_json>, <curation_mode>, and the job description data channel.
 2. Build an internal Keyword Bank / Alignment Snapshot (do not put these in the JSON output).

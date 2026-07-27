@@ -321,6 +321,11 @@ Use master JSON only to understand what content was available. Score JD fit of t
 Honest gaps (JD asks for something absent from master) must not lower the score as fabrication —
 note them in reasoning instead.
 
+Off-domain clutter that survived curation (e.g. unrelated skill categories, certifications,
+or summary bullets left in despite low/zero JD relevance — reordered lower rather than cut)
+should lower the score even when must-haves are otherwise covered. A tailored CV should read
+as one coherent, JD-relevant narrative, not two unrelated careers stapled together.
+
 Respond with JSON only:
 {"score": <1-5 integer>, "reasoning": "<brief explanation>"}`
 )!;

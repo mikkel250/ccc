@@ -36,6 +36,14 @@ describe("curator-prompt", () => {
     assert.match(text, /drop off-domain certifications/i);
   });
 
+  it("fallback includes an industry-agnostic worked example of cross-section culling (Gemini needs few-shot)", () => {
+    const text = getCuratorPromptFallbackText();
+    assert.match(text, /<example>/);
+    assert.match(text, /<\/example>/);
+    // Keep the example abstract/generic, not tied to any one industry.
+    assert.doesNotMatch(text, /restaurant|software engineer/i);
+  });
+
   it("compileCuratorPrompt injects master JSON", () => {
     const compiled = compileCuratorPrompt("MASTER={{MASTER_CV_JSON}}", {
       name: "X",
