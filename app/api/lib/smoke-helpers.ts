@@ -1,6 +1,7 @@
 /**
  * Smoke helpers: threshold evaluation + redact-by-default artifacts (KTD9 / R18).
  */
+import { basename, join } from "node:path";
 import { getEnvFloat, getEnvNumber } from "../../../lib/env";
 import type { JsonGroundingScore, JsonJdFitScore } from "./eval-judge";
 
@@ -54,6 +55,29 @@ export function evaluateSmokeJudgeGates(
   }
 
   return reasons.length > 0 ? { ok: false, reasons } : { ok: true };
+}
+
+/** Safe filesystem slug from a JD path (basename without its terminal extension). */
+export function smokeArtifactSlug(jdPath: string): string {
+  const base = basename(jdPath).replace(/\.[^.]+$/i, "");
+  const slug = base
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug.length > 0 ? slug : "jd";
+}
+
+/** Docx + curated JSON paths under the smoke output directory, named for the JD. */
+export function smokeArtifactPaths(
+  jdPath: string,
+  smokeDir: string
+): { slug: string; curatedPath: string; docxPath: string } {
+  const slug = smokeArtifactSlug(jdPath);
+  return {
+    slug,
+    curatedPath: join(smokeDir, `${slug}.curated.json`),
+    docxPath: join(smokeDir, `${slug}.docx`),
+  };
 }
 
 /** Strip contact + free-text bullets for default local artifact writes. */

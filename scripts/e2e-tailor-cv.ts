@@ -12,7 +12,13 @@
  */
 
 import "dotenv/config";
-import { readFileSync, mkdirSync, writeFileSync, readdirSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  mkdirSync,
+  writeFileSync,
+  readdirSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 import { loadMasterCv } from "../app/api/lib/master-cv";
 import {
@@ -30,6 +36,7 @@ import {
   redactCuratedForArtifact,
   getSmokeGroundingMin,
   getSmokeJdFitMin,
+  smokeArtifactPaths,
 } from "../app/api/lib/smoke-helpers";
 
 const argv = process.argv.slice(2);
@@ -177,21 +184,28 @@ async function postTailor(jd: string): Promise<{
 }
 
 function writeArtifacts(
+  jdPath: string,
   curated: unknown,
   builderVersion: unknown,
   cvBase64: string
 ): void {
   const dir = join(process.cwd(), "tmp", "smoke");
   mkdirSync(dir, { recursive: true });
+  const { slug, curatedPath, docxPath } = smokeArtifactPaths(jdPath, dir);
+  if (existsSync(curatedPath) || existsSync(docxPath)) {
+    console.warn(
+      `Overwriting existing smoke artifacts for JD basename ${JSON.stringify(slug)}`
+    );
+  }
   const unredacted = process.env.SMOKE_WRITE_UNREDACTED === "1";
   const payload = {
     builderVersion,
     curatedJson: unredacted ? curated : redactCuratedForArtifact(curated),
     redacted: !unredacted,
   };
-  writeFileSync(join(dir, "curated.json"), JSON.stringify(payload, null, 2));
-  writeFileSync(join(dir, "cv.docx"), Buffer.from(cvBase64, "base64"));
-  console.log(`Wrote artifacts under ${dir} (redacted=${!unredacted})`);
+  writeFileSync(curatedPath, JSON.stringify(payload, null, 2));
+  writeFileSync(docxPath, Buffer.from(cvBase64, "base64"));
+  console.log(`Wrote ${docxPath} and ${curatedPath} (redacted=${!unredacted})`);
 }
 
 async function main(): Promise<void> {
@@ -216,6 +230,7 @@ async function main(): Promise<void> {
   }
 
   writeArtifacts(
+    jd.path,
     tailor.data.curatedJson,
     tailor.data.builderVersion,
     tailor.data.cv as string
