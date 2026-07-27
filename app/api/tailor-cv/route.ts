@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 import { isIP } from "node:net";
 import { NextRequest, NextResponse } from "next/server";
 import { validateTailorCvBody } from "../lib/tailor-cv-validation";
-import { getTailorModel } from "../../../lib/env";
+import { getTailorModel, getTailorReasoningEffort } from "../../../lib/env";
 import { RateLimitError, ServiceError } from "../lib/errors";
 import { tailorCvDeps } from "../lib/tailor-cv-deps";
 import { getConfiguredTailorApiKey } from "../lib/tailor-auth";
@@ -216,6 +216,7 @@ export async function POST(request: NextRequest) {
       systemPrompt,
       {
         model: getTailorModel(),
+        reasoningEffort: getTailorReasoningEffort(),
         langfusePrompt: langfusePrompt ?? {
           name: CURATOR_LANGFUSE_PROMPT_NAME,
           version: 0,

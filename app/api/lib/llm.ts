@@ -12,6 +12,7 @@ import { GoogleGenAI } from '@google/genai';
 import { recordLangSmithTrace, recordLangfuseTrace, type LangfusePromptRef } from './tracers';
 import { toTraceOptions, type TracePayload } from './tracers/tracer';
 import { getDeepSeekBaseUrl, getEnvNumber, getLLMConfig, getDefaultLlmModel } from '../../../lib/env';
+import type { ReasoningEffort } from '../../../lib/env';
 import { KNOWN_PROVIDERS, type Provider } from '../../../lib/providers';
 import anthropicModels from '../../../config/anthropic-models.json';
 
@@ -45,6 +46,11 @@ export interface ChatOptions {
   langfusePrompt?: LangfusePromptRef | null;
   /** OpenRouter flex pricing tier (default true). No effect on direct providers. */
   openRouterFlex?: boolean;
+  /**
+   * Explicit reasoning effort. When set, OpenRouter gets `reasoning.effort`;
+   * DeepSeek direct gets `thinking` + `reasoning_effort` (mapped). Unset = provider default.
+   */
+  reasoningEffort?: ReasoningEffort;
   /** Test-only: inject OpenAI client */
   openaiClient?: OpenAI;
   /** Test-only: inject OpenRouter client */
@@ -253,6 +259,38 @@ async function callOpenAI(
   );
 }
 
+/**
+ * OpenRouter unified reasoning param. Unset effort → omit (provider default).
+ * @see https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
+ */
+export function buildOpenRouterReasoningParams(
+  effort: ReasoningEffort | undefined
+): { reasoning: { effort: ReasoningEffort } } | undefined {
+  if (!effort) return undefined;
+  return { reasoning: { effort } };
+}
+
+/**
+ * DeepSeek direct API thinking controls.
+ * Direct API only supports thinking on/off + reasoning_effort high|max.
+ * OpenRouter-style medium/low/minimal map to high; xhigh/max → max; none → disabled.
+ */
+export function buildDeepSeekThinkingParams(
+  effort: ReasoningEffort | undefined
+):
+  | { thinking: { type: "disabled" } }
+  | { thinking: { type: "enabled" }; reasoning_effort: "high" | "max" }
+  | undefined {
+  if (!effort) return undefined;
+  if (effort === "none") {
+    return { thinking: { type: "disabled" } };
+  }
+  if (effort === "xhigh" || effort === "max") {
+    return { thinking: { type: "enabled" }, reasoning_effort: "max" };
+  }
+  return { thinking: { type: "enabled" }, reasoning_effort: "high" };
+}
+
 export async function callOpenRouter(
   messages: Omit<ChatMessage, 'role'>[] | ChatMessage[],
   systemPrompt: string,
@@ -269,9 +307,15 @@ export async function callOpenRouter(
     maxTokens = defaultMaxTokens,
     model,
     openRouterFlex = defaultOpenRouterFlex,
+    reasoningEffort,
   } = options;
 
   if (!model) throw new Error('model is required for callOpenRouter');
+
+  const extraCreateParams: Record<string, unknown> = {
+    ...(openRouterFlex ? { service_tier: 'flex' as const } : {}),
+    ...buildOpenRouterReasoningParams(reasoningEffort),
+  };
 
   return callOpenAICompatible(
     clientOverride ?? getOpenRouter(options),
@@ -281,7 +325,7 @@ export async function callOpenRouter(
     model,
     temperature,
     maxTokens,
-    openRouterFlex ? { service_tier: 'flex' as const } : undefined,
+    Object.keys(extraCreateParams).length > 0 ? extraCreateParams : undefined,
   );
 }
 
@@ -295,6 +339,7 @@ export async function callDeepSeek(
     temperature = defaultTemperature,
     maxTokens = defaultMaxTokens,
     model,
+    reasoningEffort,
   } = options;
 
   if (!model) throw new Error('model is required for callDeepSeek');
@@ -312,6 +357,7 @@ export async function callDeepSeek(
     apiModel,
     temperature,
     maxTokens,
+    buildDeepSeekThinkingParams(reasoningEffort),
   );
 }
 
