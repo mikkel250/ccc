@@ -41,7 +41,7 @@ Live quality for the JSON curator pipeline is **`npm run smoke`** (not part of `
    - **JD-fit** (`scoreJsonJdFit`) — how well curated JSON targets the JD (1–5; hard fail below `SMOKE_JD_FIT_MIN`).
 4. Optional `--flexible` / `SMOKE_CURATION_MODE=flexible` selects curation posture; grounding judge gets a matching mode addendum.
 
-Artifacts (redact-by-default under `tmp/smoke/`): curated JSON snapshot + `.docx`. Test JDs are raw recruiter text in `knowledge-base/test-jds/` (no YAML frontmatter). Judge helpers and prompts live in `app/api/lib/eval-*.ts` / `eval-schema.ts`.
+Artifacts (redact-by-default under `tmp/smoke/`): `<jd-slug>.docx` + `<jd-slug>.curated.json` named from the JD basename. Test JDs are raw recruiter text in `knowledge-base/test-jds/` (no YAML frontmatter). Judge helpers and prompts live in `app/api/lib/eval-*.ts` / `eval-schema.ts`.
 
 ### Historical model-selection eval (markdown era)
 
