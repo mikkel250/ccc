@@ -44,6 +44,19 @@ describe("curator-prompt", () => {
     assert.doesNotMatch(text, /restaurant|software engineer/i);
   });
 
+  it("Objective Value Statement is no longer evergreen — no summary array position is exempt", () => {
+    const text = getCuratorPromptFallbackText();
+    assert.doesNotMatch(text, /evergreen, don't rewrite it per JD/i);
+    assert.match(text, /no (summary array position|section or array position) is exempt/i);
+    assert.match(text, /replace it/i);
+  });
+
+  it("fallback requires a per-item JD-relevance justification audit before emitting (stronger skills/certs enforcement)", () => {
+    const text = getCuratorPromptFallbackText();
+    assert.match(text, /JD-relevant justification/i);
+    assert.match(text, /cut anything you cannot justify/i);
+  });
+
   it("compileCuratorPrompt injects master JSON", () => {
     const compiled = compileCuratorPrompt("MASTER={{MASTER_CV_JSON}}", {
       name: "X",

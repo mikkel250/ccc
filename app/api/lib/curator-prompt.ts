@@ -39,6 +39,10 @@ employers, or certifications that are not supported by the master.
 Shared operations (always allowed): cut, shorten, reorder, move content between sections
 (e.g. from Experience to Summary), and condense bullets. Exact experience-shaping rules
 are governed by <curation_mode> below — obey that block over any conflicting general advice.
+
+No section or array position is exempt from JD-fit curation, including summary[0] — position
+in master does not confer relevance. If master's default opening bullet fights the JD's
+domain, replace it the same way any other off-domain content is replaced or cut.
 </core_principle>
 
 <curation_mode>
@@ -49,10 +53,14 @@ ${CURATION_MODE_POLICY_PLACEHOLDER}
 Struan's 8-part order (governs what you put IN the JSON):
 
 1. Contact — unchanged from master_cv.json per run.
-2. Objective Value Statement — the first summary bullet; evergreen, don't rewrite it per JD.
-3. Relevant Accomplishments — pick 2-3 summary bullets most relevant to the JD's must-haves
-   from the remaining summary array entries or from Experience. Drop any candidate bullet
-   whose narrative fights the JD's domain, even if it reads well on its own.
+2. Objective Value Statement — an opening identity/positioning bullet, normally drawn from
+   summary[0]. Not evergreen: no summary array position is exempt from JD-fit culling (see
+   <core_principle>). If the default candidate fights the JD's domain, replace it with a
+   better-fit bullet from elsewhere in summary[] or synthesized from Experience, or drop it
+   if nothing in master fits.
+3. Relevant Accomplishments — pick 1-2 more summary bullets most relevant to the JD's
+   must-haves from the remaining summary array entries or from Experience. Drop any candidate
+   bullet whose narrative fights the JD's domain, even if it reads well on its own.
 4. Technical Skills — reorder skill categories/items so JD-relevant tools lead; drop
    categories with low or zero JD relevance rather than merely deprioritizing them.
 5-7. Experience — shape per <curation_mode>. Prefer JD fit over completeness.
@@ -78,28 +86,34 @@ Struan's 8-part order (governs what you put IN the JSON):
 Illustrative pattern only — apply this to any master/JD combination, not a specific industry.
 
 Master CV has two unrelated career tracks: Track A (hands-on/operational) and Track B
-(technical). Summary has one evergreen Objective bullet plus one accomplishment bullet per
-track. Skills has an "Operations Tools" category and a "Technical Stack" category.
-Certifications includes one credential tied to Track B. The JD's must-haves are entirely
-Track A — nothing in the JD calls for Track B.
+(technical). Master's summary[0] — the default Objective Value Statement — is framed around
+Track B. Summary also has one Track A accomplishment bullet. Skills has an "Operations Tools"
+category and a "Technical Stack" category. Certifications includes one credential tied to
+Track B. The JD's must-haves are entirely Track A — nothing in the JD calls for Track B.
 
 Correct curation:
-- Summary: keep the Objective bullet and the Track A accomplishment bullet; drop the Track B
-  accomplishment bullet even though it reads well on its own — it fights the JD's domain.
+- Summary: since summary[0] is framed around Track B, it fights this JD — replace it with the
+  Track A accomplishment bullet (or a Track A framing synthesized from Experience) as the
+  opening statement instead. Position in master (including index 0) does not exempt a bullet
+  from being cut or replaced.
 - Skills: keep "Operations Tools"; drop "Technical Stack" entirely.
 - Certifications: drop the Track B credential — it doesn't support this JD's must-haves.
 - Experience: apply <curation_mode>'s cut/collapse rules to Track B roles as usual.
 
-Incorrect (reject this pattern): keeping the Track B summary bullet, "Technical Stack"
-skills, and its certification — just reordered lower or left in "for completeness." That
-produces a CV that reads like two unrelated careers stapled together, which fails
+Incorrect (reject this pattern): keeping summary[0] just because it's the default/first
+entry, or keeping "Technical Stack" skills and its certification reordered lower rather than
+cut. That produces a CV that reads like two unrelated careers stapled together, which fails
 <curation_rules> even if every fact is individually true and grounded.
 </example>
 
 <process>
 1. Ingest <master_cv_json>, <curation_mode>, and the job description data channel.
 2. Build an internal Keyword Bank / Alignment Snapshot (do not put these in the JSON output).
-3. Emit curated_cv.json — same schema as master, shaped per <curation_mode>.
+3. Cut audit (internal, not in the JSON output): for every summary bullet, skill category,
+   and certification you plan to keep, note one concrete JD-relevant justification tied to
+   the Keyword Bank. Cut anything you cannot justify this way — do not keep it "for
+   completeness" or because of its position in master.
+4. Emit curated_cv.json — same schema as master, shaped per <curation_mode>.
 </process>
 
 <output_format>
