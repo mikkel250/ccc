@@ -274,3 +274,25 @@ When calling subagents from within Pi, use `model: "openrouter/auto-beta"` by de
 - **High:** Code path is deterministic, issue is reproducible, no credible alternative interpretation.
 - **Medium:** Issue is likely but an alternative explanation exists, or the traced path has gaps.
 - **Low:** Issue is possible but requires assumptions about runtime behavior or external state not visible in the diff.
+
+
+## Learned User Preferences
+
+- When fixing review findings: verify each against current code; fix only still-valid issues; skip the rest with a brief reason; keep changes minimal and validate.
+- Prefer asking when product/content ambiguity remains rather than guessing.
+- Prefer a large, complete master skills/experience inventory that can be cut for a JD over a sparse master that needs manual re-adds.
+- Do not couple product behavior or prompts tightly to one industry; engineers may be first users, but design stays industry-agnostic.
+- CV content quality matters more than page-length limits; avoid treating page count as a hard requirement.
+- Prefer LLM judges and calibrated model routing over heavy mechanical allowlists for grounding unless manual failures justify otherwise.
+- When asked to ship fixes to an already-open PR, commit and push to that PR; do not babysit the PR unless asked.
+
+## Learned Workspace Facts
+
+Pointer-first bootstrap (canonical detail lives in linked docs; do not restate stack conventions here):
+
+- Master CV: one complete JSON career record (not parallel industry masters); local SoT is gitignored under `secrets/` — runtime uses `MASTER_CV_JSON` / `MASTER_CV_PATH` (see `.env.example`, `@docs/arch/APP_WALKTHROUGH.md`).
+- Curation modes (`strict` default / `flexible`): `@docs/api/API.md`
+- `npm run smoke` (manual live-API + judges; not part of `npm test` / CI): `@docs/test/TESTING.md`, `@docs/arch/MODEL_SELECTION.md`
+- MVP auth (`TAILOR_API_KEY` Bearer) and dual artifacts (curated JSON + `.docx`): `@docs/api/API.md`
+- Observability (Langfuse on-path / LangSmith fire-and-forget; redaction + flush bounds): `@docs/solutions/architecture-patterns/dual-tracer-redact-and-flush-timeout.md`
+- Cost calibration: DeepSeek via direct API; OpenAI/Google via OpenRouter flex; for tailoring quality prefer best-fit over cost alone — `@docs/arch/MODEL_SELECTION.md`
