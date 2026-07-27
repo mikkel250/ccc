@@ -285,6 +285,9 @@ When calling subagents from within Pi, use `model: "openrouter/auto-beta"` by de
 - CV content quality matters more than page-length limits; avoid treating page count as a hard requirement.
 - Prefer LLM judges and calibrated model routing over heavy mechanical allowlists for grounding unless manual failures justify otherwise.
 - When asked to ship fixes to an already-open PR, commit and push to that PR; do not babysit the PR unless asked.
+- Calibrate model choice per task to the quality actually needed — avoid defaulting to the biggest/most expensive reasoning model when a cheaper one yields no proportional quality gain, and consider smaller/alternative providers beyond an initial shortlist when evaluating models.
+- For `/ce-code-review` subagent dispatch, when a tiering is requested, assign heavier reasoning models to complex-task reviewers, mid-tier models to medium-complexity reviewers, and a lighter/Auto model to simple ones.
+- Keep tailoring prompts cross-model compatible rather than narrowly tuned to one provider, since the production inference model is still being evaluated across providers (e.g. DeepSeek, Gemini, GPT variants).
 
 ## Learned Workspace Facts
 
@@ -296,3 +299,4 @@ Pointer-first bootstrap (canonical detail lives in linked docs; do not restate s
 - MVP auth (`TAILOR_API_KEY` Bearer) and dual artifacts (curated JSON + `.docx`): `@docs/api/API.md`
 - Observability (Langfuse on-path / LangSmith fire-and-forget; redaction + flush bounds): `@docs/solutions/architecture-patterns/dual-tracer-redact-and-flush-timeout.md`
 - Cost calibration: DeepSeek via direct API; OpenAI/Google via OpenRouter flex; for tailoring quality prefer best-fit over cost alone — `@docs/arch/MODEL_SELECTION.md`
+- AGENTS.md is authored primarily in the Pi harness and copied into this repo; most day-to-day coding happens in Cursor's Auto model, so Pi-only conventions and `.cursor/commands/*.md` can drift from AGENTS.md and need manual re-sync.
