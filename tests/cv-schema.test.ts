@@ -6,13 +6,17 @@ import {
   validateCvJson,
   assertCuratedJsonSize,
   getCuratedJsonMaxBytes,
-  __resetCvSchemaValidatorForTest,
+  __clearCvSchemaCacheForTest,
 } from "../app/api/lib/cv-schema";
 
 const fixturePath = join(process.cwd(), "tests/fixtures/curated-cv-valid.json");
 const validCv = JSON.parse(readFileSync(fixturePath, "utf8")) as unknown;
 
 describe("validateCvJson", () => {
+  afterEach(() => {
+    delete process.env.CV_SCHEMA_PATH;
+  });
+
   it("accepts the redacted schema sample fixture", () => {
     const result = validateCvJson(validCv);
     assert.equal(result.ok, true);
@@ -60,15 +64,12 @@ describe("validateCvJson", () => {
   });
 
   it("returns schema unavailable when schema file cannot be loaded", () => {
-    __resetCvSchemaValidatorForTest("/nonexistent/master-cv.schema.json");
-    try {
-      const result = validateCvJson(validCv);
-      assert.equal(result.ok, false);
-      if (!result.ok) {
-        assert.match(result.error, /schema unavailable/i);
-      }
-    } finally {
-      __resetCvSchemaValidatorForTest(null);
+    process.env.CV_SCHEMA_PATH = "/nonexistent/master-cv.schema.json";
+    __clearCvSchemaCacheForTest();
+    const result = validateCvJson(validCv);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /schema unavailable/i);
     }
   });
 });
