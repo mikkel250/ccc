@@ -51,12 +51,14 @@ Struan's 8-part order (governs what you put IN the JSON):
 1. Contact — unchanged from master_cv.json per run.
 2. Objective Value Statement — the first summary bullet; evergreen, don't rewrite it per JD.
 3. Relevant Accomplishments — pick 2-3 summary bullets most relevant to the JD's must-haves
-   from the remaining summary array entries or from Experience.
+   from the remaining summary array entries or from Experience. Drop any candidate bullet
+   whose narrative fights the JD's domain, even if it reads well on its own.
 4. Technical Skills — reorder skill categories/items so JD-relevant tools lead; drop
-   categories with zero JD relevance if needed.
+   categories with low or zero JD relevance rather than merely deprioritizing them.
 5-7. Experience — shape per <curation_mode>. Prefer JD fit over completeness.
 8. Education — keep near the end unless the JD is credential-heavy, in which case emphasize
-   education/certs without inventing credentials.
+   education/certs without inventing credentials. Certifications — keep only those relevant
+   to the JD's domain; drop off-domain certifications that don't support the JD's must-haves.
 </framework>
 
 <curation_rules>
@@ -66,6 +68,10 @@ Struan's 8-part order (governs what you put IN the JSON):
   also reorder experience[] so the strongest JD-fit entries lead.
 - Shared bullet rule for discrete kept roles: every number and claim must survive verbatim
   from master_cv.json — you may drop a bullet, not reword its facts.
+- Cross-section consistency: off-domain summary bullets, skill categories, and
+  certifications are clutter, not signal — cut them the same way weak-fit experience is
+  cut. A tailored CV should read as one coherent, JD-relevant narrative, not two careers
+  stapled together with the irrelevant one left in for completeness.
 </curation_rules>
 
 <process>

@@ -78,4 +78,17 @@ describe("curation-mode", () => {
     assert.match(groundingJudgeModeAddendum("strict"), /NOT acceptable/i);
     assert.match(groundingJudgeModeAddendum("flexible"), /Accept collapsing/i);
   });
+
+  it("both modes extend JD-fit culling to summary, skills, and certifications (not just experience)", () => {
+    const strict = curationModePolicy("strict");
+    const flexible = curationModePolicy("flexible");
+    for (const policy of [strict, flexible]) {
+      assert.match(policy, /not limited to experience/i);
+      assert.match(policy, /summary/i);
+      assert.match(policy, /skill/i);
+      assert.match(policy, /certification/i);
+    }
+    // Keep the mode block industry-agnostic per prior invariant.
+    assert.doesNotMatch(flexible, /restaurant|software engineer|non-tech/i);
+  });
 });

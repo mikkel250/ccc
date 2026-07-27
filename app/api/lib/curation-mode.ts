@@ -23,7 +23,11 @@ export function curationModePolicy(mode: CurationMode): string {
 - Do not collapse, merge, or rewrite multiple roles into a category-style summary entry.
 - When a role is kept: title, location, dates, and blurb stay unchanged; bullets may be
   ranked, trimmed, or dropped — not fact-rewritten.
-- Prefer aggressively cutting weak-fit roles/skills over keeping a long weakly aligned CV.`;
+- Prefer aggressively cutting weak-fit roles/skills over keeping a long weakly aligned CV.
+- This posture is not limited to experience[]: apply the same cut-for-fit discipline to
+  summary bullets, skill categories, and certifications. Drop off-domain summary bullets,
+  skill categories, and certifications rather than merely reordering them to the bottom —
+  cut, don't just deprioritize.`;
   }
 
   return `MODE: flexible (grounded compression allowed).
@@ -42,7 +46,11 @@ export function curationModePolicy(mode: CurationMode): string {
   ranked, trimmed, or dropped — not fact-rewritten.
 - Prefer hard cull or honest collapse of weak-fit detail over a long weakly aligned CV.
 - Rules are industry-agnostic: the same posture applies whether the JD is technical,
-  operational, creative, service, or any other domain.`;
+  operational, creative, service, or any other domain.
+- This fit-first posture is not limited to experience[]: apply the same rigor to summary
+  bullets, skill categories, and certifications. Cut or de-emphasize off-domain summary
+  bullets, skill categories, and certifications that undermine the JD narrative — do not
+  leave a tailored CV reading like two unrelated careers stapled together.`;
 }
 
 /**

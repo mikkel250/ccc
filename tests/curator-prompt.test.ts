@@ -28,6 +28,14 @@ describe("curator-prompt", () => {
     assert.doesNotMatch(text, /Collapse when appropriate/i);
   });
 
+  it("fallback mandates dropping (not merely reordering) off-domain skills and certifications", () => {
+    const text = getCuratorPromptFallbackText();
+    // Soft "if needed" language let low-relevance skill categories survive; must be mandatory.
+    assert.doesNotMatch(text, /if needed/i);
+    assert.match(text, /categories with low or zero JD relevance/i);
+    assert.match(text, /drop off-domain certifications/i);
+  });
+
   it("compileCuratorPrompt injects master JSON", () => {
     const compiled = compileCuratorPrompt("MASTER={{MASTER_CV_JSON}}", {
       name: "X",
