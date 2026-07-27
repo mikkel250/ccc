@@ -274,3 +274,24 @@ When calling subagents from within Pi, use `model: "openrouter/auto-beta"` by de
 - **High:** Code path is deterministic, issue is reproducible, no credible alternative interpretation.
 - **Medium:** Issue is likely but an alternative explanation exists, or the traced path has gaps.
 - **Low:** Issue is possible but requires assumptions about runtime behavior or external state not visible in the diff.
+
+
+## Learned User Preferences
+
+- When fixing review findings: verify each against current code; fix only still-valid issues; skip the rest with a brief reason; keep changes minimal and validate.
+- Prefer asking when product/content ambiguity remains rather than guessing.
+- Prefer a large, complete master skills/experience inventory that can be cut for a JD over a sparse master that needs manual re-adds.
+- Do not couple product behavior or prompts tightly to one industry; engineers may be first users, but design stays industry-agnostic.
+- CV content quality matters more than page-length limits; avoid treating page count as a hard requirement.
+- Prefer LLM judges and calibrated model routing over heavy mechanical allowlists for grounding unless manual failures justify otherwise.
+- When asked to ship fixes to an already-open PR, commit and push to that PR; do not babysit the PR unless asked.
+
+## Learned Workspace Facts
+
+- Master CV is one complete JSON career record (not parallel industry masters); local source of truth lives under `secrets/` (e.g. `secrets/master_cv.json`).
+- Curation modes on tailor: `strict` (default) cuts/reorders/trims discrete master roles; `flexible` may also collapse weak-fit clusters into grounded category-style summaries.
+- `npm run smoke` is the supported manual live-API path (full pipeline + grounding/JD-fit judges); it is intentionally not part of `npm test` / CI.
+- MVP tailor auth is a shared secret (`TAILOR_API_KEY` Bearer); the GitHub repo is public, so unauthenticated endpoint exposure of master content is a real risk.
+- Successful tailor responses return dual artifacts: curated JSON (history/regen) plus mechanically rendered `.docx`.
+- Observability: Langfuse stays on the request path for prompt/cost export; LangSmith tracing is fire-and-forget off the critical path.
+- When cost-calibrating via OpenRouter flex, preferred provider families are DeepSeek, OpenAI, and Google; for tailoring quality, prefer the best-fit model over minimizing cost alone.
