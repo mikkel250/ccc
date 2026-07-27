@@ -11,10 +11,17 @@ import {
 
 const fixturePath = join(process.cwd(), "tests/fixtures/curated-cv-valid.json");
 const validCv = JSON.parse(readFileSync(fixturePath, "utf8")) as unknown;
+const shippedSchemaPath = join(
+  process.cwd(),
+  "references",
+  "json-curator",
+  "master-cv.schema.json"
+);
 
 describe("validateCvJson", () => {
   afterEach(() => {
     delete process.env.CV_SCHEMA_PATH;
+    __clearCvSchemaCacheForTest();
   });
 
   it("accepts the redacted schema sample fixture", () => {
@@ -61,6 +68,20 @@ describe("validateCvJson", () => {
     };
     const result = validateCvJson(combined);
     assert.equal(result.ok, false);
+  });
+
+  it("loads schema from CV_SCHEMA_PATH when set to a valid path", () => {
+    process.env.CV_SCHEMA_PATH = shippedSchemaPath;
+    __clearCvSchemaCacheForTest();
+    const result = validateCvJson(validCv);
+    assert.equal(result.ok, true);
+  });
+
+  it("trims whitespace from CV_SCHEMA_PATH before loading", () => {
+    process.env.CV_SCHEMA_PATH = `  ${shippedSchemaPath}  `;
+    __clearCvSchemaCacheForTest();
+    const result = validateCvJson(validCv);
+    assert.equal(result.ok, true);
   });
 
   it("returns schema unavailable when schema file cannot be loaded", () => {
