@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import Ajv2020, { type ErrorObject, type ValidateFunction } from "ajv/dist/2020";
-import { getEnvNumber } from "../../../lib/env";
+import { getEnvNumber, getEnvString } from "../../../lib/env";
 
 export type CvSchemaValidationResult =
   | { ok: true; data: unknown }
@@ -17,23 +17,21 @@ const SCHEMA_RELATIVE = join(
 );
 
 let validateFn: ValidateFunction | null = null;
-let schemaPathOverride: string | null = null;
 
-/** Test-only: force schema path / clear compiled validator. */
-export function __resetCvSchemaValidatorForTest(pathOverride?: string | null): void {
+/** Test-only: clear the cached validator so env var changes take effect. */
+export function __clearCvSchemaCacheForTest(): void {
   if (process.env.NODE_ENV !== "test") {
     throw new Error(
-      "__resetCvSchemaValidatorForTest is only available in the test environment"
+      "__clearCvSchemaCacheForTest is only available in the test environment"
     );
   }
-  schemaPathOverride = pathOverride === undefined ? null : pathOverride;
   validateFn = null;
 }
 
 function loadValidator(): ValidateFunction {
   if (validateFn) return validateFn;
-  const schemaPath =
-    schemaPathOverride ?? join(process.cwd(), SCHEMA_RELATIVE);
+  const fromEnv = getEnvString("CV_SCHEMA_PATH")?.trim();
+  const schemaPath = fromEnv || join(process.cwd(), SCHEMA_RELATIVE);
   const schema = JSON.parse(readFileSync(schemaPath, "utf8")) as object;
   const ajv = new Ajv2020({
     allErrors: true,

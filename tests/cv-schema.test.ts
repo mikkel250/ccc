@@ -6,13 +6,27 @@ import {
   validateCvJson,
   assertCuratedJsonSize,
   getCuratedJsonMaxBytes,
-  __resetCvSchemaValidatorForTest,
+  __clearCvSchemaCacheForTest,
 } from "../app/api/lib/cv-schema";
 
 const fixturePath = join(process.cwd(), "tests/fixtures/curated-cv-valid.json");
 const validCv = JSON.parse(readFileSync(fixturePath, "utf8")) as unknown;
+const shippedSchemaPath = join(
+  process.cwd(),
+  "references",
+  "json-curator",
+  "master-cv.schema.json"
+);
 
 describe("validateCvJson", () => {
+  const originalCvSchemaPath = process.env.CV_SCHEMA_PATH;
+
+  afterEach(() => {
+    if (originalCvSchemaPath === undefined) delete process.env.CV_SCHEMA_PATH;
+    else process.env.CV_SCHEMA_PATH = originalCvSchemaPath;
+    __clearCvSchemaCacheForTest();
+  });
+
   it("accepts the redacted schema sample fixture", () => {
     const result = validateCvJson(validCv);
     assert.equal(result.ok, true);
@@ -59,16 +73,27 @@ describe("validateCvJson", () => {
     assert.equal(result.ok, false);
   });
 
+  it("loads schema from CV_SCHEMA_PATH when set to a valid path", () => {
+    process.env.CV_SCHEMA_PATH = shippedSchemaPath;
+    __clearCvSchemaCacheForTest();
+    const result = validateCvJson(validCv);
+    assert.equal(result.ok, true);
+  });
+
+  it("trims whitespace from CV_SCHEMA_PATH before loading", () => {
+    process.env.CV_SCHEMA_PATH = `  ${shippedSchemaPath}  `;
+    __clearCvSchemaCacheForTest();
+    const result = validateCvJson(validCv);
+    assert.equal(result.ok, true);
+  });
+
   it("returns schema unavailable when schema file cannot be loaded", () => {
-    __resetCvSchemaValidatorForTest("/nonexistent/master-cv.schema.json");
-    try {
-      const result = validateCvJson(validCv);
-      assert.equal(result.ok, false);
-      if (!result.ok) {
-        assert.match(result.error, /schema unavailable/i);
-      }
-    } finally {
-      __resetCvSchemaValidatorForTest(null);
+    process.env.CV_SCHEMA_PATH = "/nonexistent/master-cv.schema.json";
+    __clearCvSchemaCacheForTest();
+    const result = validateCvJson(validCv);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /schema unavailable/i);
     }
   });
 });
