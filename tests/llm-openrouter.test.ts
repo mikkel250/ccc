@@ -86,4 +86,34 @@ describe("callOpenRouter", () => {
       /OpenRouter rate limit exceeded/
     );
   });
+
+  it("throws a clear error when choices is missing (not TypeError on [0])", async () => {
+    const mockClient = {
+      chat: {
+        completions: {
+          create: async () => ({
+            model: "google/gemini-3.1-pro-preview",
+            // Malformed / error-shaped OpenRouter body — no choices array
+          }),
+        },
+      },
+    } as unknown as OpenAI;
+
+    await assert.rejects(
+      () =>
+        callOpenRouter(
+          [{ role: "user", content: "Hi" }],
+          "System",
+          { model: "google/gemini-3.1-pro-preview" },
+          mockClient
+        ),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.match(err.message, /No response from OpenRouter/i);
+        assert.equal(err.name, "Error");
+        assert.doesNotMatch(err.message, /Cannot read properties of undefined/i);
+        return true;
+      }
+    );
+  });
 });

@@ -204,9 +204,16 @@ async function callOpenAICompatible(
     ...extraCreateParams,
   });
 
-  const choice = response.choices[0];
+  // OpenRouter (and some gateway proxies) can return 200-shaped bodies without
+  // `choices` — e.g. flex/model errors embedded as `{ error: ... }`. Guard so
+  // we throw a clear provider error instead of TypeError on `choices[0]`.
+  const choice = response.choices?.[0];
   if (!choice || !choice.message) {
-    throw new Error(`No response from ${providerLabel}`);
+    const embedded =
+      response && typeof response === "object" && "error" in response
+        ? ` — ${JSON.stringify((response as { error: unknown }).error)}`
+        : "";
+    throw new Error(`No response from ${providerLabel}${embedded}`);
   }
 
   return {
