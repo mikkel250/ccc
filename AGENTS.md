@@ -288,10 +288,11 @@ When calling subagents from within Pi, use `model: "openrouter/auto-beta"` by de
 
 ## Learned Workspace Facts
 
-- Master CV is one complete JSON career record (not parallel industry masters); local source of truth lives under `secrets/` (e.g. `secrets/master_cv.json`).
-- Curation modes on tailor: `strict` (default) cuts/reorders/trims discrete master roles; `flexible` may also collapse weak-fit clusters into grounded category-style summaries.
-- `npm run smoke` is the supported manual live-API path (full pipeline + grounding/JD-fit judges); it is intentionally not part of `npm test` / CI.
-- MVP tailor auth is a shared secret (`TAILOR_API_KEY` Bearer); the GitHub repo is public, so unauthenticated endpoint exposure of master content is a real risk.
-- Successful tailor responses return dual artifacts: curated JSON (history/regen) plus mechanically rendered `.docx`.
-- Observability: Langfuse stays on the request path for prompt/cost export; LangSmith tracing is fire-and-forget off the critical path.
-- When cost-calibrating via OpenRouter flex, preferred provider families are DeepSeek, OpenAI, and Google; for tailoring quality, prefer the best-fit model over minimizing cost alone.
+Pointer-first bootstrap (canonical detail lives in linked docs; do not restate stack conventions here):
+
+- Master CV: one complete JSON career record (not parallel industry masters); local SoT is gitignored under `secrets/` — runtime uses `MASTER_CV_JSON` / `MASTER_CV_PATH` (see `.env.example`, `@docs/arch/APP_WALKTHROUGH.md`).
+- Curation modes (`strict` default / `flexible`): `@docs/api/API.md`
+- `npm run smoke` (manual live-API + judges; not part of `npm test` / CI): `@docs/test/TESTING.md`, `@docs/arch/MODEL_SELECTION.md`
+- MVP auth (`TAILOR_API_KEY` Bearer) and dual artifacts (curated JSON + `.docx`): `@docs/api/API.md`
+- Observability (Langfuse on-path / LangSmith fire-and-forget; redaction + flush bounds): `@docs/solutions/architecture-patterns/dual-tracer-redact-and-flush-timeout.md`
+- Cost calibration: DeepSeek via direct API; OpenAI/Google via OpenRouter flex; for tailoring quality prefer best-fit over cost alone — `@docs/arch/MODEL_SELECTION.md`
