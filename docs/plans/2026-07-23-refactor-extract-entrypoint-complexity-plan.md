@@ -27,19 +27,19 @@ Sourcery review of PR #15 identified three entrypoints where logic density makes
 
 | # | From | To | What Moves |
 |---|------|----|------------|
-| 1 | `route.ts` POST handler | `app/api/lib/tailor-pipeline.ts` | 8-step orchestration into `buildTailorResponse(deps, request)` |
-| 2 | `scripts/e2e-tailor-cv.ts` | `app/api/lib/smoke-runner.ts` | Core smoke logic into `verifySmokePipeline(jd, baseUrl, options)` |
+| 1 | `route.ts` POST handler | `app/api/lib/tailor-pipeline.ts` | 10-step orchestration into `buildTailorResponse(deps, request)` |
+| 2 | `scripts/e2e-tailor-cv.ts` | `app/api/lib/smoke-runner.ts` | Core smoke logic into `verifySmokePipeline(jd, options)` |
 | 3 | `cv-schema.ts` hard-coded path | `cv-schema.ts` + env | `CV_SCHEMA_PATH` env var; remove `__resetCvSchemaValidatorForTest` |
 
 ### U2: Route Handler → Pipeline
 
-- **Description:** Extract 8-step POST orchestration from `route.ts` into `buildTailorResponse(deps, request)` in a new pipeline module. Split 6 mixed tests between route and pipeline test files.
+- **Description:** Extract 10-step POST orchestration from `route.ts` into `buildTailorResponse(deps, request)` in a new pipeline module (auth through schema validation and DOCX generation). Split 6 mixed tests between route and pipeline test files.
 - **Complexity:** Complex
 - **Reason:** Multi-file coordinated change (new module + route rewrite + test split); introduces new abstraction (pipeline function); touches public API surface (`POST /api/tailor-cv`); 6 mixed tests require careful categorization to avoid coverage gaps.
 
 **Target:** `app/api/lib/tailor-pipeline.ts` exporting `buildTailorResponse(deps, request)`
 
-Naming note: follows the dominant `build*` family (`buildJsonDocxBase64`, `buildCuratorUserMessage` — 10+ functions). Describes what the pipeline produces: a structured tailor response from all 8 pipeline steps.
+Naming note: follows the dominant `build*` family (`buildJsonDocxBase64`, `buildCuratorUserMessage` — 10+ functions). Describes what the pipeline produces: a structured tailor response from all 10 pipeline steps.
 
 **Architecture note — `NextRequest` dependency:** `parseClientIp` and `readRequestBodyCapped` accept `NextRequest`. Moving them to `tailor-pipeline.ts` keeps the framework type in `lib/`. Alternative: the route pre-parses `ip` and `bodyText` and passes plain strings to the pipeline. Tradeoff: pre-parsing in route adds ~10 lines but keeps `lib/` framework-agnostic. **Decision:** move them to pipeline as-is — `lib/` already imports Next.js types (`NextRequest`, `NextResponse` via `tailor-cv-deps.ts` → `route.ts` imports). Framework-agnosticism is not a current architectural goal.
 
@@ -47,7 +47,7 @@ Naming note: follows the dominant `build*` family (`buildJsonDocxBase64`, `build
 
 **Architecture note — `safeTailorLog`:** Used by pipeline (LLM errors) and route (catch-all). **Decision:** pipeline calls `console.error` directly for LLM errors; route's `mapErrorToResponse` catch-all remains the only `safeTailorLog` call site. `safeTailorLog` stays in route.ts.
 
-The pipeline function composes the 8 steps already available in `tailorCvDeps`, returning a structured result:
+The pipeline function composes the 10 steps already available in `tailorCvDeps`, returning a structured result:
 
 ```typescript
 type TailorPipelineResult =
@@ -84,7 +84,7 @@ Steps (same order as current handler):
 - **Complexity:** Complex
 - **Reason:** Multi-file change (new library module + CLI rewrite + new test file); introduces new abstraction (smoke pipeline function); new `fetch` dependency in `app/api/lib/` (mitigated: global in Node 22).
 
-**Target:** `app/api/lib/smoke-runner.ts` exporting `verifySmokePipeline(jd, baseUrl, options)`
+**Target:** `app/api/lib/smoke-runner.ts` exporting `verifySmokePipeline(jd, options)`
 
 Naming note: follows `verify`/`check`/`validate` family (`checkRateLimit`, `validateCvJson`). Describes the action: verifying the smoke pipeline end-to-end.
 
@@ -132,7 +132,7 @@ async function verifySmokePipeline(
 
 - **Description:** Replace hard-coded schema path and test-only reset function with `CV_SCHEMA_PATH` env var.
 - **Complexity:** Routine
-- **Reason:** Single-file change with clear before/after spec; env var pattern already established in `lib/env.ts`; failure is immediately visible (schema won't load).
+- **Reason:** Small coordinated multi-file change (`.env.example`, `cv-schema.ts`, `tests/cv-schema.test.ts`) with clear before/after spec; env var pattern already established in `lib/env.ts`; failure is immediately visible (schema won't load).
 
 **Target:** `app/api/lib/cv-schema.ts`
 

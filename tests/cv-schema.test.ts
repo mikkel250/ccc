@@ -19,8 +19,11 @@ const shippedSchemaPath = join(
 );
 
 describe("validateCvJson", () => {
+  const originalCvSchemaPath = process.env.CV_SCHEMA_PATH;
+
   afterEach(() => {
-    delete process.env.CV_SCHEMA_PATH;
+    if (originalCvSchemaPath === undefined) delete process.env.CV_SCHEMA_PATH;
+    else process.env.CV_SCHEMA_PATH = originalCvSchemaPath;
     __clearCvSchemaCacheForTest();
   });
 
