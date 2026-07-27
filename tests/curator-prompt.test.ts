@@ -51,10 +51,13 @@ describe("curator-prompt", () => {
     assert.match(text, /replace it/i);
   });
 
-  it("fallback requires a per-item JD-relevance justification audit before emitting (stronger skills/certs enforcement)", () => {
+  it("fallback requires a silent per-item JD-relevance cut audit before emitting", () => {
     const text = getCuratorPromptFallbackText();
     assert.match(text, /JD-relevant justification/i);
     assert.match(text, /cut anything you cannot justify/i);
+    assert.match(text, /Silent cut audit \(never print this\)/i);
+    assert.match(text, /Do not write the audit, Keyword Bank/i);
+    assert.match(text, /first non-whitespace character must be `\{`/i);
   });
 
   it("compileCuratorPrompt injects master JSON", () => {

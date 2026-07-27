@@ -19,6 +19,7 @@ import {
   getTailorResponseMaxBytes,
 } from "../lib/cv-schema";
 import { CURATOR_LANGFUSE_PROMPT_NAME } from "../lib/curator-prompt";
+import { describeJsonParseFailure } from "../lib/eval-parse";
 
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" } as const;
 
@@ -227,8 +228,15 @@ export async function POST(request: NextRequest) {
     let curatedRaw: unknown;
     try {
       curatedRaw = tailorCvDeps.extractStructuredJson(llmResponse.content);
-    } catch {
-      safeTailorLog("Curator output was not valid JSON");
+    } catch (parseError) {
+      safeTailorLog(
+        `Curator output was not valid JSON (${describeJsonParseFailure({
+          content: llmResponse.content,
+          finishReason: llmResponse.finishReason,
+          completionTokens: llmResponse.usage.completionTokens,
+          parseError,
+        })})`
+      );
       return jsonResponse(
         { error: "Curator output was not valid JSON" },
         422

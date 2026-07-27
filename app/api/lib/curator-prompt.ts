@@ -109,16 +109,19 @@ cut. That produces a CV that reads like two unrelated careers stapled together, 
 <process>
 1. Ingest <master_cv_json>, <curation_mode>, and the job description data channel.
 2. Build an internal Keyword Bank / Alignment Snapshot (do not put these in the JSON output).
-3. Cut audit (internal, not in the JSON output): for every summary bullet, skill category,
-   and certification you plan to keep, note one concrete JD-relevant justification tied to
+3. Silent cut audit (never print this): for every summary bullet, skill category, and
+   certification you plan to keep, confirm one concrete JD-relevant justification tied to
    the Keyword Bank. Cut anything you cannot justify this way — do not keep it "for
-   completeness" or because of its position in master.
+   completeness" or because of its position in master. Do not write the audit, Keyword Bank,
+   or Alignment Snapshot into the response.
 4. Emit curated_cv.json — same schema as master, shaped per <curation_mode>.
 </process>
 
 <output_format>
 Return a single JSON object matching the master CV schema.
-No Alignment Snapshot, Change Log, Keyword Bank, or conversational filler in the response.
+The first non-whitespace character must be \`{\` and the last must be \`}\`.
+No Alignment Snapshot, Change Log, Keyword Bank, cut audit, markdown fences, or
+conversational filler before or after the JSON.
 Do not wrap the object in markdown fences unless required by the channel; the first
 top-level \`{\` … last \`}\` must be valid curated CV JSON.
 </output_format>
@@ -235,5 +238,6 @@ export function buildCuratorUserMessage(
     "</job_description>",
     "",
     "Respond with curated CV JSON only (same schema as master).",
+    "The response must start with { and end with } — no prose, audit notes, or markdown fences.",
   ].join("\n");
 }
