@@ -9,6 +9,7 @@ import {
   evaluateSmokeJudgeGates,
   getSmokeGroundingMin,
   redactCuratedForArtifact,
+  smokeArtifactPaths,
 } from "../app/api/lib/smoke-helpers";
 
 const MASTER = {
@@ -183,5 +184,29 @@ describe("redactCuratedForArtifact", () => {
     assert.equal(redacted.contact.redacted, true);
     assert.deepEqual(redacted.summary, ["[REDACTED]"]);
     assert.deepEqual(redacted.experience[0]!.bullets, ["[REDACTED]"]);
+  });
+});
+
+describe("smokeArtifactPaths", () => {
+  it("names docx and curated json from the JD basename", () => {
+    const paths = smokeArtifactPaths(
+      "/Users/me/knowledge-base/test-jds/smoke/wayfare-mgr.md",
+      "/tmp/smoke"
+    );
+    assert.equal(paths.slug, "wayfare-mgr");
+    assert.equal(paths.docxPath, "/tmp/smoke/wayfare-mgr.docx");
+    assert.equal(paths.curatedPath, "/tmp/smoke/wayfare-mgr.curated.json");
+  });
+
+  it("strips the terminal extension and sanitizes unsafe characters", () => {
+    const paths = smokeArtifactPaths("Weird JD Name!!.MD", "/out");
+    assert.equal(paths.slug, "Weird-JD-Name");
+    assert.equal(paths.docxPath, "/out/Weird-JD-Name.docx");
+  });
+
+  it("does not produce a double extension for a non-Markdown input", () => {
+    const paths = smokeArtifactPaths("source.docx", "/out");
+    assert.equal(paths.slug, "source");
+    assert.equal(paths.docxPath, "/out/source.docx");
   });
 });
