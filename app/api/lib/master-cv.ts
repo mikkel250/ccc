@@ -5,6 +5,9 @@
  * Production: `preloadMasterCv()` runs at server startup (async fs). Request path
  * `requireMasterCv()` serves the preloaded cache only — no sync disk I/O.
  * Smoke CLI / tests may call `loadMasterCv()` which can resolve + cache synchronously.
+ *
+ * Cache lives on `globalThis` so Next.js instrumentation and the route bundle
+ * share one instance (each webpack graph would otherwise get its own module scope).
  */
 import { readFileSync, statSync, constants } from "node:fs";
 import { open } from "node:fs/promises";
@@ -12,12 +15,28 @@ import { getEnvString } from "../../../lib/env";
 import { ServiceError } from "./errors";
 import { validateCvJson } from "./cv-schema";
 
-/** Module-level cache: set by preload or loadMasterCv; never cleared in production. */
-let cachedResult: MasterCvLoadResult | undefined;
-
 export type MasterCvLoadResult =
   | { ok: true; data: unknown; source: "env" | "path" }
   | { ok: false; error: string };
+
+const MASTER_CV_CACHE_KEY = "__cccMasterCvCache";
+
+type MasterCvGlobal = typeof globalThis & {
+  [MASTER_CV_CACHE_KEY]?: MasterCvLoadResult;
+};
+
+function getCachedResult(): MasterCvLoadResult | undefined {
+  return (globalThis as MasterCvGlobal)[MASTER_CV_CACHE_KEY];
+}
+
+function setCachedResult(result: MasterCvLoadResult | undefined): void {
+  const g = globalThis as MasterCvGlobal;
+  if (result === undefined) {
+    delete g[MASTER_CV_CACHE_KEY];
+  } else {
+    g[MASTER_CV_CACHE_KEY] = result;
+  }
+}
 
 function isWorldReadable(mode: number): boolean {
   // Other-read bit (S_IROTH = 0o004)
@@ -127,11 +146,13 @@ function resolveMasterCvSync(): MasterCvLoadResult {
  * (called from `instrumentation.ts`).
  */
 export async function preloadMasterCv(): Promise<MasterCvLoadResult> {
-  if (cachedResult !== undefined) {
-    return cachedResult;
+  const existing = getCachedResult();
+  if (existing !== undefined) {
+    return existing;
   }
-  cachedResult = await resolveMasterCvAsync();
-  return cachedResult;
+  const result = await resolveMasterCvAsync();
+  setCachedResult(result);
+  return result;
 }
 
 /**
@@ -139,11 +160,13 @@ export async function preloadMasterCv(): Promise<MasterCvLoadResult> {
  * subsequent calls do not re-hit the filesystem.
  */
 export function loadMasterCv(): MasterCvLoadResult {
-  if (cachedResult !== undefined) {
-    return cachedResult;
+  const existing = getCachedResult();
+  if (existing !== undefined) {
+    return existing;
   }
-  cachedResult = resolveMasterCvSync();
-  return cachedResult;
+  const result = resolveMasterCvSync();
+  setCachedResult(result);
+  return result;
 }
 
 /**
@@ -151,6 +174,7 @@ export function loadMasterCv(): MasterCvLoadResult {
  * Throws ServiceError when preload did not succeed (route maps to 503).
  */
 export function requireMasterCv(): unknown {
+  const cachedResult = getCachedResult();
   if (cachedResult === undefined) {
     throw new ServiceError("Master CV configuration is unavailable");
   }
@@ -167,5 +191,5 @@ export function __resetMasterCvCacheForTest(): void {
       "__resetMasterCvCacheForTest is only available in the test environment"
     );
   }
-  cachedResult = undefined;
+  setCachedResult(undefined);
 }

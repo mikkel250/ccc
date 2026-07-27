@@ -8,6 +8,7 @@ import {
   preloadMasterCv,
   requireMasterCv,
   __resetMasterCvCacheForTest,
+  type MasterCvLoadResult,
 } from "../app/api/lib/master-cv";
 import { ServiceError } from "../app/api/lib/errors";
 
@@ -130,5 +131,15 @@ describe("loadMasterCv", () => {
 
   it("requireMasterCv throws when nothing was preloaded", () => {
     assert.throws(() => requireMasterCv(), ServiceError);
+  });
+
+  it("preload cache is visible on globalThis for cross-bundle sharing", async () => {
+    process.env.MASTER_CV_JSON = JSON.stringify(validCv);
+    const pre = await preloadMasterCv();
+    assert.equal(pre.ok, true);
+    const shared = (globalThis as { __cccMasterCvCache?: MasterCvLoadResult })
+      .__cccMasterCvCache;
+    assert.equal(shared, pre);
+    assert.equal(requireMasterCv(), shared && shared.ok ? shared.data : undefined);
   });
 });
