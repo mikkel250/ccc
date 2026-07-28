@@ -23,7 +23,7 @@ import {
   getTailorResponseMaxBytes,
 } from "./cv-schema";
 import { CURATOR_LANGFUSE_PROMPT_NAME } from "./curator-prompt";
-import { isFlexibleWrapper } from "./curation-mode";
+import { isFlexibleWrapper, flexibleCoverLetter } from "./curation-mode";
 import type { CurationMode } from "./curation-mode";
 import { critiqueCvDraft } from "./adversarial-judge";
 import { withDeadline } from "./with-deadline";
@@ -432,7 +432,7 @@ export async function buildTailorResponse(
       if (curationMode === "flexible") {
         if (isFlexibleWrapper(firstDraftParsed)) {
           curatedForJudge = firstDraftParsed.curated_cv;
-          coverLetterForJudge = firstDraftParsed.cover_letter;
+          coverLetterForJudge = flexibleCoverLetter(firstDraftParsed);
         } else {
           curatedForJudge = firstDraftParsed;
         }
@@ -607,7 +607,7 @@ export async function buildTailorResponse(
         };
       }
       curatedRaw = parsed.curated_cv;
-      coverLetter = parsed.cover_letter;
+      coverLetter = flexibleCoverLetter(parsed);
     } else {
       curatedRaw = parsed;
     }

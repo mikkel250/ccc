@@ -5,6 +5,7 @@ import {
   curationModePolicy,
   groundingJudgeModeAddendum,
   isFlexibleWrapper,
+  flexibleCoverLetter,
   CURATION_MODE_POLICY_PLACEHOLDER,
   DEFAULT_CURATION_MODE,
 } from "../app/api/lib/curation-mode";
@@ -135,6 +136,22 @@ describe("curation-mode", () => {
     });
     it("returns true when cover_letter is omitted", () => {
       assert.equal(isFlexibleWrapper({ curated_cv: {} }), true);
+    });
+    it("returns true when cover_letter is null (treat as omitted)", () => {
+      assert.equal(
+        isFlexibleWrapper({ curated_cv: {}, cover_letter: null }),
+        true
+      );
+    });
+    it("flexibleCoverLetter maps null to undefined", () => {
+      assert.equal(
+        flexibleCoverLetter({ cover_letter: null }),
+        undefined
+      );
+      assert.equal(
+        flexibleCoverLetter({ cover_letter: "hi" }),
+        "hi"
+      );
     });
   });
 });

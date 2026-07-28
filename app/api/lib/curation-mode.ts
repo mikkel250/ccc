@@ -114,15 +114,25 @@ export function isCurationMode(value: unknown): value is CurationMode {
 /** Type guard for the flexible curator wrapper shape: { curated_cv, cover_letter? }. */
 export function isFlexibleWrapper(
   raw: unknown
-): raw is { curated_cv: unknown; cover_letter?: string } {
+): raw is { curated_cv: unknown; cover_letter?: string | null } {
   if (raw === null || typeof raw !== "object" || !("curated_cv" in raw)) {
     return false;
   }
   const coverLetter = (raw as { cover_letter?: unknown }).cover_letter;
-  if (coverLetter !== undefined && typeof coverLetter !== "string") {
+  // null is treated as omitted (models sometimes emit cover_letter: null).
+  if (coverLetter != null && typeof coverLetter !== "string") {
     return false;
   }
   return true;
+}
+
+/** Optional cover letter from a flexible wrapper; null/absent → undefined. */
+export function flexibleCoverLetter(wrapper: {
+  cover_letter?: string | null;
+}): string | undefined {
+  return typeof wrapper.cover_letter === "string"
+    ? wrapper.cover_letter
+    : undefined;
 }
 
 /** Authoritative mode block injected into the curator system prompt. */
