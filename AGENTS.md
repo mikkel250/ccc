@@ -284,6 +284,7 @@ When calling subagents from within Pi, use `model: "openrouter/auto-beta"` by de
 - Do not couple product behavior or prompts tightly to one industry; engineers may be first users, but design stays industry-agnostic.
 - CV content quality matters more than page-length limits; avoid treating page count as a hard requirement.
 - Prefer LLM judges and calibrated model routing over heavy mechanical allowlists for grounding unless manual failures justify otherwise.
+- For flexible curation success criteria, prefer a holistic judge verdict that the resume is "strong enough" over hard numeric pass/fail thresholds on individual scores.
 - When configuring models for tailoring/smoke (especially OpenRouter), set reasoning/thinking effort explicitly rather than relying on provider defaults.
 - When asked to ship fixes to an already-open PR, verify the active branch first (`git branch --show-current`); never write files, commit, or push when on `main`; once branch safety is confirmed, commit and push to the correct PR branch and do not babysit the PR unless asked.
 - Calibrate model choice per task to the quality actually needed — avoid defaulting to the biggest/most expensive reasoning model when a cheaper one yields no proportional quality gain, and consider smaller/alternative providers beyond an initial shortlist when evaluating models.
@@ -300,5 +301,5 @@ Pointer-first bootstrap (canonical detail lives in linked docs; do not restate s
 - MVP auth (`TAILOR_API_KEY` Bearer) and dual artifacts (curated JSON + `.docx`): `@docs/api/API.md`
 - Observability (Langfuse on-path / LangSmith fire-and-forget; redaction + flush bounds): `@docs/solutions/architecture-patterns/dual-tracer-redact-and-flush-timeout.md`
 - Cost calibration: DeepSeek via direct API; OpenAI/Google via OpenRouter flex; for tailoring quality prefer best-fit over cost alone — `@docs/arch/MODEL_SELECTION.md`
-- AGENTS.md is authored primarily in the Pi harness and copied into this repo; most day-to-day coding happens in Cursor's Auto model, so Pi-only conventions and `.cursor/commands/*.md` can drift from AGENTS.md and need manual re-sync.
+- Prefer unified `ce-*` compound-engineering commands across Pi and Cursor (pi-compound-engineering / CE MCP) rather than dual `/workflows-*` vs `/ce-*` names; AGENTS.md still needs manual re-sync when Pi and Cursor package surfaces drift.
 - Tailoring quality needs an adequate completion token budget (`AI_MAX_TOKENS`); undersized limits degrade curator output even when the model slug is correct.

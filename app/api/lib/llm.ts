@@ -45,13 +45,16 @@ export interface ChatResponse {
 export interface OpenAICompatibleChatClient {
   chat: {
     completions: {
-      create(body: {
-        model: string;
-        messages: ChatMessage[];
-        temperature: number;
-        max_tokens: number;
-        [key: string]: unknown;
-      }): Promise<unknown>;
+      create(
+        body: {
+          model: string;
+          messages: ChatMessage[];
+          temperature: number;
+          max_tokens: number;
+          [key: string]: unknown;
+        },
+        requestOptions?: { signal?: AbortSignal }
+      ): Promise<unknown>;
     };
   };
 }
@@ -69,6 +72,8 @@ export interface ChatOptions {
    * DeepSeek direct gets `thinking` + `reasoning_effort` (mapped). Unset = provider default.
    */
   reasoningEffort?: ReasoningEffort;
+  /** Abort signal for bounded LLM calls (judge/revise deadlines). */
+  signal?: AbortSignal;
   /** Test-only: inject OpenAI client */
   openaiClient?: OpenAI;
   /** Test-only: inject OpenRouter client */
@@ -204,29 +209,44 @@ function formatMessages(
  * Keeping the three public functions as thin wrappers preserves their
  * external signatures (used by tests and internal dispatchers).
  */
-async function callOpenAICompatible(
-  client: OpenAICompatibleChatClient,
-  providerLabel: string,
-  messages: Omit<ChatMessage, 'role'>[] | ChatMessage[],
-  systemPrompt: string,
-  model: string,
-  temperature: number,
-  maxTokens: number,
-  extraCreateParams?: Record<string, unknown>,
-): Promise<ChatResponse> {
+async function callOpenAICompatible(options: {
+  client: OpenAICompatibleChatClient;
+  providerLabel: string;
+  messages: Omit<ChatMessage, 'role'>[] | ChatMessage[];
+  systemPrompt: string;
+  model: string;
+  temperature: number;
+  maxTokens: number;
+  extraCreateParams?: Record<string, unknown>;
+  signal?: AbortSignal;
+}): Promise<ChatResponse> {
+  const {
+    client,
+    providerLabel,
+    messages,
+    systemPrompt,
+    model,
+    temperature,
+    maxTokens,
+    extraCreateParams,
+    signal,
+  } = options;
   const formattedMessages = formatMessages(messages);
   const fullMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     ...formattedMessages,
   ];
 
-  const response: unknown = await client.chat.completions.create({
-    model,
-    messages: fullMessages,
-    temperature,
-    max_tokens: maxTokens,
-    ...extraCreateParams,
-  });
+  const response: unknown = await client.chat.completions.create(
+    {
+      model,
+      messages: fullMessages,
+      temperature,
+      max_tokens: maxTokens,
+      ...extraCreateParams,
+    },
+    signal ? { signal } : undefined,
+  );
 
   // OpenRouter (and some gateway proxies) can return 200-shaped bodies without
   // `choices` — e.g. flex/model errors embedded as `{ error: ... }`. Guard so
@@ -341,15 +361,16 @@ async function callOpenAI(
 
   if (!model) throw new Error('model is required for callOpenAI');
 
-  return callOpenAICompatible(
-    getOpenAI(options),
-    'OpenAI',
+  return callOpenAICompatible({
+    client: getOpenAI(options),
+    providerLabel: 'OpenAI',
     messages,
     systemPrompt,
     model,
     temperature,
     maxTokens,
-  );
+    signal: options.signal,
+  });
 }
 
 /**
@@ -410,16 +431,18 @@ export async function callOpenRouter(
     ...buildOpenRouterReasoningParams(reasoningEffort),
   };
 
-  return callOpenAICompatible(
-    clientOverride ?? getOpenRouter(options),
-    'OpenRouter',
+  return callOpenAICompatible({
+    client: clientOverride ?? getOpenRouter(options),
+    providerLabel: 'OpenRouter',
     messages,
     systemPrompt,
     model,
     temperature,
     maxTokens,
-    Object.keys(extraCreateParams).length > 0 ? extraCreateParams : undefined,
-  );
+    extraCreateParams:
+      Object.keys(extraCreateParams).length > 0 ? extraCreateParams : undefined,
+    signal: options.signal,
+  });
 }
 
 export async function callDeepSeek(
@@ -442,16 +465,17 @@ export async function callDeepSeek(
   // tests where the prefix may still be present.
   const apiModel = stripProviderPrefix(model, 'deepseek');
 
-  return callOpenAICompatible(
-    getDeepSeek(options),
-    'DeepSeek',
+  return callOpenAICompatible({
+    client: getDeepSeek(options),
+    providerLabel: 'DeepSeek',
     messages,
     systemPrompt,
-    apiModel,
+    model: apiModel,
     temperature,
     maxTokens,
-    buildDeepSeekThinkingParams(reasoningEffort),
-  );
+    extraCreateParams: buildDeepSeekThinkingParams(reasoningEffort),
+    signal: options.signal,
+  });
 }
 
 type AnthropicModelAlias = keyof typeof anthropicModels;
@@ -554,13 +578,16 @@ export async function callAnthropic(
       content: msg.content,
     }));
 
-  const response = await anthropic.messages.create({
-    model,
-    system: systemPrompt,
-    messages: claudeMessages,
-    temperature,
-    max_tokens: maxTokens,
-  });
+  const response = await anthropic.messages.create(
+    {
+      model,
+      system: systemPrompt,
+      messages: claudeMessages,
+      temperature,
+      max_tokens: maxTokens,
+    },
+    options.signal ? { signal: options.signal } : undefined,
+  );
 
   const textContent = response.content.find(block => block.type === 'text');
   if (!textContent || textContent.type !== 'text') {
@@ -607,6 +634,7 @@ async function callGoogle(
     config: {
       temperature,
       maxOutputTokens: maxTokens,
+      ...(options.signal ? { abortSignal: options.signal } : {}),
     },
   });
 
