@@ -273,6 +273,39 @@ describe("critiqueCvDraft — adversarial judge", () => {
     );
   });
 
+  it("system prompt claims master CV ground truth only when masterCv is provided", async () => {
+    const withMaster = mockChatFn(VALID_JUDGE_OUTPUT);
+    await critiqueCvDraft(
+      {
+        curatedCv,
+        jobDescription,
+        curationMode: "strict",
+        masterCv: { name: "Master Candidate" },
+      },
+      { chat: withMaster }
+    );
+    const withMasterSys = (withMaster.mock.calls as Array<{ arguments: unknown[] }>)[0]
+      ?.arguments[1] as string;
+    assert.ok(
+      withMasterSys.includes("master CV as ground truth"),
+      "system prompt should instruct master-CV grounding when masterCv is provided"
+    );
+    assert.ok(!withMasterSys.includes("No master CV was provided"));
+
+    const withoutMaster = mockChatFn(VALID_JUDGE_OUTPUT);
+    await critiqueCvDraft(
+      { curatedCv, jobDescription, curationMode: "strict" },
+      { chat: withoutMaster }
+    );
+    const withoutMasterSys = (withoutMaster.mock.calls as Array<{ arguments: unknown[] }>)[0]
+      ?.arguments[1] as string;
+    assert.ok(
+      withoutMasterSys.includes("No master CV was provided"),
+      "system prompt should not claim master-CV access when masterCv is absent"
+    );
+    assert.ok(!withoutMasterSys.includes("master CV as ground truth"));
+  });
+
   it("does not include alignment dimension in strict mode", async () => {
     const chatFn = mockChatFn(VALID_JUDGE_OUTPUT);
     const result = await critiqueCvDraft(

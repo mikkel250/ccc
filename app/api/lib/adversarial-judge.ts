@@ -52,7 +52,7 @@ export interface CritiqueInput {
 // Prompt
 // ---------------------------------------------------------------------------
 
-const DEFAULT_ADVERSARIAL_JUDGE_PROMPT = `You are an experienced recruiter with 20+ years in the relevant industry. Review this CV critically — would you advance this candidate? What would make you reject them? You have access to the candidate's master CV as ground truth. Verify that every claim in the curated CV can be traced to a specific master CV entry.
+const DEFAULT_ADVERSARIAL_JUDGE_PROMPT = `You are an experienced recruiter with 20+ years in the relevant industry. Review this CV critically — would you advance this candidate? What would make you reject them? {{MASTER_CV_GROUNDING}}
 
 Evaluate the following dimensions:
 
@@ -79,19 +79,32 @@ Return ONLY valid JSON, no markdown wrapping:
   "overallAssessment": "..."
 }`;
 
+const MASTER_CV_GROUNDING_PRESENT =
+  "You have access to the candidate's master CV as ground truth. Verify that every claim in the curated CV can be traced to a specific master CV entry.";
+
+const MASTER_CV_GROUNDING_ABSENT =
+  "No master CV was provided for this review. Judge the curated CV on its face without assuming a master record.";
+
 const ALIGNMENT_SECTION_FLEXIBLE = `
 8. **alignmentIssues** (string[]): Does the cover letter directly contradict or misrepresent the CV?`;
 
-function buildJudgeSystemPrompt(curationMode: CurationMode): string {
+function buildJudgeSystemPrompt(
+  curationMode: CurationMode,
+  hasMasterCv: boolean
+): string {
   const basePrompt =
     getEnvString("ADVERSARIAL_JUDGE_PROMPT") ?? DEFAULT_ADVERSARIAL_JUDGE_PROMPT;
+  const withMasterGrounding = basePrompt.replace(
+    "{{MASTER_CV_GROUNDING}}",
+    hasMasterCv ? MASTER_CV_GROUNDING_PRESENT : MASTER_CV_GROUNDING_ABSENT
+  );
   if (curationMode === "flexible") {
-    return basePrompt.replace(
+    return withMasterGrounding.replace(
       "{{ALIGNMENT_SECTION}}",
       ALIGNMENT_SECTION_FLEXIBLE
     );
   }
-  return basePrompt.replace("{{ALIGNMENT_SECTION}}", "");
+  return withMasterGrounding.replace("{{ALIGNMENT_SECTION}}", "");
 }
 
 export function buildJudgeUserMessage(input: CritiqueInput): string {
@@ -173,7 +186,10 @@ export async function critiqueCvDraft(
   const chatFn = options?.chat ?? defaultChat;
   const model =
     getEnvString("ADVERSARIAL_JUDGE_MODEL") ?? getTailorModel();
-  const systemPrompt = buildJudgeSystemPrompt(input.curationMode);
+  const systemPrompt = buildJudgeSystemPrompt(
+    input.curationMode,
+    input.masterCv !== undefined && input.masterCv !== null
+  );
   const userMessage = buildJudgeUserMessage(input);
 
   const response = await chatFn(

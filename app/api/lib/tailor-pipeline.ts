@@ -13,6 +13,7 @@ import {
   getEnvNumber,
   getTailorModel,
   getTailorReasoningEffort,
+  type ReasoningEffort,
 } from "../../../lib/env";
 import { RateLimitError, ServiceError } from "./errors";
 import { getConfiguredTailorApiKey } from "./tailor-auth";
@@ -179,6 +180,7 @@ export interface TailorPipelineDeps {
         isFallback: boolean;
       };
       source: string;
+      reasoningEffort?: ReasoningEffort;
     }
   ) => Promise<{
     content: string;
@@ -207,6 +209,54 @@ export interface TailorPipelineDeps {
     | { ok: false; error: string }
   >;
   sanitizeForResponse: (data: unknown) => unknown;
+}
+
+/**
+ * Adapts pipeline `deps.chat` for the adversarial judge: default model/source
+ * and Langfuse prompt fallbacks without inlining that wiring at the call site.
+ */
+function buildJudgeChatAdapter(
+  chat: TailorPipelineDeps["chat"],
+  langfusePrompt: {
+    name: string;
+    version: number;
+    isFallback?: boolean;
+  } | null | undefined
+) {
+  return (
+    msgs: Parameters<TailorPipelineDeps["chat"]>[0] | Array<{ role?: string; content: string }>,
+    sysPrompt: string,
+    opts?: {
+      model?: string;
+      source?: string;
+      langfusePrompt?: {
+        name: string;
+        version: number;
+        isFallback?: boolean;
+      } | null;
+    }
+  ) =>
+    chat(msgs as Array<{ role: "user"; content: string }>, sysPrompt, {
+      model: opts?.model ?? getTailorModel(),
+      source: opts?.source ?? "tailor-cv-judge",
+      langfusePrompt: opts?.langfusePrompt
+        ? {
+            name: opts.langfusePrompt.name,
+            version: opts.langfusePrompt.version,
+            isFallback: opts.langfusePrompt.isFallback ?? false,
+          }
+        : langfusePrompt
+          ? {
+              name: langfusePrompt.name,
+              version: langfusePrompt.version,
+              isFallback: langfusePrompt.isFallback ?? false,
+            }
+          : {
+              name: CURATOR_LANGFUSE_PROMPT_NAME,
+              version: 0,
+              isFallback: true,
+            },
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -364,7 +414,7 @@ export async function buildTailorResponse(
             masterCv,
           },
           // Pass deps.chat so tests can mock the judge's LLM call
-          { chat: (msgs, sysPrompt, opts) => deps.chat(msgs as Array<{ role: "user"; content: string }>, sysPrompt, { model: opts?.model ?? getTailorModel(), source: opts?.source ?? "tailor-cv-judge", langfusePrompt: langfusePrompt ?? { name: CURATOR_LANGFUSE_PROMPT_NAME, version: 0, isFallback: true } }) }
+          { chat: buildJudgeChatAdapter(deps.chat, langfusePrompt) }
         );
 
         if (critique.ok) {
