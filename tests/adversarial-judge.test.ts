@@ -261,6 +261,21 @@ describe("critiqueCvDraft — adversarial judge", () => {
     }
   });
 
+  it("returns ok:false when the external signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const chatFn = mockChatFn(VALID_JUDGE_OUTPUT);
+    const result = await critiqueCvDraft(
+      { curatedCv, jobDescription, curationMode: "strict" },
+      { chat: chatFn, signal: controller.signal, timeoutMs: 500 }
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /cancelled/i);
+    }
+    assert.equal(chatFn.mock.callCount(), 0);
+  });
+
   it("passes cover letter to LLM in flexible mode", async () => {
     const chatFn = mockChatFn(VALID_JUDGE_OUTPUT);
     const coverLetter = "I am a seasoned leader transitioning into tech.";

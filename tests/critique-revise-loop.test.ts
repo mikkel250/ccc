@@ -170,20 +170,25 @@ describe("critique-revise loop — pipeline wiring", () => {
         // Revise call fails
         throw new Error("Revise service unavailable");
       }
+      if (callCount === 1) {
+        return {
+          content: JSON.stringify(FIXTURE_CURATED),
+          usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+          model: "anthropic/sonnet",
+          finishReason: "stop",
+        };
+      }
       return {
-        content:
-          callCount === 1
-            ? JSON.stringify(FIXTURE_CURATED)
-            : JSON.stringify({
-                narrativeCoherence: { score: 7, feedback: "Good." },
-                skepticismPreemption: { score: 7, feedback: "Fine." },
-                overqualificationRisk: { score: 7, feedback: "OK." },
-                atsViability: { score: 7, feedback: "Decent." },
-                redFlags: [],
-                hallucinationConcerns: [],
-                overallAssessment: "Looks fine.",
-              }),
-        usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+        content: JSON.stringify({
+          narrativeCoherence: { score: 7, feedback: "Good." },
+          skepticismPreemption: { score: 7, feedback: "Fine." },
+          overqualificationRisk: { score: 7, feedback: "OK." },
+          atsViability: { score: 7, feedback: "Decent." },
+          redFlags: [],
+          hallucinationConcerns: [],
+          overallAssessment: "Looks fine.",
+        }),
+        usage: { promptTokens: 5, completionTokens: 5, totalTokens: 10 },
         model: "anthropic/sonnet",
         finishReason: "stop",
       };
@@ -198,6 +203,8 @@ describe("critique-revise loop — pipeline wiring", () => {
     if (result.ok) {
       const curated = result.body.curatedJson as Record<string, unknown>;
       assert.equal(curated.name, FIXTURE_CURATED.name);
+      // Judge usage attributed before revise throws.
+      assert.equal(result.body.usage.totalTokens, 40);
     }
     assert.equal(callCount, 3);
   });

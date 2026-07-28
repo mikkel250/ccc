@@ -9,6 +9,7 @@ import { chat as defaultChat, type ChatMessage, type ChatResponse, type ChatOpti
 import { extractStructuredJson } from "./eval-parse";
 import { getEnvNumber, getEnvString, getTailorModel } from "../../../lib/env";
 import type { CurationMode } from "./curation-mode";
+import { withDeadline } from "./with-deadline";
 
 type ChatUsage = ChatResponse["usage"];
 
@@ -217,46 +218,18 @@ async function chatWithDeadline(
   },
   timeoutMs: number
 ): Promise<ChatResponse> {
-  const controller = new AbortController();
-  const onExternalAbort = () => controller.abort();
-  if (chatOptions.signal) {
-    if (chatOptions.signal.aborted) {
-      controller.abort();
-    } else {
-      chatOptions.signal.addEventListener("abort", onExternalAbort, {
-        once: true,
-      });
-    }
-  }
-
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const chatPromise = chatFn(messages, systemPrompt, {
-      ...chatOptions,
-      signal: controller.signal,
-    });
-    // Prevent unhandled rejection if timeout wins the race first.
-    void chatPromise.catch(() => undefined);
-    return await Promise.race([
-      chatPromise,
-      new Promise<never>((_, reject) => {
-        controller.signal.addEventListener(
-          "abort",
-          () => {
-            reject(
-              Object.assign(new Error("Judge call timed out"), {
-                name: "TimeoutError",
-              })
-            );
-          },
-          { once: true }
-        );
+  return withDeadline(
+    (signal) =>
+      chatFn(messages, systemPrompt, {
+        ...chatOptions,
+        signal,
       }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-    chatOptions.signal?.removeEventListener("abort", onExternalAbort);
-  }
+    {
+      timeoutMs,
+      label: "Judge call",
+      externalSignal: chatOptions.signal,
+    }
+  );
 }
 
 export async function critiqueCvDraft(
@@ -289,11 +262,11 @@ export async function critiqueCvDraft(
       timeoutMs
     );
   } catch (error: unknown) {
-    const aborted =
-      (error instanceof Error && error.name === "TimeoutError") ||
-      (error instanceof Error && /timed out/i.test(error.message));
-    if (aborted) {
+    if (error instanceof Error && error.name === "TimeoutError") {
       return { ok: false, error: "Judge call timed out" };
+    }
+    if (error instanceof Error && error.name === "AbortError") {
+      return { ok: false, error: "Judge call was cancelled" };
     }
     throw error;
   }

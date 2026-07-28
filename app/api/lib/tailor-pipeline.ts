@@ -26,6 +26,7 @@ import { CURATOR_LANGFUSE_PROMPT_NAME } from "./curator-prompt";
 import { isFlexibleWrapper } from "./curation-mode";
 import type { CurationMode } from "./curation-mode";
 import { critiqueCvDraft } from "./adversarial-judge";
+import { withDeadline } from "./with-deadline";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -281,36 +282,7 @@ async function withCallTimeout<T>(
   timeoutMs: number,
   label: string
 ): Promise<T> {
-  if (timeoutMs <= 0) {
-    throw Object.assign(new Error(`${label} timed out: no budget remaining`), {
-      name: "TimeoutError",
-    });
-  }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const runPromise = run(controller.signal);
-    void runPromise.catch(() => undefined);
-    return await Promise.race([
-      runPromise,
-      new Promise<never>((_, reject) => {
-        controller.signal.addEventListener(
-          "abort",
-          () => {
-            reject(
-              Object.assign(
-                new Error(`${label} timed out after ${timeoutMs}ms`),
-                { name: "TimeoutError" }
-              )
-            );
-          },
-          { once: true }
-        );
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
+  return withDeadline(run, { timeoutMs, label });
 }
 
 /** Whether revise output matches the step-8 structured contract for this mode. */
@@ -498,12 +470,15 @@ export async function buildTailorResponse(
         );
 
         if (critique.ok) {
+          // Attribute judge tokens before revise so a revise failure still
+          // reports draft + critique usage via the outer catch path.
+          finalUsage = addUsage(firstDraftResponse.usage, critique.usage);
+
           const remainingBeforeRevise = budgetDeadline - Date.now();
           if (remainingBeforeRevise <= 0) {
             console.error(
               "Critique-revise budget exhausted before revise — keeping first draft"
             );
-            finalUsage = addUsage(firstDraftResponse.usage, critique.usage);
           } else {
             // Build revise user message
             const reviseUserMessage = [
@@ -595,13 +570,8 @@ export async function buildTailorResponse(
             if (reviseParseOk) {
               finalContent = reviseResponse.content;
               finalModel = reviseResponse.model;
-              finalUsage = addUsage(
-                addUsage(firstDraftResponse.usage, critique.usage),
-                reviseResponse.usage
-              );
-            } else {
-              // Judge completed; discarded revise must not leak into totals.
-              finalUsage = addUsage(firstDraftResponse.usage, critique.usage);
+              // critique.usage already in finalUsage; add revise only.
+              finalUsage = addUsage(finalUsage, reviseResponse.usage);
             }
           }
         } else {
