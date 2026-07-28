@@ -45,13 +45,16 @@ export interface ChatResponse {
 export interface OpenAICompatibleChatClient {
   chat: {
     completions: {
-      create(body: {
-        model: string;
-        messages: ChatMessage[];
-        temperature: number;
-        max_tokens: number;
-        [key: string]: unknown;
-      }): Promise<unknown>;
+      create(
+        body: {
+          model: string;
+          messages: ChatMessage[];
+          temperature: number;
+          max_tokens: number;
+          [key: string]: unknown;
+        },
+        requestOptions?: { signal?: AbortSignal }
+      ): Promise<unknown>;
     };
   };
 }
@@ -206,17 +209,28 @@ function formatMessages(
  * Keeping the three public functions as thin wrappers preserves their
  * external signatures (used by tests and internal dispatchers).
  */
-async function callOpenAICompatible(
-  client: OpenAICompatibleChatClient,
-  providerLabel: string,
-  messages: Omit<ChatMessage, 'role'>[] | ChatMessage[],
-  systemPrompt: string,
-  model: string,
-  temperature: number,
-  maxTokens: number,
-  extraCreateParams?: Record<string, unknown>,
-  signal?: AbortSignal,
-): Promise<ChatResponse> {
+async function callOpenAICompatible(options: {
+  client: OpenAICompatibleChatClient;
+  providerLabel: string;
+  messages: Omit<ChatMessage, 'role'>[] | ChatMessage[];
+  systemPrompt: string;
+  model: string;
+  temperature: number;
+  maxTokens: number;
+  extraCreateParams?: Record<string, unknown>;
+  signal?: AbortSignal;
+}): Promise<ChatResponse> {
+  const {
+    client,
+    providerLabel,
+    messages,
+    systemPrompt,
+    model,
+    temperature,
+    maxTokens,
+    extraCreateParams,
+    signal,
+  } = options;
   const formattedMessages = formatMessages(messages);
   const fullMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -347,17 +361,16 @@ async function callOpenAI(
 
   if (!model) throw new Error('model is required for callOpenAI');
 
-  return callOpenAICompatible(
-    getOpenAI(options),
-    'OpenAI',
+  return callOpenAICompatible({
+    client: getOpenAI(options),
+    providerLabel: 'OpenAI',
     messages,
     systemPrompt,
     model,
     temperature,
     maxTokens,
-    undefined,
-    options.signal,
-  );
+    signal: options.signal,
+  });
 }
 
 /**
@@ -418,17 +431,18 @@ export async function callOpenRouter(
     ...buildOpenRouterReasoningParams(reasoningEffort),
   };
 
-  return callOpenAICompatible(
-    clientOverride ?? getOpenRouter(options),
-    'OpenRouter',
+  return callOpenAICompatible({
+    client: clientOverride ?? getOpenRouter(options),
+    providerLabel: 'OpenRouter',
     messages,
     systemPrompt,
     model,
     temperature,
     maxTokens,
-    Object.keys(extraCreateParams).length > 0 ? extraCreateParams : undefined,
-    options.signal,
-  );
+    extraCreateParams:
+      Object.keys(extraCreateParams).length > 0 ? extraCreateParams : undefined,
+    signal: options.signal,
+  });
 }
 
 export async function callDeepSeek(
@@ -451,17 +465,17 @@ export async function callDeepSeek(
   // tests where the prefix may still be present.
   const apiModel = stripProviderPrefix(model, 'deepseek');
 
-  return callOpenAICompatible(
-    getDeepSeek(options),
-    'DeepSeek',
+  return callOpenAICompatible({
+    client: getDeepSeek(options),
+    providerLabel: 'DeepSeek',
     messages,
     systemPrompt,
-    apiModel,
+    model: apiModel,
     temperature,
     maxTokens,
-    buildDeepSeekThinkingParams(reasoningEffort),
-    options.signal,
-  );
+    extraCreateParams: buildDeepSeekThinkingParams(reasoningEffort),
+    signal: options.signal,
+  });
 }
 
 type AnthropicModelAlias = keyof typeof anthropicModels;

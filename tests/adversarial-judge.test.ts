@@ -33,12 +33,27 @@ function ensureEnv() {
 }
 
 describe("critiqueCvDraft — adversarial judge", () => {
+  let previousJudgeModel: string | undefined;
+  let previousJudgePrompt: string | undefined;
+
   beforeEach(() => {
     ensureEnv();
+    previousJudgeModel = process.env.ADVERSARIAL_JUDGE_MODEL;
+    previousJudgePrompt = process.env.ADVERSARIAL_JUDGE_PROMPT;
   });
 
   afterEach(() => {
     mock.restoreAll();
+    if (previousJudgeModel === undefined) {
+      delete process.env.ADVERSARIAL_JUDGE_MODEL;
+    } else {
+      process.env.ADVERSARIAL_JUDGE_MODEL = previousJudgeModel;
+    }
+    if (previousJudgePrompt === undefined) {
+      delete process.env.ADVERSARIAL_JUDGE_PROMPT;
+    } else {
+      process.env.ADVERSARIAL_JUDGE_PROMPT = previousJudgePrompt;
+    }
   });
 
   const curatedCv = {
@@ -195,7 +210,6 @@ describe("critiqueCvDraft — adversarial judge", () => {
     const options = calls[0]?.arguments[2] as { model: string } | undefined;
     assert.ok(options?.model);
     assert.ok(options.model.includes("claude-haiku"));
-    delete process.env.ADVERSARIAL_JUDGE_MODEL;
   });
 
   it("passes custom system prompt when ADVERSARIAL_JUDGE_PROMPT is set", async () => {
@@ -215,7 +229,6 @@ describe("critiqueCvDraft — adversarial judge", () => {
       systemPrompt?.includes("No master CV was provided"),
       "missing {{MASTER_CV_GROUNDING}} must still append absent-master grounding"
     );
-    delete process.env.ADVERSARIAL_JUDGE_PROMPT;
   });
 
   it("appends alignment section in flexible mode when prompt omits placeholder", async () => {
@@ -229,7 +242,6 @@ describe("critiqueCvDraft — adversarial judge", () => {
     const calls = chatFn.mock.calls as Array<{ arguments: unknown[] }>;
     const systemPrompt = calls[0]?.arguments[1] as string | undefined;
     assert.ok(systemPrompt?.includes("alignmentIssues"));
-    delete process.env.ADVERSARIAL_JUDGE_PROMPT;
   });
 
   it("returns ok:false when judge call times out", async () => {

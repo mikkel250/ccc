@@ -51,8 +51,13 @@ describe("curation-mode", () => {
     const flexible = curationModePolicy("flexible");
     assert.match(strict, /Do not collapse/i);
     assert.match(flexible, /MODE: flexible/i);
-    assert.match(flexible, /cv-curator-flexible-pivot/i);
+    assert.match(flexible, /competency mapping/i);
+    assert.match(flexible, /career-pivot/i);
+    assert.match(flexible, /curated_cv/i);
+    assert.match(flexible, /cover_letter/i);
+    assert.match(flexible, /anti-hallucination/i);
     assert.match(flexible, /collapse a weak-fit cluster/i);
+    assert.doesNotMatch(flexible, /Langfuse/i);
     assert.match(flexible, /recency does not override weak/i);
     assert.match(flexible, /industry-agnostic/i);
   });
@@ -75,7 +80,8 @@ describe("curation-mode", () => {
     );
     // Flexible mode now injects the policy like strict mode — not a full replacement.
     assert.match(out, /MODE: flexible/);
-    assert.match(out, /cv-curator-flexible-pivot/);
+    assert.match(out, /competency mapping/i);
+    assert.doesNotMatch(out, /Langfuse/i);
     assert.doesNotMatch(out, /CURATION_MODE_POLICY/);
     assert.match(out, /^before\n/);
     assert.match(out, /\nafter$/);

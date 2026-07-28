@@ -2,20 +2,15 @@ import { describe, it, mock, afterEach, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { NextRequest } from "next/server";
 import { tailorCvDeps } from "../app/api/lib/tailor-cv-deps";
-import {
-  __injectRatelimitForTest,
-  __injectSecretRatelimitForTest,
-  getRateLimitConfig,
-} from "../app/api/lib/rate-limit";
 import { resetRedisClientForTest } from "../app/api/lib/redis";
 import {
-  createSlidingWindowMock,
-} from "../tests/helpers/rate-limit-mock";
+  authHeaders,
+  buildPostRequest,
+  ensureEnv,
+  injectSlidingWindowMock,
+} from "../tests/helpers/tailor-request";
 import { buildTailorResponse } from "../app/api/lib/tailor-pipeline";
-
-const TEST_API_KEY = "test-tailor-api-key";
 
 const FIXTURE_CURATED = JSON.parse(
   readFileSync(
@@ -24,61 +19,12 @@ const FIXTURE_CURATED = JSON.parse(
   )
 ) as Record<string, unknown>;
 
-function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  return {
-    authorization: `Bearer ${TEST_API_KEY}`,
-    ...extra,
-  };
-}
-
-function buildPostRequest(
-  body: string | undefined,
-  headers: Record<string, string> = {}
-): NextRequest {
-  return new NextRequest("http://localhost/api/tailor-cv", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...headers,
-    },
-    body,
-  });
-}
-
-function injectSlidingWindowMock() {
-  const cfg = getRateLimitConfig();
-  __injectRatelimitForTest(
-    createSlidingWindowMock({
-      maxRequests: cfg.maxRequests,
-      windowMs: cfg.windowMs,
-    })
-  );
-  __injectSecretRatelimitForTest(
-    createSlidingWindowMock({
-      maxRequests: cfg.maxRequests * 20,
-      windowMs: cfg.windowMs,
-    })
-  );
-}
-
-function ensureEnv() {
-  process.env.UPSTASH_REDIS_REST_URL =
-    process.env.UPSTASH_REDIS_REST_URL || "https://test.upstash.io";
-  process.env.UPSTASH_REDIS_REST_TOKEN =
-    process.env.UPSTASH_REDIS_REST_TOKEN || "test-token";
-  process.env.TAILOR_API_KEY = TEST_API_KEY;
-  delete process.env.TAILOR_AUTH_INSECURE_BYPASS;
-  process.env.NODE_ENV = "test";
-  // Enable critique-revise loop for these tests
-  process.env.CRITIQUE_REVISE_ENABLED = "true";
-}
-
 describe("critique-revise loop — pipeline wiring", () => {
   let previousCritiqueReviseEnabled: string | undefined;
 
   beforeEach(() => {
     previousCritiqueReviseEnabled = process.env.CRITIQUE_REVISE_ENABLED;
-    ensureEnv();
+    ensureEnv({ critiqueReviseEnabled: true });
     resetRedisClientForTest();
     injectSlidingWindowMock();
   });

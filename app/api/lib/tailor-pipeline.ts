@@ -154,10 +154,10 @@ export interface TailorPipelineDeps {
   requireMasterCv: () => Record<string, unknown>;
   getCuratorPrompt: (mode?: CurationMode) => Promise<{
     systemPrompt: string;
-    langfusePrompt: {
+    langfusePrompt?: {
       name: string;
       version: number;
-      isFallback: boolean;
+      isFallback?: boolean;
     } | null;
   }>;
   applyCurationModePolicy: (prompt: string, mode: CurationMode) => string;
@@ -177,7 +177,7 @@ export interface TailorPipelineDeps {
       langfusePrompt: {
         name: string;
         version: number;
-        isFallback: boolean;
+        isFallback?: boolean;
       };
       source: string;
       reasoningEffort?: ReasoningEffort;
@@ -551,18 +551,40 @@ export async function buildTailorResponse(
               "Revise call"
             );
 
-            // Adopt the revise only if it matches the step-8 structured contract.
-            // Unparseable / wrong-shape revise falls back to the first draft.
+            // Adopt the revise only if it matches the step-8 structured contract
+            // and passes schema + size checks. Otherwise keep the first draft.
             let reviseParseOk = false;
             try {
               const reviseParsed = deps.extractStructuredJson(
                 reviseResponse.content
               );
-              reviseParseOk = isValidRevisePayload(reviseParsed, curationMode);
-              if (!reviseParseOk) {
+              if (!isValidRevisePayload(reviseParsed, curationMode)) {
                 console.error(
                   "Revise output failed structured contract — keeping first draft"
                 );
+              } else {
+                const curatedRaw =
+                  curationMode === "flexible" &&
+                  isFlexibleWrapper(reviseParsed)
+                    ? reviseParsed.curated_cv
+                    : reviseParsed;
+                const schemaResult = deps.validateCvJson(curatedRaw);
+                if (!schemaResult.ok) {
+                  console.error(
+                    "Revise output failed schema validation — keeping first draft"
+                  );
+                } else {
+                  const sizeResult = deps.assertCuratedJsonSize(
+                    schemaResult.data
+                  );
+                  if (!sizeResult.ok) {
+                    console.error(
+                      "Revise output failed curated JSON size check — keeping first draft"
+                    );
+                  } else {
+                    reviseParseOk = true;
+                  }
+                }
               }
             } catch {
               console.error(

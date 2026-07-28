@@ -141,10 +141,10 @@ export function curationModePolicy(mode: CurationMode): string {
   }
 
   return `MODE: flexible.
-Authoritative process, output format, and guardrails live in Langfuse prompt
-cv-curator-flexible-pivot (competency mapping, career-pivot posture, curated_cv +
-cover_letter JSON output, anti-hallucination guardrails). Collapse a weak-fit cluster
-is allowed; recency does not override weak JD fit; rules are industry-agnostic.`;
+Competency mapping and career-pivot posture: map JD competencies to verifiable
+master CV evidence; emit curated_cv plus cover_letter JSON; apply anti-hallucination
+guardrails. Collapse a weak-fit cluster is allowed; recency does not override weak
+JD fit; rules are industry-agnostic.`;
 }
 
 /**
