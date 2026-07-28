@@ -20,6 +20,16 @@ export function getEnvNumber(key: string, defaultValue: number): number {
   return parseEnvNumeric(key, defaultValue, (raw) => parseInt(raw, 10));
 }
 
+/**
+ * Bound free-form diagnostic strings embedded in thrown errors / safe logs.
+ * Default 200 chars; override via SAFE_LOG_DETAIL_MAX_CHARS.
+ */
+export function truncateSafeLogDetail(value: string): string {
+  const max = Math.max(1, getEnvNumber("SAFE_LOG_DETAIL_MAX_CHARS", 200));
+  if (value.length <= max) return value;
+  return `${value.slice(0, max)}…`;
+}
+
 /** Float env parse — use for fractional thresholds (getEnvNumber uses parseInt). */
 export function getEnvFloat(key: string, defaultValue: number): number {
   return parseEnvNumeric(key, defaultValue, (raw) => {
@@ -109,6 +119,38 @@ export function getDefaultLlmModel(): string {
 
 export function getTailorModel(): string {
   return validateDefaultModel(process.env.TAILOR_MODEL || DEFAULT_TAILOR_MODEL);
+}
+
+/** OpenRouter-style reasoning effort levels (provider maps unsupported values). */
+export const REASONING_EFFORTS = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
+function isReasoningEffort(value: string): value is ReasoningEffort {
+  return (REASONING_EFFORTS as readonly string[]).includes(value);
+}
+
+/**
+ * Optional explicit reasoning effort for tailor-cv LLM calls.
+ * Unset/blank → omit param (provider defaults). Invalid values fail closed.
+ */
+export function getTailorReasoningEffort(): ReasoningEffort | undefined {
+  const raw = process.env.TAILOR_REASONING_EFFORT?.trim();
+  if (!raw) return undefined;
+  const normalized = raw.toLowerCase();
+  if (!isReasoningEffort(normalized)) {
+    throw new Error(
+      `TAILOR_REASONING_EFFORT must be one of: ${REASONING_EFFORTS.join(", ")} (got "${raw}")`
+    );
+  }
+  return normalized;
 }
 
 export function getEvalJudgeModel(): string {

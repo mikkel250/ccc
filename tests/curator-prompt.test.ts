@@ -28,6 +28,38 @@ describe("curator-prompt", () => {
     assert.doesNotMatch(text, /Collapse when appropriate/i);
   });
 
+  it("fallback mandates dropping (not merely reordering) off-domain skills and certifications", () => {
+    const text = getCuratorPromptFallbackText();
+    // Soft "if needed" language let low-relevance skill categories survive; must be mandatory.
+    assert.doesNotMatch(text, /if needed/i);
+    assert.match(text, /categories with low or zero JD relevance/i);
+    assert.match(text, /drop off-domain certifications/i);
+  });
+
+  it("fallback includes an industry-agnostic worked example of cross-section culling (Gemini needs few-shot)", () => {
+    const text = getCuratorPromptFallbackText();
+    assert.match(text, /<example>/);
+    assert.match(text, /<\/example>/);
+    // Keep the example abstract/generic, not tied to any one industry.
+    assert.doesNotMatch(text, /restaurant|software engineer/i);
+  });
+
+  it("Objective Value Statement is no longer evergreen — no summary array position is exempt", () => {
+    const text = getCuratorPromptFallbackText();
+    assert.doesNotMatch(text, /evergreen, don't rewrite it per JD/i);
+    assert.match(text, /no (summary array position|section or array position) is exempt/i);
+    assert.match(text, /replace it/i);
+  });
+
+  it("fallback requires a silent per-item JD-relevance cut audit before emitting", () => {
+    const text = getCuratorPromptFallbackText();
+    assert.match(text, /JD-relevant justification/i);
+    assert.match(text, /cut anything you cannot justify/i);
+    assert.match(text, /Silent cut audit \(never print this\)/i);
+    assert.match(text, /Do not write the audit, Keyword Bank/i);
+    assert.match(text, /first non-whitespace character must be `\{`/i);
+  });
+
   it("compileCuratorPrompt injects master JSON", () => {
     const compiled = compileCuratorPrompt("MASTER={{MASTER_CV_JSON}}", {
       name: "X",

@@ -78,4 +78,24 @@ describe("curation-mode", () => {
     assert.match(groundingJudgeModeAddendum("strict"), /NOT acceptable/i);
     assert.match(groundingJudgeModeAddendum("flexible"), /Accept collapsing/i);
   });
+
+  it("both modes extend JD-fit culling to summary, skills, and certifications (not just experience)", () => {
+    const strict = curationModePolicy("strict");
+    const flexible = curationModePolicy("flexible");
+    for (const policy of [strict, flexible]) {
+      assert.match(policy, /not limited to experience/i);
+      assert.match(policy, /summary/i);
+      assert.match(policy, /skill/i);
+      assert.match(policy, /certification/i);
+    }
+    // Mode-specific cull contracts: require removal verbs, reject reorder/de-emphasize-only.
+    assert.match(strict, /Drop off-domain summary bullets/i);
+    assert.match(strict, /cut, don't just deprioritize/i);
+    assert.match(strict, /rather than merely reordering/i);
+    assert.match(flexible, /Drop off-domain summary bullets/i);
+    assert.match(flexible, /rather than merely\s+reordering or de-emphasizing/i);
+    assert.doesNotMatch(flexible, /Cut or de-emphasize/i);
+    // Keep the mode block industry-agnostic per prior invariant.
+    assert.doesNotMatch(flexible, /restaurant|software engineer|non-tech/i);
+  });
 });

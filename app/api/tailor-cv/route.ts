@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 import { isIP } from "node:net";
 import { NextRequest, NextResponse } from "next/server";
 import { validateTailorCvBody } from "../lib/tailor-cv-validation";
-import { getTailorModel } from "../../../lib/env";
+import { getTailorModel, getTailorReasoningEffort } from "../../../lib/env";
 import { RateLimitError, ServiceError } from "../lib/errors";
 import { tailorCvDeps } from "../lib/tailor-cv-deps";
 import { getConfiguredTailorApiKey } from "../lib/tailor-auth";
@@ -19,6 +19,7 @@ import {
   getTailorResponseMaxBytes,
 } from "../lib/cv-schema";
 import { CURATOR_LANGFUSE_PROMPT_NAME } from "../lib/curator-prompt";
+import { describeJsonParseFailure } from "../lib/eval-parse";
 
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" } as const;
 
@@ -215,6 +216,7 @@ export async function POST(request: NextRequest) {
       systemPrompt,
       {
         model: getTailorModel(),
+        reasoningEffort: getTailorReasoningEffort(),
         langfusePrompt: langfusePrompt ?? {
           name: CURATOR_LANGFUSE_PROMPT_NAME,
           version: 0,
@@ -227,8 +229,15 @@ export async function POST(request: NextRequest) {
     let curatedRaw: unknown;
     try {
       curatedRaw = tailorCvDeps.extractStructuredJson(llmResponse.content);
-    } catch {
-      safeTailorLog("Curator output was not valid JSON");
+    } catch (parseError) {
+      safeTailorLog(
+        `Curator output was not valid JSON (${describeJsonParseFailure({
+          content: llmResponse.content,
+          finishReason: llmResponse.finishReason,
+          completionTokens: llmResponse.usage?.completionTokens,
+          parseError,
+        })})`
+      );
       return jsonResponse(
         { error: "Curator output was not valid JSON" },
         422

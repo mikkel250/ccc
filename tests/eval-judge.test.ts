@@ -13,7 +13,10 @@ import {
   scoreExtraction,
   resolveJudgeModel,
 } from "../app/api/lib/eval-judge";
-import { extractStructuredJson } from "../app/api/lib/eval-parse";
+import {
+  describeJsonParseFailure,
+  extractStructuredJson,
+} from "../app/api/lib/eval-parse";
 import {
   CANDIDATE_GENERATION_MODELS,
   DEFAULT_EVAL_EXTRACTION_MODEL,
@@ -106,6 +109,41 @@ describe("extractStructuredJson", () => {
       () => extractStructuredJson("This is not JSON at all."),
       /json|parse/i
     );
+  });
+});
+
+describe("describeJsonParseFailure", () => {
+  it("summarizes shape without including response body (PII-safe)", () => {
+    const summary = describeJsonParseFailure({
+      content: '{"name":"SECRET PERSON","email":"secret@example.com"}',
+      finishReason: "length",
+      completionTokens: 8000,
+      parseError: new SyntaxError("Unexpected end of JSON input"),
+    });
+    assert.match(summary, /len=\d+/);
+    assert.match(summary, /finish=length/);
+    assert.match(summary, /completionTokens=8000/);
+    assert.match(summary, /startsBrace=true/);
+    assert.match(summary, /Unexpected end of JSON input/);
+    assert.doesNotMatch(summary, /SECRET PERSON|secret@example\.com/i);
+  });
+
+  it("truncates oversized parseError messages for bounded logs", () => {
+    const previous = process.env.SAFE_LOG_DETAIL_MAX_CHARS;
+    process.env.SAFE_LOG_DETAIL_MAX_CHARS = "40";
+    try {
+      const summary = describeJsonParseFailure({
+        content: "{",
+        parseError: new Error("x".repeat(200)),
+      });
+      const match = summary.match(/parseError=(.*)$/);
+      assert.ok(match);
+      assert.ok(match[1]!.length <= 41); // 40 chars + ellipsis
+      assert.match(match[1]!, /…$/);
+    } finally {
+      if (previous === undefined) delete process.env.SAFE_LOG_DETAIL_MAX_CHARS;
+      else process.env.SAFE_LOG_DETAIL_MAX_CHARS = previous;
+    }
   });
 });
 
