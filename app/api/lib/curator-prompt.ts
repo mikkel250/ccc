@@ -7,11 +7,13 @@ import { randomBytes } from "node:crypto";
 import { getEnvNumber } from "../../../lib/env";
 import {
   CURATION_MODE_POLICY_PLACEHOLDER,
+  FLEXIBLE_PIVOT_FALLBACK_PROMPT,
   type CurationMode,
 } from "./curation-mode";
 import { initLangFuse } from "./tracers/langfuse";
 
 export const CURATOR_LANGFUSE_PROMPT_NAME = "cv-curator-json";
+export const FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME = "cv-curator-flexible-pivot";
 export const MASTER_CV_JSON_PLACEHOLDER = "{{MASTER_CV_JSON}}";
 /** Langfuse prompt cache TTL (seconds). Default 300. */
 const CURATOR_PROMPT_CACHE_TTL_SECONDS = Math.max(
@@ -145,16 +147,24 @@ export function getCuratorPromptFallbackText(): string {
   return FALLBACK_PROMPT;
 }
 
-export async function getCuratorPrompt(): Promise<{
+export async function getCuratorPrompt(mode?: CurationMode): Promise<{
   systemPrompt: string;
   langfusePrompt?: { name: string; version: number; isFallback?: boolean };
 }> {
+  const isFlexible = mode === "flexible";
+  const promptName = isFlexible
+    ? FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME
+    : CURATOR_LANGFUSE_PROMPT_NAME;
+  const fallbackPrompt = isFlexible
+    ? FLEXIBLE_PIVOT_FALLBACK_PROMPT
+    : FALLBACK_PROMPT;
+
   const client = initLangFuse();
   if (!client) {
     return {
-      systemPrompt: FALLBACK_PROMPT,
+      systemPrompt: fallbackPrompt,
       langfusePrompt: {
-        name: CURATOR_LANGFUSE_PROMPT_NAME,
+        name: promptName,
         version: 0,
         isFallback: true,
       },
@@ -162,7 +172,7 @@ export async function getCuratorPrompt(): Promise<{
   }
 
   try {
-    const prompt = await client.prompt.get(CURATOR_LANGFUSE_PROMPT_NAME, {
+    const prompt = await client.prompt.get(promptName, {
       label: "production",
       cacheTtlSeconds: CURATOR_PROMPT_CACHE_TTL_SECONDS,
     });
@@ -173,13 +183,13 @@ export async function getCuratorPrompt(): Promise<{
     };
   } catch (error) {
     console.warn(
-      "Langfuse curator prompt fetch failed, using hardcoded fallback:",
+      `Langfuse prompt fetch failed for "${promptName}", using hardcoded fallback:`,
       error instanceof Error ? error.message : String(error)
     );
     return {
-      systemPrompt: FALLBACK_PROMPT,
+      systemPrompt: fallbackPrompt,
       langfusePrompt: {
-        name: CURATOR_LANGFUSE_PROMPT_NAME,
+        name: promptName,
         version: 0,
         isFallback: true,
       },
@@ -237,7 +247,8 @@ export function buildCuratorUserMessage(
     `---END_JD_${nonce}---`,
     "</job_description>",
     "",
-    "Respond with curated CV JSON only (same schema as master).",
-    "The response must start with { and end with } — no prose, audit notes, or markdown fences.",
+    curationMode === "flexible"
+      ? "Respond with a JSON object containing curated_cv (the curated CV per the master schema) and cover_letter (a markdown cover letter)."
+      : "Respond with curated CV JSON only (same schema as master). The response must start with { and end with } — no prose, audit notes, or markdown fences.",
   ].join("\n");
 }

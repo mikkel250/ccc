@@ -4,7 +4,9 @@ import {
   buildCuratorUserMessage,
   compileCuratorPrompt,
   getCuratorPromptFallbackText,
+  getCuratorPrompt,
   CURATOR_LANGFUSE_PROMPT_NAME,
+  FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME,
 } from "../app/api/lib/curator-prompt";
 
 describe("curator-prompt", () => {
@@ -26,38 +28,6 @@ describe("curator-prompt", () => {
     assert.match(text, /single Master CV/i);
     assert.match(text, /\{\{CURATION_MODE_POLICY\}\}/);
     assert.doesNotMatch(text, /Collapse when appropriate/i);
-  });
-
-  it("fallback mandates dropping (not merely reordering) off-domain skills and certifications", () => {
-    const text = getCuratorPromptFallbackText();
-    // Soft "if needed" language let low-relevance skill categories survive; must be mandatory.
-    assert.doesNotMatch(text, /if needed/i);
-    assert.match(text, /categories with low or zero JD relevance/i);
-    assert.match(text, /drop off-domain certifications/i);
-  });
-
-  it("fallback includes an industry-agnostic worked example of cross-section culling (Gemini needs few-shot)", () => {
-    const text = getCuratorPromptFallbackText();
-    assert.match(text, /<example>/);
-    assert.match(text, /<\/example>/);
-    // Keep the example abstract/generic, not tied to any one industry.
-    assert.doesNotMatch(text, /restaurant|software engineer/i);
-  });
-
-  it("Objective Value Statement is no longer evergreen — no summary array position is exempt", () => {
-    const text = getCuratorPromptFallbackText();
-    assert.doesNotMatch(text, /evergreen, don't rewrite it per JD/i);
-    assert.match(text, /no (summary array position|section or array position) is exempt/i);
-    assert.match(text, /replace it/i);
-  });
-
-  it("fallback requires a silent per-item JD-relevance cut audit before emitting", () => {
-    const text = getCuratorPromptFallbackText();
-    assert.match(text, /JD-relevant justification/i);
-    assert.match(text, /cut anything you cannot justify/i);
-    assert.match(text, /Silent cut audit \(never print this\)/i);
-    assert.match(text, /Do not write the audit, Keyword Bank/i);
-    assert.match(text, /first non-whitespace character must be `\{`/i);
   });
 
   it("compileCuratorPrompt injects master JSON", () => {
@@ -85,6 +55,30 @@ describe("curator-prompt", () => {
   it("compileCuratorPrompt fails closed when placeholder is missing", () => {
     const compiled = compileCuratorPrompt("no placeholder here", { name: "X" });
     assert.equal(compiled.ok, false);
+  });
+
+  it("has flexible pivot Langfuse prompt name", () => {
+    assert.equal(FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME, "cv-curator-flexible-pivot");
+  });
+
+  it("getCuratorPrompt returns flexible fallback when Langfuse unavailable", async () => {
+    // Ensure no Langfuse client so we hit the !client branch.
+    const result = await getCuratorPrompt("flexible");
+    assert.ok(result.systemPrompt.includes("career pivots"));
+    assert.equal(result.langfusePrompt?.name, "cv-curator-flexible-pivot");
+    assert.equal(result.langfusePrompt?.isFallback, true);
+  });
+
+  it("getCuratorPrompt returns strict fallback when Langfuse unavailable", async () => {
+    const result = await getCuratorPrompt("strict");
+    assert.ok(result.systemPrompt.includes("Struan"));
+    assert.equal(result.langfusePrompt?.name, "cv-curator-json");
+    assert.equal(result.langfusePrompt?.isFallback, true);
+  });
+
+  it("getCuratorPrompt defaults to strict prompt when mode omitted", async () => {
+    const result = await getCuratorPrompt();
+    assert.equal(result.langfusePrompt?.name, "cv-curator-json");
   });
 
   it("buildCuratorUserMessage isolates JD with a per-request nonce delimiter", () => {

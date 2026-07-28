@@ -59,8 +59,8 @@ export function getEnvBoolean(key: string, defaultValue: boolean): boolean {
   const raw = process.env[key];
   if (!raw) return defaultValue;
   const lowered = raw.toLowerCase();
-  if (['true', '1', 'yes'].includes(lowered)) return true;
-  if (['false', '0', 'no'].includes(lowered)) return false;
+  if (['true', '1', 'yes', 'on'].includes(lowered)) return true;
+  if (['false', '0', 'no', 'off'].includes(lowered)) return false;
   return defaultValue;
 }
 
