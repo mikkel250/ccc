@@ -286,7 +286,7 @@ Based on a July 2026 controlled experiment (15 models, identical review prompts,
 agent --model auto --force -p "<prompt>"
 ```
 
-Available Cursor models: `auto`, `composer-2.5`, `grok-4.5`. Use `--force` to skip confirmation prompts. This is the preferred path for expensive/large tasks in Pi that— route through Cursor CLI instead of paying OpenRouter. |
+Available Cursor models: `auto`, `composer-2.5`, `grok-4.5`. Use `--force` to skip confirmation prompts. This is the preferred path for expensive/large tasks in Pi that should route through the Cursor CLI instead of paying OpenRouter. |
 | **Breadth** | `deepseek/deepseek-v4-pro` |
 | **Precision** | `openrouter/moonshotai/kimi-latest:max` |
 | **Second opinion** | `openrouter/z-ai/glm-5.1:max` or `cursor-grok-4.5-high` |
