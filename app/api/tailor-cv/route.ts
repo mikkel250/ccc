@@ -234,7 +234,7 @@ export async function POST(request: NextRequest) {
         `Curator output was not valid JSON (${describeJsonParseFailure({
           content: llmResponse.content,
           finishReason: llmResponse.finishReason,
-          completionTokens: llmResponse.usage.completionTokens,
+          completionTokens: llmResponse.usage?.completionTokens,
           parseError,
         })})`
       );

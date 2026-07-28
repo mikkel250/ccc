@@ -127,6 +127,24 @@ describe("describeJsonParseFailure", () => {
     assert.match(summary, /Unexpected end of JSON input/);
     assert.doesNotMatch(summary, /SECRET PERSON|secret@example\.com/i);
   });
+
+  it("truncates oversized parseError messages for bounded logs", () => {
+    const previous = process.env.SAFE_LOG_DETAIL_MAX_CHARS;
+    process.env.SAFE_LOG_DETAIL_MAX_CHARS = "40";
+    try {
+      const summary = describeJsonParseFailure({
+        content: "{",
+        parseError: new Error("x".repeat(200)),
+      });
+      const match = summary.match(/parseError=(.*)$/);
+      assert.ok(match);
+      assert.ok(match[1]!.length <= 41); // 40 chars + ellipsis
+      assert.match(match[1]!, /…$/);
+    } finally {
+      if (previous === undefined) delete process.env.SAFE_LOG_DETAIL_MAX_CHARS;
+      else process.env.SAFE_LOG_DETAIL_MAX_CHARS = previous;
+    }
+  });
 });
 
 describe("resolveJudgeModel", () => {

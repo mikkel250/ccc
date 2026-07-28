@@ -307,9 +307,7 @@ Respond with JSON only:
 )!;
 
 /** Smoke JD-fit judge: 1–5 how well curated JSON fits the JD without fabricating. */
-export const JSON_JD_FIT_JUDGE_PROMPT = getEnvString(
-  "JSON_JD_FIT_JUDGE_PROMPT",
-  `You are an expert evaluator scoring how well curated CV JSON fits a job description.
+export const DEFAULT_JSON_JD_FIT_JUDGE_PROMPT = `You are an expert evaluator scoring how well curated CV JSON fits a job description.
 
 Use master JSON only to understand what content was available. Score JD fit of the curated subset:
 1 — Unrelated or generic relative to the JD.
@@ -327,6 +325,10 @@ should lower the score even when must-haves are otherwise covered. A tailored CV
 as one coherent, JD-relevant narrative, not two unrelated careers stapled together.
 
 Respond with JSON only:
-{"score": <1-5 integer>, "reasoning": "<brief explanation>"}`
+{"score": <1-5 integer>, "reasoning": "<brief explanation>"}`;
+
+export const JSON_JD_FIT_JUDGE_PROMPT = getEnvString(
+  "JSON_JD_FIT_JUDGE_PROMPT",
+  DEFAULT_JSON_JD_FIT_JUDGE_PROMPT
 )!;
 

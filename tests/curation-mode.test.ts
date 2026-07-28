@@ -88,6 +88,13 @@ describe("curation-mode", () => {
       assert.match(policy, /skill/i);
       assert.match(policy, /certification/i);
     }
+    // Mode-specific cull contracts: require removal verbs, reject reorder/de-emphasize-only.
+    assert.match(strict, /Drop off-domain summary bullets/i);
+    assert.match(strict, /cut, don't just deprioritize/i);
+    assert.match(strict, /rather than merely reordering/i);
+    assert.match(flexible, /Drop off-domain summary bullets/i);
+    assert.match(flexible, /rather than merely\s+reordering or de-emphasizing/i);
+    assert.doesNotMatch(flexible, /Cut or de-emphasize/i);
     // Keep the mode block industry-agnostic per prior invariant.
     assert.doesNotMatch(flexible, /restaurant|software engineer|non-tech/i);
   });

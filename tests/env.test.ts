@@ -11,6 +11,7 @@ import {
   getLLMConfig,
   getTailorModel,
   getDefaultCurationMode,
+  truncateSafeLogDetail,
 } from "../lib/env";
 import { KNOWN_PROVIDERS as KNOWN_PROVIDERS_FROM_PROVIDERS } from "../lib/providers";
 import { KNOWN_PROVIDERS as KNOWN_PROVIDERS_FROM_LLM } from "../app/api/lib/llm";
@@ -72,6 +73,26 @@ describe("getEnvString", () => {
   it("returns env value when non-empty", () => {
     process.env[key] = "custom-value";
     assert.equal(getEnvString(key, "fallback"), "custom-value");
+  });
+});
+
+describe("truncateSafeLogDetail", () => {
+  const key = "SAFE_LOG_DETAIL_MAX_CHARS";
+  const previous = process.env[key];
+
+  afterEach(() => {
+    if (previous === undefined) delete process.env[key];
+    else process.env[key] = previous;
+  });
+
+  it("returns short strings unchanged", () => {
+    delete process.env[key];
+    assert.equal(truncateSafeLogDetail("ok"), "ok");
+  });
+
+  it("truncates to SAFE_LOG_DETAIL_MAX_CHARS with ellipsis", () => {
+    process.env[key] = "8";
+    assert.equal(truncateSafeLogDetail("abcdefghij"), "abcdefgh…");
   });
 });
 

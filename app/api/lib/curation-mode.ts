@@ -48,9 +48,10 @@ export function curationModePolicy(mode: CurationMode): string {
 - Rules are industry-agnostic: the same posture applies whether the JD is technical,
   operational, creative, service, or any other domain.
 - This fit-first posture is not limited to experience[]: apply the same rigor to summary
-  bullets, skill categories, and certifications. Cut or de-emphasize off-domain summary
-  bullets, skill categories, and certifications that undermine the JD narrative — do not
-  leave a tailored CV reading like two unrelated careers stapled together.`;
+  bullets, skill categories, and certifications. Drop off-domain summary bullets, skill
+  categories, and certifications that undermine the JD narrative rather than merely
+  reordering or de-emphasizing them — do not leave a tailored CV reading like two
+  unrelated careers stapled together.`;
 }
 
 /**

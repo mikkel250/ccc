@@ -1,5 +1,7 @@
 /** Shared LLM JSON parsing helpers for eval judge and extract modules. */
 
+import { truncateSafeLogDetail } from "../../../lib/env";
+
 export function extractStructuredJson(llmResponse: string): unknown {
   const trimmed = llmResponse.trim();
   if (!trimmed) {
@@ -31,10 +33,11 @@ export function describeJsonParseFailure(params: {
 }): string {
   const content = params.content ?? "";
   const trimmed = content.trimStart();
-  const parseError =
+  const parseError = truncateSafeLogDetail(
     params.parseError instanceof Error
       ? params.parseError.message
-      : String(params.parseError);
+      : String(params.parseError)
+  );
   return [
     `len=${content.length}`,
     `finish=${params.finishReason ?? "null"}`,

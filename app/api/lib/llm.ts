@@ -11,7 +11,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
 import { recordLangSmithTrace, recordLangfuseTrace, type LangfusePromptRef } from './tracers';
 import { toTraceOptions, type TracePayload } from './tracers/tracer';
-import { getDeepSeekBaseUrl, getEnvNumber, getLLMConfig, getDefaultLlmModel } from '../../../lib/env';
+import { getDeepSeekBaseUrl, getEnvNumber, getLLMConfig, getDefaultLlmModel, truncateSafeLogDetail } from '../../../lib/env';
 import type { ReasoningEffort } from '../../../lib/env';
 import { KNOWN_PROVIDERS, type Provider } from '../../../lib/providers';
 import anthropicModels from '../../../config/anthropic-models.json';
@@ -36,6 +36,24 @@ export interface ChatResponse {
   };
   model: string;
   finishReason: string | null;
+}
+
+/**
+ * Minimal OpenAI-compatible chat.completions.create seam used by callOpenAI /
+ * callOpenRouter / callDeepSeek. Response is unknown so callers narrow safely.
+ */
+export interface OpenAICompatibleChatClient {
+  chat: {
+    completions: {
+      create(body: {
+        model: string;
+        messages: ChatMessage[];
+        temperature: number;
+        max_tokens: number;
+        [key: string]: unknown;
+      }): Promise<unknown>;
+    };
+  };
 }
 
 export interface ChatOptions {
@@ -187,7 +205,7 @@ function formatMessages(
  * external signatures (used by tests and internal dispatchers).
  */
 async function callOpenAICompatible(
-  client: OpenAI,
+  client: OpenAICompatibleChatClient,
   providerLabel: string,
   messages: Omit<ChatMessage, 'role'>[] | ChatMessage[],
   systemPrompt: string,
@@ -202,7 +220,7 @@ async function callOpenAICompatible(
     ...formattedMessages,
   ];
 
-  const response = await client.chat.completions.create({
+  const response: unknown = await client.chat.completions.create({
     model,
     messages: fullMessages,
     temperature,
@@ -213,25 +231,100 @@ async function callOpenAICompatible(
   // OpenRouter (and some gateway proxies) can return 200-shaped bodies without
   // `choices` — e.g. flex/model errors embedded as `{ error: ... }`. Guard so
   // we throw a clear provider error instead of TypeError on `choices[0]`.
-  const choice = response.choices?.[0];
-  if (!choice || !choice.message) {
-    const embedded =
-      response && typeof response === "object" && "error" in response
-        ? ` — ${JSON.stringify((response as { error: unknown }).error)}`
-        : "";
-    throw new Error(`No response from ${providerLabel}${embedded}`);
+  const choice = openAICompatibleChoice(response);
+  const content = choice?.message?.content;
+  if (
+    !choice?.message ||
+    typeof content !== "string" ||
+    content.length === 0
+  ) {
+    throw new Error(
+      `No response from ${providerLabel}${embeddedOpenAICompatibleError(response)}`
+    );
   }
 
+  const usage = openAICompatibleUsage(response);
+  const modelName = openAICompatibleModel(response);
+
   return {
-    content: choice.message.content || '',
+    content,
     usage: {
-      promptTokens: response.usage?.prompt_tokens || 0,
-      completionTokens: response.usage?.completion_tokens || 0,
-      totalTokens: response.usage?.total_tokens || 0,
+      promptTokens: usage?.prompt_tokens || 0,
+      completionTokens: usage?.completion_tokens || 0,
+      totalTokens: usage?.total_tokens || 0,
     },
-    model: response.model,
-    finishReason: choice.finish_reason,
+    model: modelName,
+    finishReason:
+      typeof choice.finish_reason === "string" ? choice.finish_reason : null,
   };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function embeddedOpenAICompatibleError(response: unknown): string {
+  if (!isPlainObject(response) || !("error" in response)) {
+    return "";
+  }
+  try {
+    const raw = JSON.stringify(response.error);
+    return ` — ${truncateSafeLogDetail(raw)}`;
+  } catch {
+    return " — [provider error]";
+  }
+}
+
+function openAICompatibleChoice(
+  response: unknown
+):
+  | {
+      message?: { content?: unknown };
+      finish_reason?: unknown;
+    }
+  | undefined {
+  if (!isPlainObject(response) || !Array.isArray(response.choices)) {
+    return undefined;
+  }
+  const choice = response.choices[0];
+  if (!isPlainObject(choice)) {
+    return undefined;
+  }
+  const message = choice.message;
+  return {
+    message: isPlainObject(message)
+      ? { content: message.content }
+      : undefined,
+    finish_reason: choice.finish_reason,
+  };
+}
+
+function openAICompatibleUsage(
+  response: unknown
+):
+  | {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+    }
+  | undefined {
+  if (!isPlainObject(response) || !isPlainObject(response.usage)) {
+    return undefined;
+  }
+  const { prompt_tokens, completion_tokens, total_tokens } = response.usage;
+  return {
+    prompt_tokens: typeof prompt_tokens === "number" ? prompt_tokens : undefined,
+    completion_tokens:
+      typeof completion_tokens === "number" ? completion_tokens : undefined,
+    total_tokens: typeof total_tokens === "number" ? total_tokens : undefined,
+  };
+}
+
+function openAICompatibleModel(response: unknown): string {
+  if (!isPlainObject(response) || typeof response.model !== "string") {
+    return "";
+  }
+  return response.model;
 }
 
 async function callOpenAI(
@@ -295,7 +388,7 @@ export async function callOpenRouter(
   messages: Omit<ChatMessage, 'role'>[] | ChatMessage[],
   systemPrompt: string,
   options: ChatOptions = {},
-  clientOverride?: OpenAI
+  clientOverride?: OpenAICompatibleChatClient
 ): Promise<ChatResponse> {
   const {
     maxTokens: defaultMaxTokens,
