@@ -28,6 +28,25 @@ describe("withDeadline", () => {
     );
   });
 
+  it("rejects immediately with TimeoutError when timeoutMs is already exhausted", async () => {
+    let ran = false;
+    await assert.rejects(
+      () =>
+        withDeadline(
+          async () => {
+            ran = true;
+            return "unused";
+          },
+          { timeoutMs: 0, label: "Test call" }
+        ),
+      (error: unknown) =>
+        error instanceof Error &&
+        error.name === "TimeoutError" &&
+        /timed out/i.test(error.message)
+    );
+    assert.equal(ran, false);
+  });
+
   it("rejects with AbortError when the external signal is already aborted", async () => {
     const controller = new AbortController();
     controller.abort();
