@@ -284,6 +284,7 @@ When calling subagents from within Pi, use `model: "openrouter/auto-beta"` by de
 - Do not couple product behavior or prompts tightly to one industry; engineers may be first users, but design stays industry-agnostic.
 - CV content quality matters more than page-length limits; avoid treating page count as a hard requirement.
 - Prefer LLM judges and calibrated model routing over heavy mechanical allowlists for grounding unless manual failures justify otherwise.
+- When configuring models for tailoring/smoke (especially OpenRouter), set reasoning/thinking effort explicitly rather than relying on provider defaults.
 - When asked to ship fixes to an already-open PR, commit and push to that PR; do not babysit the PR unless asked.
 - Calibrate model choice per task to the quality actually needed — avoid defaulting to the biggest/most expensive reasoning model when a cheaper one yields no proportional quality gain, and consider smaller/alternative providers beyond an initial shortlist when evaluating models.
 - For `/ce-code-review` subagent dispatch, when a tiering is requested, assign heavier reasoning models to complex-task reviewers, mid-tier models to medium-complexity reviewers, and a lighter/Auto model to simple ones.
@@ -300,3 +301,4 @@ Pointer-first bootstrap (canonical detail lives in linked docs; do not restate s
 - Observability (Langfuse on-path / LangSmith fire-and-forget; redaction + flush bounds): `@docs/solutions/architecture-patterns/dual-tracer-redact-and-flush-timeout.md`
 - Cost calibration: DeepSeek via direct API; OpenAI/Google via OpenRouter flex; for tailoring quality prefer best-fit over cost alone — `@docs/arch/MODEL_SELECTION.md`
 - AGENTS.md is authored primarily in the Pi harness and copied into this repo; most day-to-day coding happens in Cursor's Auto model, so Pi-only conventions and `.cursor/commands/*.md` can drift from AGENTS.md and need manual re-sync.
+- Tailoring quality needs an adequate completion token budget (`AI_MAX_TOKENS`); undersized limits degrade curator output even when the model slug is correct.
