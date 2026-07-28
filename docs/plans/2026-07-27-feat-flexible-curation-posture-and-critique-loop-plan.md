@@ -10,7 +10,7 @@ source: docs/brainstorms/2026-07-27-flexible-transferable-skills-posture-brainst
 
 ## Overview
 
-Replace the current `flexible` curation mode (which shares the Struan domain-matching framework with `strict`) with a new **JD-backwards competency mapping** posture. Add a unified **critique-revise loop** (adversarial recruiter judge → curator revision) across both modes. `flexible` additionally generates a cover letter artifact. All content stays grounded in the master CV — no invented facts.
+Replace the current `flexible` curation mode (which shares the Struan domain-matching framework with `strict`) with a new **JD-backwards competency mapping** posture. Add a unified **critique-revise loop** (adversarial recruiter judge → curator revision) across both modes. `flexible` additionally generates a cover letter artifact. All content stays grounded in the master CV — no invented facts. After the curator revision, enforce **deterministic grounding** (not only schema shape): validate each final claim or extracted fact against the master CV and require evidence references before accepting either mode’s curated output or flexible’s cover letter. On grounding failure, reject the revision and retain the last grounded draft (or mark the artifact for regeneration) rather than shipping ungrounded content.
 
 ## Problem Statement
 
@@ -171,8 +171,9 @@ Current: 1 LLM call per request. New: 3 LLM calls. Estimated per-call timing:
 Mitigations:
 - Use a fast/cheap model for the judge (`ADVERSARIAL_JUDGE_MODEL` should be configured to a faster model in production — e.g. `openrouter/openai/gpt-5.4-mini`)
 - The judge prompt is short (no master CV JSON, no framework description) — typically <1K input tokens
-- Configurable toggle via env var `CRITIQUE_REVISE_ENABLED=true` (default: true) for environments where latency is critical
-- Rate limiting is per-request (unchanged) — the 3 LLM calls count as one request for rate-limit purposes
+- **Opt-in by default:** `CRITIQUE_REVISE_ENABLED=false`. Do not enable in production until latency and quota controls are sized.
+- Required controls before enabling: wall-clock budget (`CRITIQUE_REVISE_BUDGET_MS`), per-call timeouts (`CRITIQUE_REVISE_CALL_TIMEOUT_MS` / `ADVERSARIAL_JUDGE_TIMEOUT_MS`), and preferably weighted per-call or token quotas (draft + judge + revise) so three LLM calls cannot exhaust a single-request bucket silently.
+- Rate limiting remains per-request (unchanged) — the 3 LLM calls still count as one request for rate-limit purposes; that is why weighted quotas / budget timeouts are prerequisites for opt-in.
 
 ### Usage Tracking
 

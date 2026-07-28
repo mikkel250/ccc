@@ -81,7 +81,7 @@ Request body size capped by `TAILOR_REQUEST_MAX_BYTES` (default 65536).
   "curatedJson": { "name": "…", "contact": {}, "summary": [], "…": "…" },
   "coverLetter": "…markdown cover letter (flexible mode only)…",
   "builderVersion": "1.0.0",
-  "curationMode": "strict",
+  "curationMode": "flexible",
   "model": "anthropic/sonnet",
   "usage": {
     "promptTokens": 12000,
@@ -102,7 +102,7 @@ Request body size capped by `TAILOR_REQUEST_MAX_BYTES` (default 65536).
 | `curationMode` | Echo of the mode used for this tailor (`strict` or `flexible`) |
 | `remaining` / `resetTime` | More restrictive of dual rate-limit buckets |
 
-> **Critique-revise loop:** On by default (`CRITIQUE_REVISE_ENABLED=true`). After curation, an adversarial judge critiques the draft and the curator revises it before the final response is delivered. Disable via `CRITIQUE_REVISE_ENABLED=false`.
+> **Critique-revise loop:** Opt-in (`CRITIQUE_REVISE_ENABLED=false` by default). When enabled, an adversarial judge critiques the draft and the curator revises it before the final response is delivered. Enable only after sizing `CRITIQUE_REVISE_BUDGET_MS` / `CRITIQUE_REVISE_CALL_TIMEOUT_MS` (and ideally weighted quotas) — rate limiting still counts the whole tailor as one request.
 
 Total JSON response size capped by `TAILOR_RESPONSE_MAX_BYTES` (default 2MiB).
 
@@ -160,7 +160,7 @@ Errors use `{ "error": string }`. `remaining` / `resetTime` appear on 429 only.
 | `RATE_LIMIT_WINDOW` | Sliding window length (ms) | `60000` |
 | `TAILOR_REQUEST_MAX_BYTES` / `TAILOR_JD_MAX_CHARS` | Ingress limits | `65536` / `50000` |
 | `TAILOR_CURATED_JSON_MAX_BYTES` / `TAILOR_RESPONSE_MAX_BYTES` | Egress limits | `512000` / `2097152` |
-| `CRITIQUE_REVISE_ENABLED` | Enable the on-path critique-revise loop | `true` |
+| `CRITIQUE_REVISE_ENABLED` | Opt-in on-path critique-revise loop | `false` |
 
 Full catalog with comments: [`.env.example`](../../.env.example)
 

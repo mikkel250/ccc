@@ -135,14 +135,12 @@ describe("critiqueCvDraft — adversarial judge", () => {
     assert.equal(result.ok, false);
   });
 
-  it("rejects critique with NaN dimension score", async () => {
-    const bad = { ...MOCK_CRITIQUE, narrativeCoherence: { score: NaN, feedback: "NaN" } };
-    const chatFn = mockChatFn(JSON.stringify(bad));
-    const result = await critiqueCvDraft(
-      { curatedCv, jobDescription, curationMode: "strict" },
-      { chat: chatFn }
-    );
-    assert.equal(result.ok, false);
+  it("rejects critique with NaN dimension score", () => {
+    const bad = {
+      ...MOCK_CRITIQUE,
+      narrativeCoherence: { score: Number.NaN, feedback: "NaN" },
+    };
+    assert.equal(isCritiqueResult(bad), false);
   });
 
   it("rejects critique where alignmentIssues is not an array", async () => {
@@ -167,6 +165,16 @@ describe("critiqueCvDraft — adversarial judge", () => {
 
   it("rejects critique where hallucinationConcerns contains non-strings", async () => {
     const bad = { ...MOCK_CRITIQUE, hallucinationConcerns: [null] };
+    const chatFn = mockChatFn(JSON.stringify(bad));
+    const result = await critiqueCvDraft(
+      { curatedCv, jobDescription, curationMode: "strict" },
+      { chat: chatFn }
+    );
+    assert.equal(result.ok, false);
+  });
+
+  it("rejects critique where alignmentIssues contains non-strings", async () => {
+    const bad = { ...MOCK_CRITIQUE, alignmentIssues: ["ok", 3] };
     const chatFn = mockChatFn(JSON.stringify(bad));
     const result = await critiqueCvDraft(
       { curatedCv, jobDescription, curationMode: "strict" },
@@ -201,8 +209,44 @@ describe("critiqueCvDraft — adversarial judge", () => {
     const calls = chatFn.mock.calls as Array<{ arguments: unknown[] }>;
     assert.ok(calls.length > 0);
     const systemPrompt = calls[0]?.arguments[1] as string | undefined;
-    assert.equal(systemPrompt, customPrompt);
+    assert.ok(systemPrompt?.includes(customPrompt));
+    // Placeholders omitted → grounding instructions still appended.
+    assert.ok(
+      systemPrompt?.includes("No master CV was provided"),
+      "missing {{MASTER_CV_GROUNDING}} must still append absent-master grounding"
+    );
     delete process.env.ADVERSARIAL_JUDGE_PROMPT;
+  });
+
+  it("appends alignment section in flexible mode when prompt omits placeholder", async () => {
+    process.env.ADVERSARIAL_JUDGE_PROMPT =
+      "Custom judge prompt without alignment placeholder.";
+    const chatFn = mockChatFn(VALID_JUDGE_OUTPUT);
+    await critiqueCvDraft(
+      { curatedCv, jobDescription, curationMode: "flexible" },
+      { chat: chatFn }
+    );
+    const calls = chatFn.mock.calls as Array<{ arguments: unknown[] }>;
+    const systemPrompt = calls[0]?.arguments[1] as string | undefined;
+    assert.ok(systemPrompt?.includes("alignmentIssues"));
+    delete process.env.ADVERSARIAL_JUDGE_PROMPT;
+  });
+
+  it("returns ok:false when judge call times out", async () => {
+    const chatFn = mock.fn(
+      async () =>
+        new Promise<never>(() => {
+          /* never resolves */
+        })
+    );
+    const result = await critiqueCvDraft(
+      { curatedCv, jobDescription, curationMode: "strict" },
+      { chat: chatFn, timeoutMs: 20 }
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /timed out/i);
+    }
   });
 
   it("passes cover letter to LLM in flexible mode", async () => {

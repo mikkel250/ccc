@@ -51,7 +51,7 @@ describe("curation-mode", () => {
     const flexible = curationModePolicy("flexible");
     assert.match(strict, /Do not collapse/i);
     assert.match(flexible, /MODE: flexible/i);
-    assert.match(flexible, /FLEXIBLE_PIVOT_FALLBACK_PROMPT/i);
+    assert.match(flexible, /cv-curator-flexible-pivot/i);
     assert.match(flexible, /collapse a weak-fit cluster/i);
     assert.match(flexible, /recency does not override weak/i);
     assert.match(flexible, /industry-agnostic/i);
@@ -75,7 +75,7 @@ describe("curation-mode", () => {
     );
     // Flexible mode now injects the policy like strict mode — not a full replacement.
     assert.match(out, /MODE: flexible/);
-    assert.match(out, /FLEXIBLE_PIVOT_FALLBACK_PROMPT/);
+    assert.match(out, /cv-curator-flexible-pivot/);
     assert.doesNotMatch(out, /CURATION_MODE_POLICY/);
     assert.match(out, /^before\n/);
     assert.match(out, /\nafter$/);
@@ -120,6 +120,15 @@ describe("curation-mode", () => {
     });
     it("returns false for array", () => {
       assert.equal(isFlexibleWrapper([]), false);
+    });
+    it("returns false when cover_letter is present but not a string", () => {
+      assert.equal(
+        isFlexibleWrapper({ curated_cv: {}, cover_letter: 42 }),
+        false
+      );
+    });
+    it("returns true when cover_letter is omitted", () => {
+      assert.equal(isFlexibleWrapper({ curated_cv: {} }), true);
     });
   });
 });

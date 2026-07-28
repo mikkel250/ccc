@@ -417,6 +417,9 @@ describe("buildTailorResponse — pipeline orchestration", () => {
       const masterIdx = callOrder.indexOf("requireMasterCv");
       const promptIdx = callOrder.indexOf("getCuratorPrompt");
       const chatIdx = callOrder.indexOf("chat");
+      assert.ok(masterIdx >= 0, "requireMasterCv must be invoked");
+      assert.ok(promptIdx >= 0, "getCuratorPrompt must be invoked");
+      assert.ok(chatIdx >= 0, "chat must be invoked");
       assert.ok(masterIdx < promptIdx, "requireMasterCv before getCuratorPrompt");
       assert.ok(promptIdx < chatIdx, "getCuratorPrompt before chat");
     });

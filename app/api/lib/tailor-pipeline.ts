@@ -181,6 +181,7 @@ export interface TailorPipelineDeps {
       };
       source: string;
       reasoningEffort?: ReasoningEffort;
+      signal?: AbortSignal;
     }
   ) => Promise<{
     content: string;
@@ -234,11 +235,13 @@ function buildJudgeChatAdapter(
         version: number;
         isFallback?: boolean;
       } | null;
+      signal?: AbortSignal;
     }
   ) =>
     chat(msgs as Array<{ role: "user"; content: string }>, sysPrompt, {
       model: opts?.model ?? getTailorModel(),
       source: opts?.source ?? "tailor-cv-judge",
+      signal: opts?.signal,
       langfusePrompt: opts?.langfusePrompt
         ? {
             name: opts.langfusePrompt.name,
@@ -257,6 +260,68 @@ function buildJudgeChatAdapter(
               isFallback: true,
             },
     });
+}
+
+type UsageTotals = {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+};
+
+function addUsage(a: UsageTotals, b: UsageTotals): UsageTotals {
+  return {
+    promptTokens: a.promptTokens + b.promptTokens,
+    completionTokens: a.completionTokens + b.completionTokens,
+    totalTokens: a.totalTokens + b.totalTokens,
+  };
+}
+
+async function withCallTimeout<T>(
+  run: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+  label: string
+): Promise<T> {
+  if (timeoutMs <= 0) {
+    throw Object.assign(new Error(`${label} timed out: no budget remaining`), {
+      name: "TimeoutError",
+    });
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const runPromise = run(controller.signal);
+    void runPromise.catch(() => undefined);
+    return await Promise.race([
+      runPromise,
+      new Promise<never>((_, reject) => {
+        controller.signal.addEventListener(
+          "abort",
+          () => {
+            reject(
+              Object.assign(
+                new Error(`${label} timed out after ${timeoutMs}ms`),
+                { name: "TimeoutError" }
+              )
+            );
+          },
+          { once: true }
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Whether revise output matches the step-8 structured contract for this mode. */
+function isValidRevisePayload(
+  parsed: unknown,
+  curationMode: CurationMode
+): boolean {
+  if (curationMode === "flexible") {
+    return isFlexibleWrapper(parsed);
+  }
+  return parsed !== null && typeof parsed === "object";
 }
 
 // ---------------------------------------------------------------------------
@@ -300,7 +365,7 @@ export async function buildTailorResponse(
         ok: false,
         error: error.message,
         status: 429,
-        resetTime: Math.ceil(Date.now() / 1000) + Math.ceil(getRateLimitConfig().windowMs / 1000),
+        resetTime: Date.now() + getRateLimitConfig().windowMs,
         remaining: 0,
       };
     }
@@ -378,10 +443,14 @@ export async function buildTailorResponse(
   let finalModel = firstDraftResponse.model;
   let finalUsage = firstDraftResponse.usage;
 
-  // 7a. Critique-revise loop (if enabled)
-  const critiqueEnabled = getEnvBoolean("CRITIQUE_REVISE_ENABLED", true);
+  // 7a. Critique-revise loop (opt-in; off by default until rate/latency controls are sized)
+  const critiqueEnabled = getEnvBoolean("CRITIQUE_REVISE_ENABLED", false);
 
   if (critiqueEnabled) {
+    const budgetMs = getEnvNumber("CRITIQUE_REVISE_BUDGET_MS", 45_000);
+    const callTimeoutMs = getEnvNumber("CRITIQUE_REVISE_CALL_TIMEOUT_MS", 20_000);
+    const budgetDeadline = Date.now() + budgetMs;
+
     // Parse first draft to pass to judge
     let firstDraftParsed: unknown;
     let curatedForJudge: unknown;
@@ -403,8 +472,16 @@ export async function buildTailorResponse(
       curatedForJudge = null;
     }
 
-    if (curatedForJudge) {
+    const remainingBeforeJudge = budgetDeadline - Date.now();
+    if (!curatedForJudge) {
+      // skip — step 8 handles unparseable draft
+    } else if (remainingBeforeJudge <= 0) {
+      console.error(
+        "Critique-revise budget exhausted before judge — keeping first draft"
+      );
+    } else {
       try {
+        const judgeTimeoutMs = Math.min(callTimeoutMs, remainingBeforeJudge);
         const critique = await critiqueCvDraft(
           {
             curatedCv: curatedForJudge,
@@ -414,80 +491,105 @@ export async function buildTailorResponse(
             masterCv,
           },
           // Pass deps.chat so tests can mock the judge's LLM call
-          { chat: buildJudgeChatAdapter(deps.chat, langfusePrompt) }
+          {
+            chat: buildJudgeChatAdapter(deps.chat, langfusePrompt),
+            timeoutMs: judgeTimeoutMs,
+          }
         );
 
         if (critique.ok) {
-          // Build revise user message
-          const reviseUserMessage = [
-            "You produced a first draft of a curated CV. An adversarial judge reviewed it",
-            "and provided the following critique. Revise the CV to address the critique",
-            "while staying grounded in the master CV.",
-            "",
-            "CRITICAL: Do NOT invent facts to satisfy the judge's critique.",
-            "If a gap exists, leave it or address it honestly in the cover letter.",
-            "",
-            "## First Draft",
-            JSON.stringify(firstDraftParsed, null, 2),
-            "",
-            "## Judge Critique",
-            JSON.stringify(critique.critique, null, 2),
-            "",
-            "## Original Job Description",
-            jobDescription,
-            "",
-            "Please produce the revised output in the same format as your first draft.",
-          ].join("\n");
-
-          const reviseResponse = await deps.chat(
-            [{ role: "user" as const, content: reviseUserMessage }],
-            systemPrompt,
-            {
-              model: getTailorModel(),
-              reasoningEffort: getTailorReasoningEffort(),
-              langfusePrompt: langfusePrompt ?? {
-                name: CURATOR_LANGFUSE_PROMPT_NAME,
-                version: 0,
-                isFallback: true,
-              },
-              source: "tailor-cv-revise",
-            }
-          );
-
-          // Adopt the revise only if it parses — an unparseable revise
-          // falls back to the valid first draft instead of failing at step 8.
-          let reviseParseOk = true;
-          try {
-            deps.extractStructuredJson(reviseResponse.content);
-          } catch {
-            reviseParseOk = false;
+          const remainingBeforeRevise = budgetDeadline - Date.now();
+          if (remainingBeforeRevise <= 0) {
             console.error(
-              "Revise output was not valid JSON — keeping first draft"
+              "Critique-revise budget exhausted before revise — keeping first draft"
             );
-          }
+            finalUsage = addUsage(firstDraftResponse.usage, critique.usage);
+          } else {
+            // Build revise user message
+            const reviseUserMessage = [
+              "You produced a first draft of a curated CV. An adversarial judge reviewed it",
+              "and provided the following critique. Revise the CV to address the critique",
+              "while staying grounded in the master CV.",
+              "",
+              "CRITICAL: Do NOT invent facts to satisfy the judge's critique.",
+              "If a gap exists, leave it or address it honestly in the cover letter.",
+              "",
+              "## First Draft",
+              JSON.stringify(firstDraftParsed, null, 2),
+              "",
+              "## Judge Critique",
+              JSON.stringify(critique.critique, null, 2),
+              "",
+              "## Original Job Description",
+              jobDescription,
+              "",
+              "Please produce the revised output in the same format as your first draft.",
+            ].join("\n");
 
-          if (reviseParseOk) {
-            finalContent = reviseResponse.content;
-            finalModel = reviseResponse.model;
-            // Judge token usage is intentionally excluded from these totals —
-            // the judge call is traced separately (source: "tailor-cv-judge").
-            finalUsage = {
-              promptTokens:
-                firstDraftResponse.usage.promptTokens +
-                reviseResponse.usage.promptTokens,
-              completionTokens:
-                firstDraftResponse.usage.completionTokens +
-                reviseResponse.usage.completionTokens,
-              totalTokens:
-                firstDraftResponse.usage.totalTokens +
-                reviseResponse.usage.totalTokens,
-            };
+            const reviseTimeoutMs = Math.min(
+              callTimeoutMs,
+              remainingBeforeRevise
+            );
+            const reviseResponse = await withCallTimeout(
+              (signal) =>
+                deps.chat(
+                  [{ role: "user" as const, content: reviseUserMessage }],
+                  systemPrompt,
+                  {
+                    model: getTailorModel(),
+                    reasoningEffort: getTailorReasoningEffort(),
+                    langfusePrompt: langfusePrompt ?? {
+                      name: CURATOR_LANGFUSE_PROMPT_NAME,
+                      version: 0,
+                      isFallback: true,
+                    },
+                    source: "tailor-cv-revise",
+                    signal,
+                  }
+                ),
+              reviseTimeoutMs,
+              "Revise call"
+            );
+
+            // Adopt the revise only if it matches the step-8 structured contract.
+            // Unparseable / wrong-shape revise falls back to the first draft.
+            let reviseParseOk = false;
+            try {
+              const reviseParsed = deps.extractStructuredJson(
+                reviseResponse.content
+              );
+              reviseParseOk = isValidRevisePayload(reviseParsed, curationMode);
+              if (!reviseParseOk) {
+                console.error(
+                  "Revise output failed structured contract — keeping first draft"
+                );
+              }
+            } catch {
+              console.error(
+                "Revise output was not valid JSON — keeping first draft"
+              );
+            }
+
+            if (reviseParseOk) {
+              finalContent = reviseResponse.content;
+              finalModel = reviseResponse.model;
+              finalUsage = addUsage(
+                addUsage(firstDraftResponse.usage, critique.usage),
+                reviseResponse.usage
+              );
+            } else {
+              // Judge completed; discarded revise must not leak into totals.
+              finalUsage = addUsage(firstDraftResponse.usage, critique.usage);
+            }
           }
         } else {
           console.error(
             "Adversarial judge failed, returning first draft:",
             critique.error
           );
+          if (critique.usage) {
+            finalUsage = addUsage(firstDraftResponse.usage, critique.usage);
+          }
         }
       } catch (error: unknown) {
         console.error(

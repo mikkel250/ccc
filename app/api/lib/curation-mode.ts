@@ -115,11 +115,14 @@ export function isCurationMode(value: unknown): value is CurationMode {
 export function isFlexibleWrapper(
   raw: unknown
 ): raw is { curated_cv: unknown; cover_letter?: string } {
-  return (
-    raw !== null &&
-    typeof raw === "object" &&
-    "curated_cv" in raw
-  );
+  if (raw === null || typeof raw !== "object" || !("curated_cv" in raw)) {
+    return false;
+  }
+  const coverLetter = (raw as { cover_letter?: unknown }).cover_letter;
+  if (coverLetter !== undefined && typeof coverLetter !== "string") {
+    return false;
+  }
+  return true;
 }
 
 /** Authoritative mode block injected into the curator system prompt. */
@@ -138,10 +141,10 @@ export function curationModePolicy(mode: CurationMode): string {
   }
 
   return `MODE: flexible.
-Full policy is in the flexible pivot system prompt — see FLEXIBLE_PIVOT_FALLBACK_PROMPT
-for the authoritative process (competency mapping, career pivot posture), output format,
-and guardrails. Collapse a weak-fit cluster is allowed; recency does not override weak
-JD fit; rules are industry-agnostic.`;
+Authoritative process, output format, and guardrails live in Langfuse prompt
+cv-curator-flexible-pivot (competency mapping, career-pivot posture, curated_cv +
+cover_letter JSON output, anti-hallucination guardrails). Collapse a weak-fit cluster
+is allowed; recency does not override weak JD fit; rules are industry-agnostic.`;
 }
 
 /**

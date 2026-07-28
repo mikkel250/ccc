@@ -167,6 +167,8 @@ describe("critique-revise loop — pipeline wiring", () => {
       // The curated JSON should be the REVISED version (not the first draft)
       const curated = result.body.curatedJson as Record<string, unknown>;
       assert.equal(curated.name, "Revised CV");
+      // All completed calls: draft(30) + judge(10) + revise(30)
+      assert.equal(result.body.usage.totalTokens, 70);
     }
   });
 
@@ -365,8 +367,8 @@ describe("critique-revise loop — pipeline wiring", () => {
     if (result.ok) {
       const curated = result.body.curatedJson as Record<string, unknown>;
       assert.equal(curated.name, FIXTURE_CURATED.name);
-      // Discarded revise must not leak into usage totals — first draft only.
-      assert.equal(result.body.usage.totalTokens, 30);
+      // Discarded revise must not leak into usage totals — draft + judge only.
+      assert.equal(result.body.usage.totalTokens, 40);
     }
   });
 

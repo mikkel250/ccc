@@ -44,7 +44,7 @@ function safeTailorLog(message: string, error?: unknown): void {
 }
 
 function retryAfterSeconds(resetTime: number): string {
-  return String(Math.max(1, Math.ceil(resetTime - Date.now() / 1000)));
+  return String(Math.max(1, Math.ceil((resetTime - Date.now()) / 1000)));
 }
 
 function mapPipelineResult(

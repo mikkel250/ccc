@@ -7,9 +7,10 @@
  */
 import { chat as defaultChat, type ChatMessage, type ChatResponse, type ChatOptions } from "./llm";
 import { extractStructuredJson } from "./eval-parse";
-import { getEnvString } from "../../../lib/env";
-import { getTailorModel } from "../../../lib/env";
+import { getEnvNumber, getEnvString, getTailorModel } from "../../../lib/env";
 import type { CurationMode } from "./curation-mode";
+
+type ChatUsage = ChatResponse["usage"];
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,8 +34,8 @@ export interface CritiqueResult {
 }
 
 export type CritiqueResponse =
-  | { ok: true; critique: CritiqueResult }
-  | { ok: false; error: string };
+  | { ok: true; critique: CritiqueResult; usage: ChatUsage }
+  | { ok: false; error: string; usage?: ChatUsage };
 
 // ---------------------------------------------------------------------------
 // Input
@@ -94,17 +95,28 @@ function buildJudgeSystemPrompt(
 ): string {
   const basePrompt =
     getEnvString("ADVERSARIAL_JUDGE_PROMPT") ?? DEFAULT_ADVERSARIAL_JUDGE_PROMPT;
-  const withMasterGrounding = basePrompt.replace(
-    "{{MASTER_CV_GROUNDING}}",
-    hasMasterCv ? MASTER_CV_GROUNDING_PRESENT : MASTER_CV_GROUNDING_ABSENT
-  );
-  if (curationMode === "flexible") {
-    return withMasterGrounding.replace(
-      "{{ALIGNMENT_SECTION}}",
-      ALIGNMENT_SECTION_FLEXIBLE
-    );
+  const grounding = hasMasterCv
+    ? MASTER_CV_GROUNDING_PRESENT
+    : MASTER_CV_GROUNDING_ABSENT;
+
+  let prompt: string;
+  if (basePrompt.includes("{{MASTER_CV_GROUNDING}}")) {
+    prompt = basePrompt.split("{{MASTER_CV_GROUNDING}}").join(grounding);
+  } else {
+    prompt = `${basePrompt}\n\n${grounding}`;
   }
-  return withMasterGrounding.replace("{{ALIGNMENT_SECTION}}", "");
+
+  if (curationMode === "flexible") {
+    if (prompt.includes("{{ALIGNMENT_SECTION}}")) {
+      return prompt.split("{{ALIGNMENT_SECTION}}").join(ALIGNMENT_SECTION_FLEXIBLE);
+    }
+    return `${prompt}\n${ALIGNMENT_SECTION_FLEXIBLE}`;
+  }
+
+  if (prompt.includes("{{ALIGNMENT_SECTION}}")) {
+    return prompt.split("{{ALIGNMENT_SECTION}}").join("");
+  }
+  return prompt;
 }
 
 export function buildJudgeUserMessage(input: CritiqueInput): string {
@@ -158,7 +170,12 @@ export function isCritiqueResult(raw: unknown): raw is CritiqueResult {
   if (!Array.isArray(obj.hallucinationConcerns)) return false;
   if (typeof obj.overallAssessment !== "string") return false;
 
-  if (obj.alignmentIssues !== undefined && !Array.isArray(obj.alignmentIssues)) return false;
+  if (obj.alignmentIssues !== undefined) {
+    if (!Array.isArray(obj.alignmentIssues)) return false;
+    if (!obj.alignmentIssues.every((item: unknown) => typeof item === "string")) {
+      return false;
+    }
+  }
 
   if (!obj.redFlags.every((item: unknown) => typeof item === "string")) return false;
   if (!obj.hallucinationConcerns.every((item: unknown) => typeof item === "string")) return false;
@@ -175,8 +192,71 @@ export interface CritiqueOptions {
   chat?: (
     messages: ChatMessage[] | Omit<ChatMessage, "role">[],
     systemPrompt: string,
-    options?: { model?: string; source?: string; langfusePrompt?: ChatOptions["langfusePrompt"] }
+    options?: {
+      model?: string;
+      source?: string;
+      langfusePrompt?: ChatOptions["langfusePrompt"];
+      signal?: AbortSignal;
+    }
   ) => Promise<ChatResponse>;
+  /** Bound the judge LLM call; on timeout/abort return ok:false. */
+  timeoutMs?: number;
+  /** Optional external deadline; combined with timeoutMs when both are set. */
+  signal?: AbortSignal;
+}
+
+async function chatWithDeadline(
+  chatFn: NonNullable<CritiqueOptions["chat"]>,
+  messages: ChatMessage[],
+  systemPrompt: string,
+  chatOptions: {
+    model?: string;
+    source?: string;
+    langfusePrompt?: ChatOptions["langfusePrompt"];
+    signal?: AbortSignal;
+  },
+  timeoutMs: number
+): Promise<ChatResponse> {
+  const controller = new AbortController();
+  const onExternalAbort = () => controller.abort();
+  if (chatOptions.signal) {
+    if (chatOptions.signal.aborted) {
+      controller.abort();
+    } else {
+      chatOptions.signal.addEventListener("abort", onExternalAbort, {
+        once: true,
+      });
+    }
+  }
+
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const chatPromise = chatFn(messages, systemPrompt, {
+      ...chatOptions,
+      signal: controller.signal,
+    });
+    // Prevent unhandled rejection if timeout wins the race first.
+    void chatPromise.catch(() => undefined);
+    return await Promise.race([
+      chatPromise,
+      new Promise<never>((_, reject) => {
+        controller.signal.addEventListener(
+          "abort",
+          () => {
+            reject(
+              Object.assign(new Error("Judge call timed out"), {
+                name: "TimeoutError",
+              })
+            );
+          },
+          { once: true }
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    chatOptions.signal?.removeEventListener("abort", onExternalAbort);
+  }
 }
 
 export async function critiqueCvDraft(
@@ -191,15 +271,32 @@ export async function critiqueCvDraft(
     input.masterCv !== undefined && input.masterCv !== null
   );
   const userMessage = buildJudgeUserMessage(input);
+  const timeoutMs =
+    options?.timeoutMs ??
+    getEnvNumber("ADVERSARIAL_JUDGE_TIMEOUT_MS", 15_000);
 
-  const response = await chatFn(
-    [{ role: "user", content: userMessage }],
-    systemPrompt,
-    {
-      model,
-      source: "tailor-cv-judge",
+  let response: ChatResponse;
+  try {
+    response = await chatWithDeadline(
+      chatFn,
+      [{ role: "user", content: userMessage }],
+      systemPrompt,
+      {
+        model,
+        source: "tailor-cv-judge",
+        signal: options?.signal,
+      },
+      timeoutMs
+    );
+  } catch (error: unknown) {
+    const aborted =
+      (error instanceof Error && error.name === "TimeoutError") ||
+      (error instanceof Error && /timed out/i.test(error.message));
+    if (aborted) {
+      return { ok: false, error: "Judge call timed out" };
     }
-  );
+    throw error;
+  }
 
   let parsed: unknown;
   try {
@@ -208,6 +305,7 @@ export async function critiqueCvDraft(
     return {
       ok: false,
       error: "Judge output was not valid JSON",
+      usage: response.usage,
     };
   }
 
@@ -215,8 +313,9 @@ export async function critiqueCvDraft(
     return {
       ok: false,
       error: "Judge output was incomplete or missing required fields",
+      usage: response.usage,
     };
   }
 
-  return { ok: true, critique: parsed };
+  return { ok: true, critique: parsed, usage: response.usage };
 }

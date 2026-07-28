@@ -69,6 +69,8 @@ export interface ChatOptions {
    * DeepSeek direct gets `thinking` + `reasoning_effort` (mapped). Unset = provider default.
    */
   reasoningEffort?: ReasoningEffort;
+  /** Abort signal for bounded LLM calls (judge/revise deadlines). */
+  signal?: AbortSignal;
   /** Test-only: inject OpenAI client */
   openaiClient?: OpenAI;
   /** Test-only: inject OpenRouter client */
@@ -213,6 +215,7 @@ async function callOpenAICompatible(
   temperature: number,
   maxTokens: number,
   extraCreateParams?: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<ChatResponse> {
   const formattedMessages = formatMessages(messages);
   const fullMessages: ChatMessage[] = [
@@ -220,13 +223,16 @@ async function callOpenAICompatible(
     ...formattedMessages,
   ];
 
-  const response: unknown = await client.chat.completions.create({
-    model,
-    messages: fullMessages,
-    temperature,
-    max_tokens: maxTokens,
-    ...extraCreateParams,
-  });
+  const response: unknown = await client.chat.completions.create(
+    {
+      model,
+      messages: fullMessages,
+      temperature,
+      max_tokens: maxTokens,
+      ...extraCreateParams,
+    },
+    signal ? { signal } : undefined,
+  );
 
   // OpenRouter (and some gateway proxies) can return 200-shaped bodies without
   // `choices` — e.g. flex/model errors embedded as `{ error: ... }`. Guard so
@@ -349,6 +355,8 @@ async function callOpenAI(
     model,
     temperature,
     maxTokens,
+    undefined,
+    options.signal,
   );
 }
 
@@ -419,6 +427,7 @@ export async function callOpenRouter(
     temperature,
     maxTokens,
     Object.keys(extraCreateParams).length > 0 ? extraCreateParams : undefined,
+    options.signal,
   );
 }
 
@@ -451,6 +460,7 @@ export async function callDeepSeek(
     temperature,
     maxTokens,
     buildDeepSeekThinkingParams(reasoningEffort),
+    options.signal,
   );
 }
 
@@ -554,13 +564,16 @@ export async function callAnthropic(
       content: msg.content,
     }));
 
-  const response = await anthropic.messages.create({
-    model,
-    system: systemPrompt,
-    messages: claudeMessages,
-    temperature,
-    max_tokens: maxTokens,
-  });
+  const response = await anthropic.messages.create(
+    {
+      model,
+      system: systemPrompt,
+      messages: claudeMessages,
+      temperature,
+      max_tokens: maxTokens,
+    },
+    options.signal ? { signal: options.signal } : undefined,
+  );
 
   const textContent = response.content.find(block => block.type === 'text');
   if (!textContent || textContent.type !== 'text') {
@@ -607,6 +620,7 @@ async function callGoogle(
     config: {
       temperature,
       maxOutputTokens: maxTokens,
+      ...(options.signal ? { abortSignal: options.signal } : {}),
     },
   });
 
