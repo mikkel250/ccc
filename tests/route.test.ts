@@ -328,6 +328,26 @@ describe("POST /api/tailor-cv — request hardening", () => {
     assert.match(json.error, /too many requests/i);
   });
 
+  it("includes remaining and resetTime in the 429 response body", async () => {
+    const resetTime = Math.ceil(Date.now() / 1000) + 60;
+    mock.method(tailorCvDeps, "checkRateLimit", async () => ({
+      allowed: false,
+      remaining: 0,
+      resetTime,
+      message: "Rate limit exceeded",
+    }));
+
+    const response = await POST(buildPostRequest(VALID_BODY, XFF));
+    assert.equal(response.status, 429);
+    const json = (await response.json()) as {
+      error: string;
+      remaining?: number;
+      resetTime?: number;
+    };
+    assert.equal(json.remaining, 0);
+    assert.equal(json.resetTime, resetTime);
+  });
+
   it("returns 503 when rate limit ServiceError is thrown", async () => {
     __injectRatelimitForTest(createFailingMock());
 

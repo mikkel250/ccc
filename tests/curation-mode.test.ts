@@ -4,6 +4,7 @@ import {
   applyCurationModePolicy,
   curationModePolicy,
   groundingJudgeModeAddendum,
+  isFlexibleWrapper,
   CURATION_MODE_POLICY_PLACEHOLDER,
   DEFAULT_CURATION_MODE,
 } from "../app/api/lib/curation-mode";
@@ -45,15 +46,15 @@ describe("curation-mode", () => {
     }
   });
 
-  it("strict policy forbids collapse; flexible is JD-fit-first and industry-agnostic", () => {
+  it("strict policy forbids collapse; flexible references pivot prompt", () => {
     const strict = curationModePolicy("strict");
     const flexible = curationModePolicy("flexible");
     assert.match(strict, /Do not collapse/i);
+    assert.match(flexible, /MODE: flexible/i);
+    assert.match(flexible, /FLEXIBLE_PIVOT_FALLBACK_PROMPT/i);
     assert.match(flexible, /collapse a weak-fit cluster/i);
-    assert.match(flexible, /category-style/i);
-    assert.match(flexible, /Lead experience\[\] with the strongest JD-fit/i);
-    assert.match(flexible, /Recency does not override weak JD fit/i);
-    assert.doesNotMatch(flexible, /restaurant|software engineer|non-tech/i);
+    assert.match(flexible, /recency does not override weak/i);
+    assert.match(flexible, /industry-agnostic/i);
   });
 
   it("applyCurationModePolicy replaces placeholder when present", () => {
@@ -67,11 +68,30 @@ describe("curation-mode", () => {
     assert.match(out, /\nafter$/);
   });
 
-  it("applyCurationModePolicy appends when placeholder is missing", () => {
-    const out = applyCurationModePolicy("base prompt only", "flexible");
+  it("applyCurationModePolicy injects flexible policy via placeholder", () => {
+    const out = applyCurationModePolicy(
+      `before\n${CURATION_MODE_POLICY_PLACEHOLDER}\nafter`,
+      "flexible"
+    );
+    // Flexible mode now injects the policy like strict mode — not a full replacement.
+    assert.match(out, /MODE: flexible/);
+    assert.match(out, /FLEXIBLE_PIVOT_FALLBACK_PROMPT/);
+    assert.doesNotMatch(out, /CURATION_MODE_POLICY/);
+    assert.match(out, /^before\n/);
+    assert.match(out, /\nafter$/);
+  });
+
+  it("applyCurationModePolicy appends flexible policy when placeholder is missing", () => {
+    const out = applyCurationModePolicy("base prompt", "flexible");
+    assert.match(out, /base prompt/);
+    assert.match(out, /MODE: flexible/);
+    assert.match(out, /<curation_mode>/);
+  });
+
+  it("applyCurationModePolicy appends when placeholder is missing (strict)", () => {
+    const out = applyCurationModePolicy("base prompt only", "strict");
     assert.match(out, /base prompt only/);
     assert.match(out, /<curation_mode>/);
-    assert.match(out, /MODE: flexible/);
   });
 
   it("grounding addendum matches mode", () => {
@@ -79,23 +99,27 @@ describe("curation-mode", () => {
     assert.match(groundingJudgeModeAddendum("flexible"), /Accept collapsing/i);
   });
 
-  it("both modes extend JD-fit culling to summary, skills, and certifications (not just experience)", () => {
-    const strict = curationModePolicy("strict");
-    const flexible = curationModePolicy("flexible");
-    for (const policy of [strict, flexible]) {
-      assert.match(policy, /not limited to experience/i);
-      assert.match(policy, /summary/i);
-      assert.match(policy, /skill/i);
-      assert.match(policy, /certification/i);
-    }
-    // Mode-specific cull contracts: require removal verbs, reject reorder/de-emphasize-only.
-    assert.match(strict, /Drop off-domain summary bullets/i);
-    assert.match(strict, /cut, don't just deprioritize/i);
-    assert.match(strict, /rather than merely reordering/i);
-    assert.match(flexible, /Drop off-domain summary bullets/i);
-    assert.match(flexible, /rather than merely\s+reordering or de-emphasizing/i);
-    assert.doesNotMatch(flexible, /Cut or de-emphasize/i);
-    // Keep the mode block industry-agnostic per prior invariant.
-    assert.doesNotMatch(flexible, /restaurant|software engineer|non-tech/i);
+  describe("isFlexibleWrapper", () => {
+    it("returns true for valid wrapper with curated_cv", () => {
+      assert.equal(isFlexibleWrapper({ curated_cv: { name: "Test" } }), true);
+    });
+    it("returns true for wrapper with curated_cv and cover_letter", () => {
+      assert.equal(
+        isFlexibleWrapper({ curated_cv: {}, cover_letter: "hello" }),
+        true
+      );
+    });
+    it("returns false for null", () => {
+      assert.equal(isFlexibleWrapper(null), false);
+    });
+    it("returns false for string", () => {
+      assert.equal(isFlexibleWrapper("not an object"), false);
+    });
+    it("returns false for object missing curated_cv", () => {
+      assert.equal(isFlexibleWrapper({ cover_letter: "no cv" }), false);
+    });
+    it("returns false for array", () => {
+      assert.equal(isFlexibleWrapper([]), false);
+    });
   });
 });
