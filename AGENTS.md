@@ -285,7 +285,7 @@ When calling subagents from within Pi, use `model: "openrouter/auto-beta"` by de
 - CV content quality matters more than page-length limits; avoid treating page count as a hard requirement.
 - Prefer LLM judges and calibrated model routing over heavy mechanical allowlists for grounding unless manual failures justify otherwise.
 - When configuring models for tailoring/smoke (especially OpenRouter), set reasoning/thinking effort explicitly rather than relying on provider defaults.
-- When asked to ship fixes to an already-open PR, commit and push to that PR; do not babysit the PR unless asked.
+- When asked to ship fixes to an already-open PR, verify the active branch first (`git branch --show-current`); never write files, commit, or push when on `main`; once branch safety is confirmed, commit and push to the correct PR branch and do not babysit the PR unless asked.
 - Calibrate model choice per task to the quality actually needed — avoid defaulting to the biggest/most expensive reasoning model when a cheaper one yields no proportional quality gain, and consider smaller/alternative providers beyond an initial shortlist when evaluating models.
 - For `/ce-code-review` subagent dispatch, when a tiering is requested, assign heavier reasoning models to complex-task reviewers, mid-tier models to medium-complexity reviewers, and a lighter/Auto model to simple ones.
 - Keep tailoring prompts cross-model compatible rather than narrowly tuned to one provider, since the production inference model is still being evaluated across providers (e.g. DeepSeek, Gemini, GPT variants).
