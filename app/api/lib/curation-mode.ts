@@ -95,13 +95,19 @@ Shape:
   "cover_letter": "markdown string — cover letter text"
 }
 
-curated_cv MUST match master-cv.schema.json hard constraints:
-- Required keys: name, contact, summary, skills, experience, education
+curated_cv MUST match hard constraints in references/json-curator/master-cv.schema.json
+(keep this block synchronized with that schema — do not invent fields):
+- Required top-level keys: name, contact, summary, skills, experience, education
+- Root and nested objects reject unspecified properties (additionalProperties: false)
+- contact required: location, phone, email, links; each links[] item: label + url
 - summary: string[] (1–3 strings; not a bare string)
-- skills[].items: comma-separated string (not string[])
-- Each experience[] entry: title + dates required; exactly one of bullets or subroles
+- skills[]: category + items required; items is a comma-separated string (not string[])
+- experience[]: title + dates required; exactly one of bullets or subroles
   (not both, not neither); no extra properties (e.g. no company field)
-- Optional: projects, portfolioSites, certifications — only if present in master and relevant
+- Optional top-level: projects, portfolioSites, certifications — only if present in
+  master and relevant
+- When projects[] is present, each entry requires name + bullets; optional
+  linkLabel, linkUrl
 </output_format>
 
 <guardrails>
