@@ -71,15 +71,60 @@ describe("validateCvJson", () => {
     };
     const result = validateCvJson(combined);
     assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /\/experience\/0/);
+      assert.match(result.error, /oneOf/i);
+    }
   });
 
-  // Flexible curator mis-shapes that Ajv must reject (runtime contract, not prompt prose).
+  // Curator output contract boundary (validateCvJson / master-cv.schema.json).
+  it("accepts summary as string[], comma-separated skills[].items, and experience with bullets", () => {
+    const result = validateCvJson({
+      ...(validCv as object),
+      summary: [
+        "Transferable-skills thesis sentence one.",
+        "Supporting sentence two.",
+      ],
+      skills: [
+        {
+          category: "Operations",
+          items: "Stakeholder alignment, budget ownership, scaling",
+        },
+      ],
+      experience: [
+        {
+          title: "Lead, Example Org",
+          dates: "2020 - 2024",
+          bullets: ["Led a cross-functional program through growth."],
+        },
+      ],
+    });
+    assert.equal(result.ok, true);
+  });
+
+  it("accepts experience entries that use subroles instead of bullets", () => {
+    const result = validateCvJson({
+      ...(validCv as object),
+      experience: [
+        {
+          title: "Engineer, Example",
+          dates: "2024 - Present",
+          subroles: [{ heading: "Platform", bullets: ["Owned APIs"] }],
+        },
+      ],
+    });
+    assert.equal(result.ok, true);
+  });
+
   it("rejects summary as a bare string instead of string[]", () => {
     const result = validateCvJson({
       ...(validCv as object),
       summary: "Bare thesis string that should be an array",
     });
     assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /\/summary must be array/);
+    }
   });
 
   it("rejects skills[].items when it is a string array instead of a comma-separated string", () => {
@@ -88,9 +133,17 @@ describe("validateCvJson", () => {
     };
     const result = validateCvJson({
       ...base,
-      skills: [{ category: "Core", items: ["TypeScript", "Node"] as unknown as string }],
+      skills: [
+        {
+          category: "Core",
+          items: ["TypeScript", "Node"] as unknown as string,
+        },
+      ],
     });
     assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /\/skills\/0\/items must be string/);
+    }
   });
 
   it("rejects experience entries that include undeclared properties like company", () => {
@@ -109,6 +162,24 @@ describe("validateCvJson", () => {
       ],
     });
     assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(
+        result.error,
+        /\/experience\/0 must NOT have additional properties/
+      );
+    }
+  });
+
+  it("rejects experience entries missing both bullets and subroles", () => {
+    const result = validateCvJson({
+      ...(validCv as object),
+      experience: [{ title: "Engineer, Example", dates: "2024 - Present" }],
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /\/experience\/0/);
+      assert.match(result.error, /oneOf/i);
+    }
   });
 
   it("loads schema from CV_SCHEMA_PATH when set to a valid path", () => {
