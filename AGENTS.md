@@ -274,16 +274,15 @@ Based on a July 2026 controlled experiment (15 models, identical review prompts,
 
 ### Low tier — scout, research, file/codebase recon (NOT for writing code)
 
-Flash models handle mechanical/operational tasks only — `scout` for codebase recon, `researcher` for web lookup. Route all routine coding to Cursor CLI (`agent --model auto`) instead. Use these models: `openrouter/qwen/qwen3.7-flash:max`, `openrouter/google/gemini-flash-latest:max`, `openrouter/anthropic/claude-haiku-latest:max`.
+When in Pi, route all routine coding to Cursor CLI (`agent --model auto`) instead.
 
 ### Mid tier — implementation, review, debugging (default)
 
 | Role | Model |
 |------|-------|
-| **Daily driver (Cursor)** | Cursor CLI unlimited via subscription — default for all routine coding |
 | **Breadth (review/debugging)** | `deepseek/deepseek-v4-pro` |
 | **Precision (review/debugging)** | `openrouter/moonshotai/kimi-latest:max` |
-| **Second opinion (review/debugging)** | `openrouter/z-ai/glm-5.1:max` or `cursor-grok-4.5-high` |
+| **Second opinion (review/debugging)** | `cursor-grok-4.5-high` or `openrouter/z-ai/glm-5.1:max` |
 | **Volume/edge cases (review/debugging)** | `openrouter/minimax/minimax-m3:max` |
 
 **Cursor tier mapping (aligned to CE nomenclature: Low→Haiku, Mid→Sonnet, High→Opus):**
@@ -302,14 +301,14 @@ Use `--force` to skip confirmation prompts. Cursor is unlimited via subscription
 ### High tier — explicit approval required
 
 🚫 Never auto-select. Ask first:
-`anthropic/claude-sonnet-latest` (~$6), `openai/gpt-5.4` (~$8), `anthropic/claude-opus-latest` (~$12)
+`anthropic/claude-sonnet-latest` (~$6), `openai/gpt-5.4` (~$8), `anthropic/claude-opus-latest` (~$12), `openrouter/moonshotai/kimi-latest:max`
 
 Reserve for auth/crypto/payments/data-migration diffs where false negatives are catastrophic.
 
 ### Review combo
-Default: Kimi:max (precision) + DeepSeek v4-pro (breadth) + GLM:max or Grok:max (tiebreaker). Distribute reviewers across different models — model diversity catches more bugs than model loyalty.
+Default: Kimi:max (precision) + DeepSeek v4-pro (breadth) + Grok:max (preferred, use Cursor CLI `agent --model cursor-grok-4.5-high`) or GLM:max (tiebreaker). Distribute reviewers across different models — model diversity catches more bugs than model loyalty.
 
-**Implementation-review loop:** Grok 4.5 writes → Kimi K3 reviews → Grok fixes. Output-heavy work stays on Cursor (free), input-heavy review uses Kimi ($0.93). Different model families for genuine blind-spot coverage.
+**Implementation-review loop:** Grok 4.5 writes (use Cursor CLI `agent --model cursor-grok-4.5-high`) → Kimi K3 reviews → Grok fixes (use Cursor CLI `agent --model cursor-grok-4.5-high`). Output-heavy work stays on Cursor (free), input-heavy review uses Kimi ($0.93). Different model families for genuine blind-spot coverage.
 
 Full cost-quality data: `docs/solutions/mid-tier-review-models-match-frontier-at-7x-cost.md`
 
