@@ -280,12 +280,11 @@ Flash models handle mechanical/operational tasks only — `scout` for codebase r
 
 | Role | Model |
 |------|-------|
-| **Daily driver (Pi)** | `deepseek/deepseek-v4-pro` |
-| **Daily driver (Cursor)** | Unlimited via subscription — preferred path for ALL coding in Pi. Flash (Low tier) is scout/research only, never for writing code. |
-| **Breadth** | `deepseek/deepseek-v4-pro` |
-| **Precision** | `openrouter/moonshotai/kimi-latest:max` |
-| **Second opinion** | `openrouter/z-ai/glm-5.1:max` or `cursor-grok-4.5-high` |
-| **Volume/edge cases** | `openrouter/minimax/minimax-m3:max` |
+| **Daily driver (Cursor)** | Cursor CLI unlimited via subscription — default for all routine coding |
+| **Breadth (review/debugging)** | `deepseek/deepseek-v4-pro` |
+| **Precision (review/debugging)** | `openrouter/moonshotai/kimi-latest:max` |
+| **Second opinion (review/debugging)** | `openrouter/z-ai/glm-5.1:max` or `cursor-grok-4.5-high` |
+| **Volume/edge cases (review/debugging)** | `openrouter/minimax/minimax-m3:max` |
 
 **Cursor tier mapping (aligned to CE nomenclature: Low→Haiku, Mid→Sonnet, High→Opus):**
 
@@ -350,7 +349,7 @@ Pointer-first bootstrap (canonical detail lives in linked docs; do not restate s
 - Master CV: one complete JSON career record (not parallel industry masters); local SoT is gitignored under `secrets/` — runtime uses `MASTER_CV_JSON` / `MASTER_CV_PATH` (see `.env.example`, `@docs/arch/APP_WALKTHROUGH.md`).
 - Curation modes: `strict` (default, linear/in-field Struan) vs `flexible` (transferable-skills pivot path) — `@docs/api/API.md`; product strategy in `STRATEGY.md`.
 - `npm run smoke` (manual live-API + judges; not part of `npm test` / CI): `@docs/test/TESTING.md`, `@docs/arch/MODEL_SELECTION.md`
-- MVP auth (`TAILOR_API_KEY` Bearer) and artifacts (curated JSON + `.docx`); flexible responses also include `coverLetter` markdown — `@docs/api/API.md`
+- MVP auth (`TAILOR_API_KEY` Bearer) and artifacts (curated JSON + `.docx`); flexible responses may include `coverLetter` markdown — `@docs/api/API.md`
 - Observability (Langfuse on-path / LangSmith fire-and-forget; redaction + flush bounds): `@docs/solutions/architecture-patterns/dual-tracer-redact-and-flush-timeout.md`
 - Cost calibration: DeepSeek via direct API; OpenAI/Google via OpenRouter flex; for tailoring quality prefer best-fit over cost alone — `@docs/arch/MODEL_SELECTION.md`
 - Curator/smoke quality depends on adequate `AI_MAX_TOKENS`; undersized limits degrade output even when the model slug is correct.
