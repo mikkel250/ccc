@@ -36,8 +36,13 @@ import {
   redactCuratedForArtifact,
   getSmokeGroundingMin,
   getSmokeJdFitMin,
+  shouldWriteCoverLetterDocx,
   smokeArtifactPaths,
 } from "../app/api/lib/smoke-helpers";
+import {
+  markdownToDocxBase64,
+  isValidDocxBase64,
+} from "../app/api/lib/markdown-docx";
 
 const argv = process.argv.slice(2);
 const wantFlexible = argv.includes("--flexible");
@@ -101,6 +106,7 @@ type TailorSmokeResponse = {
   curatedJson?: unknown;
   builderVersion?: unknown;
   curationMode?: unknown;
+  coverLetter?: unknown;
   model?: unknown;
   error?: string;
 };
@@ -183,16 +189,19 @@ async function postTailor(jd: string): Promise<{
   };
 }
 
-function writeArtifacts(
+async function writeArtifacts(
   jdPath: string,
   curated: unknown,
   builderVersion: unknown,
-  cvBase64: string
-): void {
+  cvBase64: string,
+  curationMode: CurationMode,
+  coverLetter: unknown
+): Promise<void> {
   const dir = join(process.cwd(), "tmp", "smoke");
   mkdirSync(dir, { recursive: true });
-  const { slug, curatedPath, docxPath } = smokeArtifactPaths(jdPath, dir);
-  if (existsSync(curatedPath) || existsSync(docxPath)) {
+  const { slug, curatedPath, docxPath, coverLetterPath } =
+    smokeArtifactPaths(jdPath, dir);
+  if (existsSync(curatedPath) || existsSync(docxPath) || existsSync(coverLetterPath)) {
     console.warn(
       `Overwriting existing smoke artifacts for JD basename ${JSON.stringify(slug)}`
     );
@@ -206,6 +215,32 @@ function writeArtifacts(
   writeFileSync(curatedPath, JSON.stringify(payload, null, 2));
   writeFileSync(docxPath, Buffer.from(cvBase64, "base64"));
   console.log(`Wrote ${docxPath} and ${curatedPath} (redacted=${!unredacted})`);
+
+  // Cover-letter DOCX: flexible only, warn+skip when absent or conversion fails.
+  if (curationMode === "flexible") {
+    if (shouldWriteCoverLetterDocx(curationMode, coverLetter)) {
+      try {
+        const clBase64 = await markdownToDocxBase64(coverLetter);
+        if (!isValidDocxBase64(clBase64)) {
+          console.warn(
+            "Cover-letter DOCX failed validation after conversion, skipping write"
+          );
+        } else {
+          writeFileSync(coverLetterPath, Buffer.from(clBase64, "base64"));
+          console.log(`Wrote ${coverLetterPath}`);
+        }
+      } catch (err) {
+        console.warn(
+          "Cover-letter DOCX conversion failed, skipping:",
+          err instanceof Error ? err.message : err
+        );
+      }
+    } else {
+      console.warn(
+        "Cover letter missing or empty for flexible run, skipping cover-letter DOCX"
+      );
+    }
+  }
 }
 
 async function main(): Promise<void> {
@@ -229,11 +264,13 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  writeArtifacts(
+  await writeArtifacts(
     jd.path,
     tailor.data.curatedJson,
     tailor.data.builderVersion,
-    tailor.data.cv as string
+    tailor.data.cv as string,
+    CURATION_MODE,
+    tailor.data.coverLetter
   );
 
   const judgeModel = getEvalJudgeModel();

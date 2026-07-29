@@ -3,6 +3,7 @@
  */
 import { basename, join } from "node:path";
 import { getEnvFloat, getEnvNumber } from "../../../lib/env";
+import type { CurationMode } from "./curation-mode";
 import type { JsonGroundingScore, JsonJdFitScore } from "./eval-judge";
 
 export function getSmokeGroundingMin(): number {
@@ -71,13 +72,34 @@ export function smokeArtifactSlug(jdPath: string): string {
 export function smokeArtifactPaths(
   jdPath: string,
   smokeDir: string
-): { slug: string; curatedPath: string; docxPath: string } {
+): {
+  slug: string;
+  curatedPath: string;
+  docxPath: string;
+  coverLetterPath: string;
+} {
   const slug = smokeArtifactSlug(jdPath);
   return {
     slug,
     curatedPath: join(smokeDir, `${slug}.curated.json`),
     docxPath: join(smokeDir, `${slug}.docx`),
+    coverLetterPath: join(smokeDir, `${slug}.cover-letter.docx`),
   };
+}
+
+/**
+ * Pure predicate: should we attempt a cover-letter DOCX write?
+ * True only for flexible mode with a non-empty trimmed string.
+ */
+export function shouldWriteCoverLetterDocx(
+  curationMode: CurationMode,
+  coverLetter: unknown
+): coverLetter is string {
+  return (
+    curationMode === "flexible" &&
+    typeof coverLetter === "string" &&
+    coverLetter.trim().length > 0
+  );
 }
 
 /** Strip contact + free-text bullets for default local artifact writes. */
