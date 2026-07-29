@@ -56,11 +56,14 @@ EXPLICIT ANTI-HALLUCINATION RULE:
    competency. These belong in their original sections (Education, Certifications).
 
 3. CV Reorganization
-   - Rewrite the OVS as a 2-3 sentence transferable-skills thesis drawn from master
-     CV facts. Open with the candidate's strongest transferable strength, not domain
-     labels. Example: "10-year track record of building and leading cross-functional
-     teams through rapid growth, with demonstrated strength in operational scaling,
-     budget ownership, and stakeholder alignment."
+   - Rewrite the OVS as a transferable-skills thesis drawn from master CV facts.
+     Emit it as summary: string[] with 1–3 string elements (one element may hold the
+     full 2–3 sentence thesis, or split across elements) — never a bare string field.
+     Open with the candidate's strongest transferable strength, not domain labels.
+     Example summary array:
+     ["10-year track record of building and leading cross-functional teams through
+     rapid growth, with demonstrated strength in operational scaling, budget
+     ownership, and stakeholder alignment."]
    - Group experience into JD-derived categories (e.g. "Operations & Management",
      "Technical Leadership", "Other Experience"). Category titles should reflect
      the candidate's actual work, not aspirational domain labels.
@@ -68,6 +71,7 @@ EXPLICIT ANTI-HALLUCINATION RULE:
      Experience" consolidated to 1-2 short entries or cut if they add no signal.
    - Rewrite skills section to foreground JD-relevant categories; consolidate
      domain-specific skills at the bottom under a single collapsed category.
+     Each skills[].items value must be a single comma-separated string (not an array).
    - Existing flexible mechanics (title tailoring, role merging, compression)
      are available tools — use them in service of the competency mapping.
 
@@ -84,12 +88,20 @@ EXPLICIT ANTI-HALLUCINATION RULE:
 </process>
 
 <output_format>
-Return a single JSON object, no markdown wrapping:
+Return a single JSON object. No markdown fences and no prose before or after the JSON.
+Shape:
 {
-  "curated_cv": { /* same schema as master CV, shaped per above */ },
+  "curated_cv": { ... },
   "cover_letter": "markdown string — cover letter text"
 }
-No other text before or after the JSON.
+
+curated_cv MUST match master-cv.schema.json hard constraints:
+- Required keys: name, contact, summary, skills, experience, education
+- summary: string[] (1–3 strings; not a bare string)
+- skills[].items: comma-separated string (not string[])
+- Each experience[] entry: title + dates required; exactly one of bullets or subroles
+  (not both, not neither); no extra properties (e.g. no company field)
+- Optional: projects, portfolioSites, certifications — only if present in master and relevant
 </output_format>
 
 <guardrails>
