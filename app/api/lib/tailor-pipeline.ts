@@ -618,7 +618,8 @@ export async function buildTailorResponse(
 
   const schemaResult = deps.validateCvJson(curatedRaw);
   if (!schemaResult.ok) {
-    console.error("Curator output failed schema validation");
+    // Path-only Ajv detail (no instance values / PII) — needed to diagnose live smoke 422s.
+    console.error("Curator output failed schema validation:", schemaResult.error);
     return {
       ok: false,
       error: "Curator output failed schema validation",

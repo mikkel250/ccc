@@ -73,6 +73,12 @@ docs/plan
 docs/archive
 .dotdotgod
 
+# Pi local subagent artifacts
+.pi-subagents/
+
+# Local scratch / smoke outputs
+/tmp/
+
 # eval
 eval-results/
 

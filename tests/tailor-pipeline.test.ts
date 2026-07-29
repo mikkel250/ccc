@@ -258,6 +258,37 @@ describe("buildTailorResponse — pipeline orchestration", () => {
     if (!result.ok) assert.equal(result.status, 422);
   });
 
+  it("logs path-only Ajv detail on schema 422 while returning the generic error", async () => {
+    mockPipelineSuccess();
+    const diagnostic =
+      "CV JSON failed schema validation: /summary must be array";
+    mock.method(tailorCvDeps, "validateCvJson", () => ({
+      ok: false as const,
+      error: diagnostic,
+    }));
+    const errorSpy = mock.method(console, "error", () => {});
+
+    const result = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(VALID_BODY, XFF)
+    );
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 422);
+      assert.equal(result.error, "Curator output failed schema validation");
+    }
+    assert.ok(
+      errorSpy.mock.calls.some(
+        (call) =>
+          call.arguments[0] ===
+            "Curator output failed schema validation:" &&
+          call.arguments[1] === diagnostic
+      ),
+      "expected console.error to emit path-only schemaResult.error"
+    );
+  });
+
   // --- Builder failure ---
 
   it("returns error when builder fails after valid curated JSON", async () => {

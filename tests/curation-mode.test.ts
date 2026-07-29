@@ -8,10 +8,132 @@ import {
   flexibleCoverLetter,
   CURATION_MODE_POLICY_PLACEHOLDER,
   DEFAULT_CURATION_MODE,
+  FLEXIBLE_PIVOT_FALLBACK_PROMPT,
 } from "../app/api/lib/curation-mode";
 import { getDefaultCurationMode } from "../lib/env";
+import { validateCvJson } from "../app/api/lib/cv-schema";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const validCv = JSON.parse(
+  readFileSync(
+    join(process.cwd(), "tests/fixtures/curated-cv-valid.json"),
+    "utf8"
+  )
+) as Record<string, unknown>;
 
 describe("curation-mode", () => {
+  // Minimal prompt-text check only — schema contract exercised via validateCvJson below.
+  it("FLEXIBLE_PIVOT_FALLBACK_PROMPT names curated_cv wrapper and master schema path", () => {
+    const prompt = FLEXIBLE_PIVOT_FALLBACK_PROMPT;
+    assert.match(prompt, /"curated_cv"/);
+    assert.match(prompt, /"cover_letter"/);
+    assert.match(prompt, /master-cv\.schema\.json/);
+    assert.match(prompt, /additionalProperties:\s*false/i);
+  });
+
+  describe("flexible curated_cv contract (schema-enforced)", () => {
+    it("accepts a representative valid curated_cv payload", () => {
+      assert.equal(validateCvJson(validCv).ok, true);
+    });
+
+    it("accepts a flexible wrapper with curated_cv and cover_letter", () => {
+      assert.equal(
+        isFlexibleWrapper({
+          curated_cv: validCv,
+          cover_letter: "Dear hiring manager,\n\nI am pivoting…",
+        }),
+        true
+      );
+    });
+
+    it("rejects legacy bare-string summary", () => {
+      const result = validateCvJson({
+        ...validCv,
+        summary: "Bare thesis string that should be an array",
+      });
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.match(result.error, /\/summary must be array/);
+      }
+    });
+
+    it("rejects legacy skills[].items string array", () => {
+      const result = validateCvJson({
+        ...validCv,
+        skills: [
+          {
+            category: "Core",
+            items: ["TypeScript", "Node"] as unknown as string,
+          },
+        ],
+      });
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.match(result.error, /\/skills\/0\/items must be string/);
+      }
+    });
+
+    it("rejects contact missing required nested fields", () => {
+      const result = validateCvJson({
+        ...validCv,
+        contact: { email: "only@example.com" },
+      });
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.match(result.error, /\/contact/);
+      }
+    });
+
+    it("rejects skills[] missing category", () => {
+      const result = validateCvJson({
+        ...validCv,
+        skills: [{ items: "TypeScript, Node" }],
+      });
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.match(result.error, /\/skills\/0/);
+      }
+    });
+
+    it("rejects projects[] missing required name/bullets", () => {
+      const result = validateCvJson({
+        ...validCv,
+        projects: [{ linkUrl: "https://example.com" }],
+      });
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.match(result.error, /\/projects\/0/);
+      }
+    });
+
+    it("rejects experience with undeclared company property", () => {
+      const result = validateCvJson({
+        ...validCv,
+        experience: [
+          {
+            title: "Engineer, Example",
+            dates: "2024 - Present",
+            company: "Example Co",
+            bullets: ["Did a thing"],
+          },
+        ],
+      });
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.match(
+          result.error,
+          /\/experience\/0 must NOT have additional properties/
+        );
+      }
+    });
+
+    it("allows omitting optional projects entirely", () => {
+      const { projects: _dropped, ...withoutProjects } = validCv;
+      assert.equal(validateCvJson(withoutProjects).ok, true);
+    });
+  });
+
   it("DEFAULT_CURATION_MODE matches getDefaultCurationMode for current env", () => {
     // Import-time snapshot of getDefaultCurationMode(); do not assume "strict".
     assert.equal(DEFAULT_CURATION_MODE, getDefaultCurationMode());
