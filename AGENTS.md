@@ -363,11 +363,3 @@ This block is added by the pi-compound-engineering package.
 Pi extensions used by skills shipped by this package:
 - Required for full functionality: `pi-subagents` (by nicobailon) provides the `subagent` tool used by ce-compound, ce-code-review, ce-plan, ce-compound-refresh, and other parallel-agent skills.
 - Recommended: `pi-ask-user` (by edlsh) provides the `ask_user` tool; skills fall back to numbered options in chat when it is missing.
-
-Install with:
-  pi install npm:pi-subagents
-  pi install npm:pi-ask-user
-<!-- END COMPOUND PI TOOL MAP -->
-
-- Prefer unified `ce-*` compound-engineering commands across Pi and Cursor (pi-compound-engineering / CE MCP) rather than dual `/workflows-*` vs `/ce-*` names; AGENTS.md still needs manual re-sync when Pi and Cursor package surfaces drift.
-- Tailoring quality needs an adequate completion token budget (`AI_MAX_TOKENS`); undersized limits degrade curator output even when the model slug is correct.
