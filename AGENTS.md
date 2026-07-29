@@ -272,25 +272,33 @@ When calling subagents from within Pi, prefer `pi-subagents` (required peer for 
 
 Based on a July 2026 controlled experiment (15 models, identical review prompts, cost-validated). The $0.30–$1.00 tier matched the $6–$8 frontier tier on review quality — at 1/7th the cost.
 
-### Low tier — scout, research, simple lookups
-`openrouter/qwen/qwen3.7-flash:max`, `openrouter/google/gemini-flash-latest:max`, `openrouter/anthropic/claude-haiku-latest:max`
+### Low tier — scout, research, file/codebase recon (NOT for writing code)
+
+Flash models handle mechanical/operational tasks only — `scout` for codebase recon, `researcher` for web lookup. Route all routine coding to Cursor CLI (`agent --model auto`) instead. Use these models: `openrouter/qwen/qwen3.7-flash:max`, `openrouter/google/gemini-flash-latest:max`, `openrouter/anthropic/claude-haiku-latest:max`.
 
 ### Mid tier — implementation, review, debugging (default)
 
 | Role | Model |
 |------|-------|
 | **Daily driver (Pi)** | `deepseek/deepseek-v4-pro` |
-| **Daily driver (Cursor)** | Auto (unlimited subscription — use built-in models freely, no need to route through OpenRouter). When in Pi, Cursor's unlimited models can still be reached via the `agent` CLI:
-
-```bash
-agent --model auto --force -p "<prompt>"
-```
-
-Available Cursor models: `auto`, `composer-2.5`, `grok-4.5`. Use `--force` to skip confirmation prompts. This is the preferred path for expensive/large tasks in Pi that should route through the Cursor CLI instead of paying OpenRouter. |
+| **Daily driver (Cursor)** | Unlimited via subscription — preferred path for ALL coding in Pi. Flash (Low tier) is scout/research only, never for writing code. |
 | **Breadth** | `deepseek/deepseek-v4-pro` |
 | **Precision** | `openrouter/moonshotai/kimi-latest:max` |
 | **Second opinion** | `openrouter/z-ai/glm-5.1:max` or `cursor-grok-4.5-high` |
 | **Volume/edge cases** | `openrouter/minimax/minimax-m3:max` |
+
+**Cursor tier mapping (aligned to CE nomenclature: Low→Haiku, Mid→Sonnet, High→Opus):**
+
+| CE Tier | Thinking needed? | Cursor Model | When |
+|---|---|---|---|
+| Low (Haiku) | No | `agent --model auto` | Simple implementation, one-line fixes, formatting, boilerplate |
+| Mid (Sonnet) | No | `agent --model composer-2.5` | Multi-file, new logic, standard refactoring — straightforward coding, no heavy reasoning |
+| Mid (Sonnet) | Yes | `agent --model cursor-grok-4.5-high` | Mid-tier tasks that require reasoning: debugging, test writing, design decisions |
+| High (Opus) | — | `agent --model cursor-grok-4.5-high` | Architecture, tricky logic, deep refactors, cross-cutting concerns |
+
+Composer 2.5 is a pure coding model with no thinking option — use it for mid-tier work that is straightforward to implement. Grok 4.5 High has thinking and handles everything that requires reasoning, from mid-tier debugging up through high-tier architecture.
+
+Use `--force` to skip confirmation prompts. Cursor is unlimited via subscription — use it for all coding. OpenRouter models are only used when the user explicitly names a non-Cursor model.
 
 ### High tier — explicit approval required
 
@@ -328,16 +336,12 @@ Full cost-quality data: `docs/solutions/mid-tier-review-models-match-frontier-at
 - Do not couple product behavior or prompts tightly to one industry; engineers may be first users, but design stays industry-agnostic.
 - CV content quality matters more than page-length limits; avoid treating page count as a hard requirement.
 - Prefer LLM judges and calibrated model routing over heavy mechanical allowlists for grounding unless manual failures justify otherwise.
-- When asked to ship fixes to an already-open PR, commit and push to that PR; do not babysit the PR unless asked.
+- When asked to ship fixes to an already-open PR, verify the active branch first (`git branch --show-current`); never write files, commit, or push when on `main`; once branch safety is confirmed, commit and push to the correct PR branch and do not babysit the PR unless asked.
 - Set reasoning/thinking effort explicitly for tailoring and smoke runs (especially via OpenRouter) instead of relying on provider defaults.
 - Flexible/pivot curation should foreground transferable skills without fabricating experience; tenure claims must not sum overlapping spans or rebrand off-domain years.
-- Keep production prompts portable across providers; do not tune them to a single model.
+- Keep production and tailoring prompts portable across providers; do not tune them to a single model (inference still being evaluated across DeepSeek, Gemini, GPT, etc.).
 - For flexible curation success criteria, prefer a holistic judge verdict that the resume is "strong enough" over hard numeric pass/fail thresholds on individual scores.
-- When configuring models for tailoring/smoke (especially OpenRouter), set reasoning/thinking effort explicitly rather than relying on provider defaults.
-- When asked to ship fixes to an already-open PR, verify the active branch first (`git branch --show-current`); never write files, commit, or push when on `main`; once branch safety is confirmed, commit and push to the correct PR branch and do not babysit the PR unless asked.
-- Calibrate model choice per task to the quality actually needed — avoid defaulting to the biggest/most expensive reasoning model when a cheaper one yields no proportional quality gain, and consider smaller/alternative providers beyond an initial shortlist when evaluating models.
-- For `/ce-code-review` subagent dispatch, when a tiering is requested, assign heavier reasoning models to complex-task reviewers, mid-tier models to medium-complexity reviewers, and a lighter/Auto model to simple ones.
-- Keep tailoring prompts cross-model compatible rather than narrowly tuned to one provider, since the production inference model is still being evaluated across providers (e.g. DeepSeek, Gemini, GPT variants).
+- Calibrate model choice per task; for `/ce-code-review` when tiering is requested, use Grok 4.5 high for complex/thinking tasks, Composer 2.5 for mid non-thinking work, and Auto for routine ones.
 
 ## Learned Workspace Facts
 
@@ -346,10 +350,12 @@ Pointer-first bootstrap (canonical detail lives in linked docs; do not restate s
 - Master CV: one complete JSON career record (not parallel industry masters); local SoT is gitignored under `secrets/` — runtime uses `MASTER_CV_JSON` / `MASTER_CV_PATH` (see `.env.example`, `@docs/arch/APP_WALKTHROUGH.md`).
 - Curation modes: `strict` (default, linear/in-field Struan) vs `flexible` (transferable-skills pivot path) — `@docs/api/API.md`; product strategy in `STRATEGY.md`.
 - `npm run smoke` (manual live-API + judges; not part of `npm test` / CI): `@docs/test/TESTING.md`, `@docs/arch/MODEL_SELECTION.md`
-- MVP auth (`TAILOR_API_KEY` Bearer) and dual artifacts (curated JSON + `.docx`): `@docs/api/API.md`
+- MVP auth (`TAILOR_API_KEY` Bearer) and artifacts (curated JSON + `.docx`); flexible responses also include `coverLetter` markdown — `@docs/api/API.md`
 - Observability (Langfuse on-path / LangSmith fire-and-forget; redaction + flush bounds): `@docs/solutions/architecture-patterns/dual-tracer-redact-and-flush-timeout.md`
 - Cost calibration: DeepSeek via direct API; OpenAI/Google via OpenRouter flex; for tailoring quality prefer best-fit over cost alone — `@docs/arch/MODEL_SELECTION.md`
 - Curator/smoke quality depends on adequate `AI_MAX_TOKENS`; undersized limits degrade output even when the model slug is correct.
+- Curator output must satisfy `master-cv.schema.json` (`summary: string[]`, `skills[].items` as a comma-separated string); schema failures surface as HTTP 422.
+- Local `tmp/` smoke outputs and `.pi-subagents/` artifacts are gitignored — do not commit them.
 
 <!-- BEGIN COMPOUND PI TOOL MAP -->
 ## Compound Engineering (Pi compatibility)
@@ -364,5 +370,6 @@ Install with:
   pi install npm:pi-subagents
   pi install npm:pi-ask-user
 <!-- END COMPOUND PI TOOL MAP -->
+
 - Prefer unified `ce-*` compound-engineering commands across Pi and Cursor (pi-compound-engineering / CE MCP) rather than dual `/workflows-*` vs `/ce-*` names; AGENTS.md still needs manual re-sync when Pi and Cursor package surfaces drift.
 - Tailoring quality needs an adequate completion token budget (`AI_MAX_TOKENS`); undersized limits degrade curator output even when the model slug is correct.

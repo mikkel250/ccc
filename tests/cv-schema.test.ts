@@ -73,6 +73,44 @@ describe("validateCvJson", () => {
     assert.equal(result.ok, false);
   });
 
+  // Flexible curator mis-shapes that Ajv must reject (runtime contract, not prompt prose).
+  it("rejects summary as a bare string instead of string[]", () => {
+    const result = validateCvJson({
+      ...(validCv as object),
+      summary: "Bare thesis string that should be an array",
+    });
+    assert.equal(result.ok, false);
+  });
+
+  it("rejects skills[].items when it is a string array instead of a comma-separated string", () => {
+    const base = validCv as {
+      skills: Array<{ category: string; items: string }>;
+    };
+    const result = validateCvJson({
+      ...base,
+      skills: [{ category: "Core", items: ["TypeScript", "Node"] as unknown as string }],
+    });
+    assert.equal(result.ok, false);
+  });
+
+  it("rejects experience entries that include undeclared properties like company", () => {
+    const base = validCv as {
+      experience: Array<Record<string, unknown>>;
+    };
+    const result = validateCvJson({
+      ...base,
+      experience: [
+        {
+          title: "Engineer, Example",
+          dates: "2024 - Present",
+          company: "Example Co",
+          bullets: ["Did a thing"],
+        },
+      ],
+    });
+    assert.equal(result.ok, false);
+  });
+
   it("loads schema from CV_SCHEMA_PATH when set to a valid path", () => {
     process.env.CV_SCHEMA_PATH = shippedSchemaPath;
     __clearCvSchemaCacheForTest();

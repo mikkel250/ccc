@@ -8,27 +8,10 @@ import {
   flexibleCoverLetter,
   CURATION_MODE_POLICY_PLACEHOLDER,
   DEFAULT_CURATION_MODE,
-  FLEXIBLE_PIVOT_FALLBACK_PROMPT,
 } from "../app/api/lib/curation-mode";
 import { getDefaultCurationMode } from "../lib/env";
 
 describe("curation-mode", () => {
-  it("FLEXIBLE_PIVOT_FALLBACK_PROMPT encodes master-cv.schema.json hard constraints", () => {
-    const prompt = FLEXIBLE_PIVOT_FALLBACK_PROMPT;
-    // summary must be string[], not a bare string (OVS thesis lives inside the array)
-    assert.match(prompt, /summary:\s*string\[\]/i);
-    assert.match(prompt, /not a bare string/i);
-    // skills[].items is a comma-separated string in the schema
-    assert.match(prompt, /skills\[\]\.items/i);
-    assert.match(prompt, /comma-separated string/i);
-    // experience oneOf: bullets XOR subroles
-    assert.match(prompt, /exactly one of bullets or subroles/i);
-    // wrapper shape
-    assert.match(prompt, /"curated_cv"/);
-    assert.match(prompt, /"cover_letter"/);
-    assert.match(prompt, /no markdown fences/i);
-  });
-
   it("DEFAULT_CURATION_MODE matches getDefaultCurationMode for current env", () => {
     // Import-time snapshot of getDefaultCurationMode(); do not assume "strict".
     assert.equal(DEFAULT_CURATION_MODE, getDefaultCurationMode());
