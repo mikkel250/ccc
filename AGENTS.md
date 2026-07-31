@@ -266,7 +266,7 @@ npm test
 
 # Subagents
 
-When calling subagents from within Pi, prefer `pi-subagents` (required peer for parallel CE skills). In Cursor, prefer the Task tool / model picker defaults unless the user specifies a model.
+When calling subagents from within Pi, prefer `pi-subagents` (required peer for parallel CE skills). In Cursor, use the Task tool / Explore agents with an explicit model override when selecting Composer: **`composer-2.5` only — never `composer-2.5-fast`** (or any other `*-fast` Composer slug), including scouts, grounding, and “cheap extraction” work. Omit `model` to inherit only when the parent session is verified Auto, standard `composer-2.5`, or Grok; if the parent is any `*-fast` Composer slug, pass `composer-2.5` explicitly so inheritance cannot bypass the ban. Otherwise pass `composer-2.5` / the tier table below; do not treat CE “cheapest capable” as permission to use Fast Composer.
 
 ## Model Tier Assignments
 
@@ -295,6 +295,8 @@ When in Pi, route all routine coding to Cursor CLI (`agent --model auto`) instea
 | High (Opus) | — | `agent --model cursor-grok-4.5-high` | Architecture, tricky logic, deep refactors, cross-cutting concerns |
 
 Composer 2.5 is a pure coding model with no thinking option — use it for mid-tier work that is straightforward to implement. Grok 4.5 High has thinking and handles everything that requires reasoning, from mid-tier debugging up through high-tier architecture.
+
+**Never use Fast Composer** (`composer-2.5-fast` or any `composer-*-fast` Task/CLI slug) for subagents, Explore, scouts, or parent-session coding in this repo. Prefer standard `composer-2.5`; use `auto` or Grok per the table above when Composer is the wrong tier.
 
 Use `--force` to skip confirmation prompts. Cursor is unlimited via subscription — use it for all coding. OpenRouter models are only used when the user explicitly names a non-Cursor model.
 
@@ -339,7 +341,7 @@ Full cost-quality data: `docs/solutions/mid-tier-review-models-match-frontier-at
 - Flexible/pivot curation should foreground transferable skills without fabricating experience; tenure claims must not sum overlapping spans or rebrand off-domain years.
 - Keep production and tailoring prompts portable across providers; do not tune them to a single model (inference still being evaluated across DeepSeek, Gemini, GPT, etc.).
 - For flexible curation success criteria, prefer a holistic judge verdict that the resume is "strong enough" over hard numeric pass/fail thresholds on individual scores.
-- Calibrate model choice per task; for `/ce-code-review` when tiering is requested, use Grok 4.5 high for complex/thinking tasks, Composer 2.5 for mid non-thinking work, and Auto for routine ones.
+- Calibrate model choice per task; for `/ce-code-review` when tiering is requested, use Grok 4.5 high for complex/thinking tasks, Composer 2.5 for mid non-thinking work, and Auto for routine ones. Never select Fast Composer (`composer-2.5-fast` / `composer-*-fast`) for Task, Explore, scouts, or other subagents — always standard `composer-2.5` when Composer is chosen.
 
 ## Learned Workspace Facts
 
