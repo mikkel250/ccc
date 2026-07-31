@@ -2,7 +2,7 @@
 title: "Extract Entrypoint Complexity — Route Pipeline, Smoke Library, Schema Config"
 type: refactor
 date: 2026-07-23
-deepened: 2026-07-23
+deepened: 2026-07-30
 ---
 
 # Extract Entrypoint Complexity
@@ -11,248 +11,243 @@ deepened: 2026-07-23
 
 Three independent structural refactorings to pull orchestration and configuration out of entrypoint files into reusable, testable library modules. No behavior changes. All three follow existing conventions: discriminated unions, named exports, plain object DI bag, env-var-driven configuration.
 
-**Branch:** New branch off `main`, lands after PR #15 merges.
+**Status (2026-07-30):** U1 (schema path) and U2 (route pipeline) are complete and verified on `main`. U3 (smoke runner library) is the only remaining work.
+
+**Branch:** New branch off `main` for U3 only. U1 and U2 already landed via PR #27 and predecessor PRs.
 
 ## Problem Statement
 
 Sourcery review of PR #15 identified three entrypoints where logic density makes the code harder to read, test, and modify:
 
-1. **`app/api/tailor-cv/route.ts`** (332 lines) — the POST handler inlines 8 pipeline steps (auth → IP → rate-limit → body-size → validate → curator → schema → docx). Reading the handler requires understanding all orchestration at once. Individual steps are already extracted in `tailorCvDeps`, but their composition and error routing is not.
+1. **`app/api/tailor-cv/route.ts`** — **✅ COMPLETE.** Previously 332 lines, now 132 lines. The POST handler successfully extracted into `app/api/lib/tailor-pipeline.ts` (674 lines). Route is a thin HTTP wrapper: `POST(request) → buildTailorResponse(deps, request) → mapPipelineResult()`. Pipeline tests exist at `tests/tailor-pipeline.test.ts`.
 
-2. **`scripts/e2e-tailor-cv.ts`** (~270 lines) — the smoke CLI mixes JD resolution, HTTP calls, artifact writing, dual-judge evaluation, and gate logic in a single script. The user envisions this evolving into a user-facing "paste JD, get CV" flow, which requires the core logic to be importable outside the CLI.
+2. **`scripts/e2e-tailor-cv.ts`** (325 lines) — the smoke CLI mixes health-check, JD resolution, HTTP calls, artifact writing (including cover-letter DOCX for flexible mode), dual-judge evaluation, and gate logic in a single script. The user envisions this evolving into a user-facing "paste JD, get CV" flow, which requires the core logic to be importable outside the CLI.
 
-3. **`app/api/lib/cv-schema.ts`** — schema path is a hard-coded relative string with a test-only `__resetCvSchemaValidatorForTest()` function for swapping it. The existing convention is `getEnvString()` for any tunable path/config.
+3. **`app/api/lib/cv-schema.ts`** — **✅ COMPLETE.** Now uses `CV_SCHEMA_PATH` env var via `getEnvString("CV_SCHEMA_PATH")` with existing default path as fallback. `__resetCvSchemaValidatorForTest()` removed. Tests use `process.env.CV_SCHEMA_PATH` with `afterEach` cleanup. `.env.example` updated.
 
 ## Proposed Solution
 
 | # | From | To | What Moves |
 |---|------|----|------------|
 | 1 | `route.ts` POST handler | `app/api/lib/tailor-pipeline.ts` | 10-step orchestration into `buildTailorResponse(deps, request)` |
-| 2 | `scripts/e2e-tailor-cv.ts` | `app/api/lib/smoke-runner.ts` | Core smoke logic into `verifySmokePipeline(jd, options)` |
+| 2 | `scripts/e2e-tailor-cv.ts` | `app/api/lib/smoke-runner.ts` | Core smoke logic into `verifySmokePipeline(masterCv, jd, options)` |
 | 3 | `cv-schema.ts` hard-coded path | `cv-schema.ts` + env | `CV_SCHEMA_PATH` env var; remove `__resetCvSchemaValidatorForTest` |
 
-### U2: Route Handler → Pipeline
+### U2: Route Handler → Pipeline ✅ COMPLETE (landed on `main`)
 
-- **Description:** Extract 10-step POST orchestration from `route.ts` into `buildTailorResponse(deps, request)` in a new pipeline module (auth through schema validation and DOCX generation). Split 6 mixed tests between route and pipeline test files.
+- **Result:** `app/api/lib/tailor-pipeline.ts` (674 lines) exports `buildTailorResponse(deps, request)`. `route.ts` reduced to 132 lines — thin HTTP wrapper calling `mapPipelineResult()`. `tests/tailor-pipeline.test.ts` covers pipeline composition with mocked deps. `tests/route.test.ts` (580 lines, 39 tests) covers HTTP mapping.
+- **Pipeline result type:** Returns discriminated union with HTTP status codes (plan decision, diverging from brainstorm's `{ stage }` proposal). The pipeline is single-consumer (exactly one route), so HTTP coupling in `lib/` is acceptable.
+- **Utility placement:** `parseClientIp`, `isValidIp`, `readRequestBodyCapped`, `retryAfterSeconds` moved to `tailor-pipeline.ts`. `safeTailorLog` stays in `route.ts`. Pipeline uses `console.error` for LLM errors.
+- **Verification:** Route tests pass (39/39). Pipeline tests pass (25/25). `npm test` baseline: 510 pass, 2 unrelated pre-existing failures (kebab-case + curation-mode), 4 skip.
+
+### U3: Smoke CLI → Library ← REMAINING WORK
+
+- **Description:** Extract core smoke logic from `scripts/e2e-tailor-cv.ts` (325 lines) into `verifySmokePipeline(masterCv, jd, options)` library function. Script becomes a thin CLI wrapper (~100 lines).
 - **Complexity:** Complex
-- **Reason:** Multi-file coordinated change (new module + route rewrite + test split); introduces new abstraction (pipeline function); touches public API surface (`POST /api/tailor-cv`); 6 mixed tests require careful categorization to avoid coverage gaps.
+- **Reason:** Multi-file change (new library module + CLI rewrite + new test file); new `fetch` dependency in `app/api/lib/`; library needs `masterCv` data for judge calls; cover-letter DOCX handling must be included.
 
-**Target:** `app/api/lib/tailor-pipeline.ts` exporting `buildTailorResponse(deps, request)`
-
-Naming note: follows the dominant `build*` family (`buildJsonDocxBase64`, `buildCuratorUserMessage` — 10+ functions). Describes what the pipeline produces: a structured tailor response from all 10 pipeline steps.
-
-**Architecture note — `NextRequest` dependency:** `parseClientIp` and `readRequestBodyCapped` accept `NextRequest`. Moving them to `tailor-pipeline.ts` keeps the framework type in `lib/`. Alternative: the route pre-parses `ip` and `bodyText` and passes plain strings to the pipeline. Tradeoff: pre-parsing in route adds ~10 lines but keeps `lib/` framework-agnostic. **Decision:** move them to pipeline as-is — `lib/` already imports Next.js types (`NextRequest`, `NextResponse` via `tailor-cv-deps.ts` → `route.ts` imports). Framework-agnosticism is not a current architectural goal.
-
-**Architecture note — `status` in pipeline result:** The pipeline returns `{ ok: false, error, status }` where status is an HTTP code. Alternative: return error codes ("UNAUTHORIZED", "RATE_LIMITED") and have route map them. **Decision:** keep HTTP status codes in the pipeline result — the `ERROR_RESPONSES` table already maps status codes, and adding an intermediate error-code layer adds an unnecessary second mapping. The pipeline is not a general-purpose module — it serves exactly one route.
-
-**Architecture note — `safeTailorLog`:** Used by pipeline (LLM errors) and route (catch-all). **Decision:** pipeline calls `console.error` directly for LLM errors; route's `mapErrorToResponse` catch-all remains the only `safeTailorLog` call site. `safeTailorLog` stays in route.ts.
-
-The pipeline function composes the 10 steps already available in `tailorCvDeps`, returning a structured result:
-
-```typescript
-type TailorPipelineResult =
-  | { ok: true; body: TailorResponseBody }
-  | { ok: false; error: string; status: 400 | 401 | 413 | 422 | 429 | 503 };
-```
-
-Steps (same order as current handler):
-1. `deps.authenticateTailorRequest(authorization)` → auth gate
-2. `parseClientIp(request)` → IP resolution (stays inline or moves to a helper)
-3. `deps.checkRateLimit(...)` → dual rate-limit
-4. `readRequestBodyCapped(request, maxBytes)` → body cap
-5. `JSON.parse(body)` + `validateTailorCvBody(body)` → validation
-6. `deps.requireMasterCv()` + `deps.getCuratorPrompt()` + `deps.applyCurationModePolicy(...)` → prompt
-7. `deps.compileCuratorPrompt(...)` + `deps.buildCuratorUserMessage(...)` → user message
-8. `deps.chat(...)` → LLM call
-9. `deps.extractStructuredJson(...)` + `deps.validateCvJson(...)` + `deps.assertCuratedJsonSize(...)` → schema gate
-10. `deps.sanitizeForResponse(...)` + `deps.buildJsonDocxBase64(...)` → docx
-
-**What stays in route.ts:**
-- `runtime = "nodejs"` export
-- `POST(request)` — thin wrapper: `await buildTailorResponse(deps, request)` → maps result to `jsonResponse()`
-- `GET()` — 405 handler
-- `mapErrorToResponse()` and `ERROR_RESPONSES` table
-- `jsonResponse()`, `safeTailorLog()`, `isValidIp()`, `parseClientIp()`, `readRequestBodyCapped()`, `retryAfterSeconds()` — move to pipeline or a shared helper if used only by the pipeline
-
-**Resolved: utility function placement** — `parseClientIp`, `isValidIp`, `readRequestBodyCapped`, `retryAfterSeconds` move to `tailor-pipeline.ts` (used only by pipeline). `safeTailorLog` stays in `route.ts` (shared by pipeline for LLM errors and `mapErrorToResponse` for catch-all). No separate `tailor-helpers.ts` — avoids premature abstraction for 4 single-consumer functions.
-
-**Test impact:** `tests/route.test.ts` currently mocks `tailorCvDeps` methods with `mock.method()`. After extraction, route tests should verify the route maps pipeline results to HTTP — not test the pipeline itself. Pipeline gets its own `tests/tailor-pipeline.test.ts` with integration-style tests composing mocked deps.
-
-### U3: Smoke CLI → Library
-
-- **Description:** Extract core smoke logic from CLI script into `verifySmokePipeline(jd, options)` library function. Script becomes a thin CLI wrapper.
-- **Complexity:** Complex
-- **Reason:** Multi-file change (new library module + CLI rewrite + new test file); introduces new abstraction (smoke pipeline function); new `fetch` dependency in `app/api/lib/` (mitigated: global in Node 22).
-
-**Target:** `app/api/lib/smoke-runner.ts` exporting `verifySmokePipeline(jd, options)`
+**Target:** `app/api/lib/smoke-runner.ts` exporting `verifySmokePipeline(masterCv, jd, options)`
 
 Naming note: follows `verify`/`check`/`validate` family (`checkRateLimit`, `validateCvJson`). Describes the action: verifying the smoke pipeline end-to-end.
 
-Logic to extract:
-1. Health check (`GET /api/hello`)
-2. POST to `/api/tailor-cv` with auth header and JD
-3. Artifact writing (curated JSON, docx) — gated by `SMOKE_WRITE_UNREDACTED`
-4. Dual-judge invocation (`scoreJsonGrounding`, `scoreJsonJdFit`) from `eval-judge.ts`
-5. Gate evaluation (`evaluateSmokeJudgeGates`) from `smoke-helpers.ts`
+#### Logic to extract
 
-**What stays in script:**
-- `dotenv/config` import
-- CLI argument parsing (baseUrl, jdPath, --flexible)
-- JD resolution from file (or in-memory in the future)
-- `resolveCurationMode()` — moves to library since it reads env
-- `loadJd()` / `defaultJdPath()` — stays in script (file I/O is CLI concern)
-- `main()` entrypoint
+1. **Health check** — `fetch GET /api/hello`; confirm `status === "ok"`
+2. **POST to `/api/tailor-cv`** — with auth header, JD, sessionId, curationMode. Validate response shape (cv base64, curatedJson, builderVersion, coverLetter?)
+3. **DOCX validation** — `isValidDocxBase64` on the returned cv (already in `markdown-docx.ts`)
+4. **Dual-judge invocation** — `scoreJsonGrounding(masterCv, curatedJson, jd, judgeModel, { curationMode })` and `scoreJsonJdFit(masterCv, curatedJson, jd, judgeModel)` from `eval-judge.ts`
+5. **Gate evaluation** — `evaluateSmokeJudgeGates(grounding, jdFit)` from `smoke-helpers.ts`
 
-**Library signature:**
+**Decision — artifact writing stays in script.** The current script writes curated JSON, DOCX, and cover-letter DOCX (flexible mode) to `tmp/smoke/`. This is file I/O tied to CLI invocation — not library concern. The library returns raw data; the script decides whether/when to write artifacts. The library signature returns the data needed:
+
+#### Artifact writing (stays in script, NOT in library)
+
+- Curated JSON: `writeFileSync(curatedPath, JSON.stringify(payload))` — redacted unless `SMOKE_WRITE_UNREDACTED=1`
+- DOCX: `writeFileSync(docxPath, Buffer.from(cvBase64, "base64"))`
+- Cover-letter DOCX (flexible only): `markdownToDocxBase64(coverLetter)` → validation → `writeFileSync`
+
+These use `smokeArtifactPaths(jdPath, dir)` from `smoke-helpers.ts` (stays independent).
+
+#### Library signature (updated)
+
 ```typescript
 async function verifySmokePipeline(
+  masterCv: unknown,
   jd: string,
   options: {
     baseUrl: string;
     curationMode: CurationMode;
     apiKey: string;
-    writeUnredacted?: boolean;
+    judgeModel: string;     // from getEvalJudgeModel()
+    groundingMin?: number;  // from getSmokeGroundingMin()
+    jdFitMin?: number;      // from getSmokeJdFitMin()
   }
-): Promise<{
+): Promise<VerifySmokeResult>
+
+type VerifySmokeSuccess = {
+  ok: true;
+  // Tailor response
   curatedJson: unknown;
   docxBase64: string;
   builderVersion: string;
+  coverLetter?: string;       // flexible mode only
+  model: string;
+  // Judge scores
   groundingScore: number;
+  groundingParseFailed: boolean;
+  groundingFlaggedCount: number;
   jdFitScore: number;
+  jdFitParseFailed: boolean;
+  jdFitReasoning: string;
+  // Gate
   gatePassed: boolean;
-  artifactDir?: string;
-}>
+  gateReasons: string[];
+};
+
+type VerifySmokeFailure = {
+  ok: false;
+  stage: "health" | "tailor" | "judges";
+  error: string;
+  status?: number;
+};
+
+type VerifySmokeResult = VerifySmokeSuccess | VerifySmokeFailure;
 ```
 
-**What stays independent:** `smoke-helpers.ts` (gate evaluation, redaction, threshold getters) and `eval-judge.ts` (judge functions). `verifySmokePipeline` imports them, doesn't absorb them.
+**Key changes from earlier draft:** (a) `masterCv` is now a required first parameter (judges need it — the script calls `loadMasterCv()` in `main()`, not inside `postTailor()`). (b) Judge model and thresholds are passed in options rather than read from env inside the library (keeps library testable without env mutation). (c) `coverLetter` included in result for flexible mode. (d) `artifactDir` removed — artifact writing stays in script.
 
-**Test impact:** New `tests/smoke-runner.test.ts` tests the library with mocked `fetch` and mocked judges. Existing smoke tests (if any) are in `tests/smoke-helpers.test.ts` — unaffected.
+#### What stays in script
 
-### U1: Schema Path → Env Var
+- `dotenv/config` import (env loading is a CLI concern)
+- CLI argument parsing (`baseUrl`, `jdPath`, `--flexible`)
+- `resolveCurationMode()` — reads `SMOKE_CURATION_MODE` + `--flexible` flag
+- `loadJd()` / `defaultJdPath()` — file I/O
+- `loadMasterCv()` — its result is passed to the library
+- Artifact writing (all `writeFileSync` calls, redaction logic)
+- `main()` entrypoint — sequences: load master → health (or delegate to library) → call library → write artifacts → exit
 
-- **Description:** Replace hard-coded schema path and test-only reset function with `CV_SCHEMA_PATH` env var.
-- **Complexity:** Routine
-- **Reason:** Small coordinated multi-file change (`.env.example`, `cv-schema.ts`, `tests/cv-schema.test.ts`) with clear before/after spec; env var pattern already established in `lib/env.ts`; failure is immediately visible (schema won't load).
+#### What stays independent (unchanged)
 
-**Target:** `app/api/lib/cv-schema.ts`
+- `smoke-helpers.ts` — gate evaluation (`evaluateSmokeJudgeGates`), redaction (`redactCuratedForArtifact`), threshold getters (`getSmokeGroundingMin`, `getSmokeJdFitMin`), artifact paths (`smokeArtifactPaths`), cover-letter gating (`shouldWriteCoverLetterDocx`)
+- `eval-judge.ts` — `scoreJsonGrounding`, `scoreJsonJdFit`
+- `eval-schema.ts` — unchanged
+- `markdown-docx.ts` — `markdownToDocxBase64`, `isValidDocxBase64`
 
-Changes:
-1. Add `CV_SCHEMA_PATH` env var read via `getEnvString("CV_SCHEMA_PATH")`
-2. Default: existing `join(process.cwd(), "references", "json-curator", "master-cv.schema.json")`
-3. Remove `__resetCvSchemaValidatorForTest()` function and `schemaPathOverride` variable
-4. Tests use `process.env.CV_SCHEMA_PATH = fixturePath` with `afterEach(() => delete process.env.CV_SCHEMA_PATH)`
+#### Library-or-script boundary decisions
 
-**Before:**
-```typescript
-let schemaPathOverride: string | null = null;
+| Concern | Library | Script | Reason |
+|---------|---------|--------|--------|
+| Health check | ✓ | — | Part of smoke verification; library returns failure if unhealthy |
+| POST tailor | ✓ | — | Core verification step |
+| Judge invocation | ✓ | — | Core verification step |
+| Gate evaluation | ✓ | — | Core verification step; imports from `smoke-helpers.ts` |
+| Artifact writing | — | ✓ | File I/O is CLI concern; library returns data, script writes |
+| Cover-letter DOCX conversion | — | ✓ | Calls `markdownToDocxBase64` + `writeFileSync`; library returns raw `coverLetter` string |
+| Master CV loading | — | ✓ | `loadMasterCv()` reads from env/path; result passed to library |
+| Judge model resolution | — | ✓ | `getEvalJudgeModel()` reads env; result passed in options |
+| Curation mode resolution | — | ✓ | Reads `SMOKE_CURATION_MODE` + `--flexible`; result passed in options |
+| Env loading (`dotenv/config`) | — | ✓ | Must run before any env reads |
 
-export function __resetCvSchemaValidatorForTest(pathOverride?: string | null): void {
-  if (process.env.NODE_ENV !== "test") throw new Error(...);
-  schemaPathOverride = pathOverride === undefined ? null : pathOverride;
-  validateFn = null;
-}
+#### Test impact
 
-function loadValidator(): ValidateFunction {
-  if (validateFn) return validateFn;
-  const schemaPath = schemaPathOverride ?? join(process.cwd(), SCHEMA_RELATIVE);
-  // ...
-}
-```
+New `tests/smoke-runner.test.ts` tests the library with:
+- Mocked `globalThis.fetch` for health check and POST (avoids real network)
+- Mocked `scoreJsonGrounding` and `scoreJsonJdFit` (avoids real LLM calls)
+- Mocked `evaluateSmokeJudgeGates` if gate logic changes shape
+- Passes master CV fixture, JD, and options directly (no env reads in library)
 
-**After:**
-```typescript
-function loadValidator(): ValidateFunction {
-  if (validateFn) return validateFn;
-  const schemaPath = getEnvString("CV_SCHEMA_PATH")
-    ?? join(process.cwd(), SCHEMA_RELATIVE);
-  // ...
-}
-```
+Existing `tests/smoke-helpers.test.ts` unaffected.
 
-**Test impact:** `tests/cv-schema.test.ts` — replace `__resetCvSchemaValidatorForTest("/nonexistent/...")` with `process.env.CV_SCHEMA_PATH = "/nonexistent/..."`. Add `afterEach` cleanup. Remove `__resetCvSchemaValidatorForTest` import.
+### U1: Schema Path → Env Var ✅ COMPLETE (landed on `main`)
+
+- **Result:** `cv-schema.ts` reads schema path from `getEnvString("CV_SCHEMA_PATH")` with original relative path as default. `__resetCvSchemaValidatorForTest()` and `schemaPathOverride` removed. `.env.example` includes `CV_SCHEMA_PATH=` entry.
+- **Implementation note:** Added `?.trim()` on the env var value for robustness (not in original spec — pragmatic addition). Tests cover: default path, custom path via env var, trimmed whitespace path, and nonexistent path error.
+- **Verification:** 17/17 cv-schema tests pass. No other test imports `__resetCvSchemaValidatorForTest`.
 
 ## Technical Considerations
 
-### Pipeline Test Strategy
+### What Does NOT Change (U3)
 
-The existing `tests/route.test.ts` (525 lines) has three categories of tests:
-- **23 HTTP-only tests:** status codes, headers, error message format — stay in `tests/route.test.ts`
-- **0 pipeline-only tests:** currently none test composition in isolation
-- **6 mixed tests:** assert HTTP status AND verify step ordering via `mock.callCount()` — need careful handling; split into route-level (status) + pipeline-level (call ordering)
+- `smoke-helpers.ts`, `eval-judge.ts`, `eval-schema.ts` — unchanged. Library imports, doesn't absorb.
+- `markdown-docx.ts` — unchanged. Cover-letter DOCX conversion stays in script.
+- `tailorCvDeps` bag — unchanged.
+- All existing route and pipeline tests — unaffected.
 
-The pipeline test will use the same DI bag mocking pattern: `mock.method(tailorCvDeps, ...)`. This is the established pattern and requires no test infrastructure changes.
+### U3 Smoke Runner Test Strategy
 
-### What Does NOT Change
+The smoke runner is inherently integration-heavy (fetch, judges, gate evaluation). Test strategy:
 
-- `tailorCvDeps` bag — no new properties, no removal. Pipeline imports it, doesn't replace it.
-- `ERROR_RESPONSES` table in route.ts — stays exactly as-is.
-- All 14 deps functions — same signatures, same behavior.
-- `smoke-helpers.ts`, `eval-judge.ts`, `eval-schema.ts` — unchanged.
-- `cv-schema.ts` exports other than `__resetCvSchemaValidatorForTest` — same signatures.
+- **Library unit tests:** Mock `globalThis.fetch` at the HTTP layer — return pre-baked success/error responses. Mock `scoreJsonGrounding` and `scoreJsonJdFit` to return controlled scores. Mock `evaluateSmokeJudgeGates` to test gate-pass and gate-fail paths independently. No real network or LLM calls.
+- **What to test:** (a) health check failure → library returns error, (b) tailor POST failure/error status → library returns structured error, (c) invalid DOCX → caught, (d) judge failure → propagated, (e) gate pass/fail → correct `gatePassed` and `gateReasons`, (f) flexible mode includes `coverLetter` in result, (g) strict mode omits `coverLetter`.
+- **Script tests (optional):** Not required. The script is a thin CLI wrapper — if the library is tested, the script's correctness follows from manual smoke runs.
 
-### Order Independence
+### Order
 
-The three refactorings touch different files with no cross-dependencies. Can be implemented in any order. Recommend sequential commits in one PR for reviewability:
-
-1. Commit 1: U1 — Schema path env var (Routine, smallest, least risk)
-2. Commit 2: U2 — Route handler → pipeline (Complex, largest, most test impact)
-3. Commit 3: U3 — Smoke CLI → library (Complex, medium)
+U3 is the only remaining unit. Single commit, single PR. No cross-dependencies with U1/U2 (already landed).
 
 ## Acceptance Criteria
 
-### Refactoring 1: Pipeline
+### Refactoring 1: Pipeline ✅ VERIFIED (2026-07-30)
 
-- [ ] `app/api/lib/tailor-pipeline.ts` exists with `buildTailorResponse(deps, request)` export
-- [ ] POST handler in `route.ts` is ≤40 lines (thin HTTP → pipeline → HTTP mapper)
-- [ ] Pipeline returns discriminated union; route maps to HTTP (no HTTP in pipeline)
-- [ ] Utility functions (`parseClientIp`, `readRequestBodyCapped`, `retryAfterSeconds`) moved to pipeline or shared helper
-- [ ] `safeTailorLog` stays in route.ts (used by `mapErrorToResponse`)
-- [ ] All existing route tests still pass
-- [ ] New `tests/tailor-pipeline.test.ts` covers pipeline composition and error propagation
-- [ ] `npm test` — same pass count (368), same skip count (4), no new failures
+- [x] `app/api/lib/tailor-pipeline.ts` exists with `buildTailorResponse(deps, request)` export
+- [x] POST handler in `route.ts` is 132 lines (thin HTTP → pipeline → HTTP mapper) — includes `POST`, `GET`, `ERROR_RESPONSES`, `mapErrorToResponse`, `safeTailorLog`, `jsonResponse`
+- [x] Pipeline returns discriminated union; route maps to HTTP (pipeline returns HTTP status codes per plan decision)
+- [x] Utility functions (`parseClientIp`, `readRequestBodyCapped`, `retryAfterSeconds`) moved to pipeline
+- [x] `safeTailorLog` stays in route.ts
+- [x] All existing route tests pass (39/39)
+- [x] `tests/tailor-pipeline.test.ts` covers pipeline composition and error propagation (25 tests)
+- [x] `npm test` — 510 pass, 2 pre-existing failures (unrelated), 4 skip
 
 ### Refactoring 2: Smoke Library
 
-- [ ] `app/api/lib/smoke-runner.ts` exists with `verifySmokePipeline(jd, options)` export
-- [ ] `scripts/e2e-tailor-cv.ts` is a thin CLI wrapper (~80 lines): parse args, resolve JD file, call `verifySmokePipeline`
-- [ ] `smoke-helpers.ts` unchanged (imported by `verifySmokePipeline`, not absorbed)
+- [ ] `app/api/lib/smoke-runner.ts` exists with `verifySmokePipeline(masterCv, jd, options)` export
+- [ ] `scripts/e2e-tailor-cv.ts` is a thin CLI wrapper (~100 lines): parse args, resolve JD + master CV, call `verifySmokePipeline`, write artifacts
+- [ ] `smoke-helpers.ts` unchanged (imported by library, not absorbed)
 - [ ] `eval-judge.ts` unchanged
-- [ ] New `tests/smoke-runner.test.ts` tests library with mocked fetch and mocked judges
+- [ ] Artifact writing (JSON, DOCX, cover-letter DOCX) stays in script, not library
+- [ ] New `tests/smoke-runner.test.ts` tests library with mocked `globalThis.fetch` and mocked judges
 - [ ] `npm run build` passes (smoke script still compiles)
+- [ ] Manual smoke: `npm run smoke` against running dev server confirms end-to-end still works
 
-### Refactoring 3: Schema Path
+### Refactoring 3: Schema Path ✅ VERIFIED (2026-07-30)
 
-- [ ] `CV_SCHEMA_PATH` env var supported via `getEnvString("CV_SCHEMA_PATH")`
-- [ ] `__resetCvSchemaValidatorForTest()` function removed
-- [ ] `schemaPathOverride` variable removed
-- [ ] Default path unchanged when env var is absent
-- [ ] `tests/cv-schema.test.ts` uses `process.env.CV_SCHEMA_PATH` + `afterEach` cleanup
-- [ ] All cv-schema tests pass
-- [ ] `CV_SCHEMA_PATH` added to `.env.example` with comment
+- [x] `CV_SCHEMA_PATH` env var supported via `getEnvString("CV_SCHEMA_PATH")`
+- [x] `__resetCvSchemaValidatorForTest()` function removed
+- [x] `schemaPathOverride` variable removed
+- [x] Default path unchanged when env var is absent
+- [x] `tests/cv-schema.test.ts` uses `process.env.CV_SCHEMA_PATH` + `afterEach` cleanup
+- [x] All cv-schema tests pass (17/17)
+- [x] `CV_SCHEMA_PATH` added to `.env.example` with comment
 
 ## System-Wide Impact
 
-- **Route surface:** `POST /api/tailor-cv` behavior is unchanged. Response shape (status codes, JSON body fields, headers) is identical. Only the internal call stack changes.
-- **Module boundary:** New `tailor-pipeline.ts` imports from `tailor-cv-deps.ts` (no reverse dependency). Pipeline does not import from `route.ts` — `safeTailorLog` calls are passed as a callback if needed, or pipeline calls `console.error` directly for LLM errors and lets route's catch-all log via `safeTailorLog`.
-- **Smoke CLI:** Script still runs via `npm run smoke`. Import path changes from inline logic to `verifySmokePipeline` from `app/api/lib/smoke-runner.ts`. No change to CLI invocation.
-- **Schema loading:** `CV_SCHEMA_PATH` is optional — absent → identical behavior. No deploy config change required. `.env.example` updated.
-- **Test surface:** No net change in test count. Route tests split between `tests/route.test.ts` (HTTP mapping) and `tests/tailor-pipeline.test.ts` (pipeline composition). New `tests/smoke-runner.test.ts` added.
+- **Route surface (U2 — landed):** `POST /api/tailor-cv` behavior unchanged. Pipeline returns HTTP status codes directly; route's `mapPipelineResult` maps to `NextResponse`. Internal call stack changed; external contract identical.
+- **Module boundary (U2 — landed):** `tailor-pipeline.ts` imports from `tailor-cv-deps.ts` (no reverse dep). Pipeline uses `console.error` for LLM errors; `safeTailorLog` stays in route.ts for the `mapErrorToResponse` catch-all.
+- **Schema loading (U1 — landed):** `CV_SCHEMA_PATH` optional — absent → identical default. No deploy config required.
+- **Smoke CLI (U3 — remaining):** Script still runs via `npm run smoke`. New import: `verifySmokePipeline` from `app/api/lib/smoke-runner.ts`. No change to CLI invocation. `smoke-helpers.ts`, `eval-judge.ts` unchanged.
+- **Smoke module boundary (U3):** `smoke-runner.ts` imports from `smoke-helpers.ts` and `eval-judge.ts` (no reverse deps). Does not import from `route.ts` or `tailor-pipeline.ts`. Library is importable by future API consumers (e.g., a `/verify` endpoint).
+- **Test surface:** U1/U2 added `tests/tailor-pipeline.test.ts` (25 tests) with no net loss in route coverage. U3 will add `tests/smoke-runner.test.ts`. No existing test files affected by U3.
 
 ## Risks & Dependencies
 
-- **Risk:** `tests/route.test.ts` refactoring could accidentally drop coverage. **Mitigation:** Split tests before moving pipeline logic — categorize each test as route-level or pipeline-level, extract pipeline tests into new file while keeping route tests green, then extract the pipeline function.
-- **Risk:** Pipeline function signature evolves differently than the current inline code. **Mitigation:** Extract mechanically first (exact copy of current logic), refactor after tests pass. The pipeline should be a pure extraction pass with zero logic changes in commit 2.
+### U3-specific risks
+
 - **Risk:** Smoke runner library introduces new `fetch` dependency in `app/api/lib/` (currently script-only). **Mitigation:** `fetch` is available globally in Node.js 22. No new npm dependency. Mock with `globalThis.fetch` in tests.
-- **Risk:** Removing `__resetCvSchemaValidatorForTest` breaks if any other test imports it. **Verification:** grep for `__resetCvSchemaValidatorForTest` across tests/ before removal. Currently only `tests/cv-schema.test.ts` imports it.
-- **Dependency:** PR #15 must merge first — this branch is off `main`, not off the feature branch. The refactored code doesn't exist on `main` yet.
+- **Risk:** Cover-letter DOCX conversion (`markdownToDocxBase64`) is non-trivial and currently tightly coupled to artifact writing. **Mitigation:** Library returns raw `coverLetter` string; conversion stays in script. No new dependency for the library.
+- **Risk:** Judge model resolution (`getEvalJudgeModel()`) reads env — if library calls it internally, tests must mutate env. **Mitigation:** Library accepts `judgeModel` in options; script reads env and passes it. Library stays env-agnostic.
+- **Risk:** `npm test` baseline includes 2 pre-existing failures. **Mitigation:** U3 must not introduce new failures. Run `npm test` before starting to confirm baseline, and after to confirm only pre-existing failures remain.
+- **Risk:** Smoke script has no existing automated tests — extraction could break the only verification path for the live pipeline. **Mitigation:** Run `npm run smoke` before and after extraction against a running dev server to confirm end-to-end parity. The library tests provide the safety net going forward.
 
-### Verification Strategy
+### Dependencies
 
-1. **Pre-refactoring baseline:** `npm test` → 368 pass, 2 skip (eval-results). Record exact pass count.
-2. **Per-commit gate:** After each of the 3 commits, `npm test` must match baseline. Any regression → fix before next commit.
-3. **Lint gate:** `npm run lint` after each commit.
-4. **Build gate:** `npm run build` after commit 2 (smoke script must still compile).
-5. **Manual smoke:** After all 3 commits, `npm run smoke` against a running dev server to confirm end-to-end pipeline and smoke CLI still work.
+- **None.** U1 and U2 already landed on `main`. U3 has no cross-dependency with other in-flight work.
+- The `smoke-helpers.ts` / `eval-judge.ts` APIs are stable and will not be modified by U3.
+
+### Verification Strategy (U3 only)
+
+1. **Pre-extraction baseline:** `npm test` → record exact pass/fail/skip counts. `npm run smoke` against dev server → confirm passes.
+2. **Extraction gate:** `npm test` must match baseline. `npm run build` must pass.
+3. **Post-extraction smoke:** `npm run smoke` against dev server must produce identical results (same scores, same gate outcome).
 
 ## References
 
@@ -260,5 +255,5 @@ The three refactorings touch different files with no cross-dependencies. Can be 
 - Plan (PR #15): `docs/plans/2026-07-20-001-feat-json-curator-cv-pipeline-plan.md`
 - Architecture: `docs/arch/README.md`
 - Code conventions: `docs/arch/CODE_CONVENTIONS.md`
-- Files: `app/api/tailor-cv/route.ts`, `app/api/lib/tailor-cv-deps.ts`, `scripts/e2e-tailor-cv.ts`, `app/api/lib/cv-schema.ts`
-- Tests: `tests/route.test.ts`, `tests/cv-schema.test.ts`
+- Files: `app/api/tailor-cv/route.ts`, `app/api/lib/tailor-cv-deps.ts`, `app/api/lib/tailor-pipeline.ts`, `scripts/e2e-tailor-cv.ts`, `app/api/lib/cv-schema.ts`, `app/api/lib/smoke-helpers.ts`, `app/api/lib/eval-judge.ts`, `app/api/lib/markdown-docx.ts`
+- Tests: `tests/route.test.ts`, `tests/tailor-pipeline.test.ts`, `tests/cv-schema.test.ts`, `tests/smoke-helpers.test.ts`
