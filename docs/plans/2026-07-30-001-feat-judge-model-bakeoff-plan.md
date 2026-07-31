@@ -33,6 +33,7 @@ Tailor model choice is comparatively settled. Judge models (`EVAL_JUDGE_MODEL` f
 - **Both judge surfaces in scope for the eventual bakeoff** — smoke post-hoc eval judges and the on-path adversarial judge both warrant comparative evaluation. `(session-settled: user-directed — chosen over smoke-only or adversarial-only as the sole calibration target: both still need evidence)`
 - **Same-CV constraint** — comparison must hold curated CV (and JD/master) fixed across candidate judge models so differences are attributable to the judge, not a new tailor run.
 - **Do not build as a one-off side script forever** — hang bakeoff on modular smoke / first-class smoke direction rather than a permanent parallel CLI.
+- **Judge-only evaluation handoff** — add a `verifySmokeJudges(opts)` function to `smoke-runner.ts` that accepts precomputed tailor output (`curatedJson`, `docxBase64`, optional `coverLetter`) alongside a list of judge models and evaluates all of them against the same inputs. The existing `verifySmokePipeline` is extended with a `skipTailor` option: when set, it skips the health-check + POST steps and calls `verifySmokeJudges` with the provided precomputed inputs. The bakeoff CLI calls `verifySmokePipeline` once with no `skipTailor` to produce the inputs, then calls `verifySmokeJudges` with each candidate judge model. Acceptance tests enforce: (a) exactly one tailor POST per bakeoff run, (b) all requested judge models receive the same curated JSON and JD, (c) results include per-model scores and gate outcomes in a comparable structure.
 
 ### Requirements
 
@@ -72,6 +73,7 @@ Tailor model choice is comparatively settled. Judge models (`EVAL_JUDGE_MODEL` f
 - AE1. Given a saved curated JSON + JD + master from a prior smoke, running the bakeoff with models A and B yields grounding and JD-fit results for both without calling tailor.
 - AE2. Given the same fixed draft inputs, bakeoff reports adversarial critique outputs (or structured scores if defined) for models A and B side by side.
 - AE3. A parseFailed or transport error for one model does not silently drop that model from the report.
+- AE4. The bakeoff makes exactly one POST to /api/tailor-cv regardless of how many judge models are evaluated; all judges receive the same curated JSON, JD, and master CV from that single tailor run.
 
 ### Assumptions
 
