@@ -341,8 +341,7 @@ Full cost-quality data: `docs/solutions/mid-tier-review-models-match-frontier-at
 - Flexible/pivot curation should foreground transferable skills without fabricating experience; tenure claims must not sum overlapping spans or rebrand off-domain years.
 - Keep production and tailoring prompts portable across providers; do not tune them to a single model (inference still being evaluated across DeepSeek, Gemini, GPT, etc.).
 - For flexible curation success criteria, prefer a holistic judge verdict that the resume is "strong enough" over hard numeric pass/fail thresholds on individual scores.
-- Calibrate model choice per task; for `/ce-code-review` when tiering is requested, use Grok 4.5 high for complex/thinking tasks, Composer 2.5 for mid non-thinking work, and Auto for routine ones.
-- Never select Fast Composer (`composer-2.5-fast` / `composer-*-fast`) for Task, Explore, scouts, or other subagents — always standard `composer-2.5` when Composer is the chosen model.
+- Calibrate model choice per task; for `/ce-code-review` when tiering is requested, use Grok 4.5 high for complex/thinking tasks, Composer 2.5 for mid non-thinking work, and Auto for routine ones. Never select Fast Composer (`composer-2.5-fast` / `composer-*-fast`) for Task, Explore, scouts, or other subagents — always standard `composer-2.5` when Composer is chosen. Prefer pinning Explore/scouts to `composer-2.5` so they use the included Cursor Models subscription pool rather than inheriting Auto/parent routing.
 
 ## Learned Workspace Facts
 
