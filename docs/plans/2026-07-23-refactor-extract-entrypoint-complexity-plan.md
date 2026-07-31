@@ -106,7 +106,7 @@ type VerifySmokeSuccess = {
 
 type VerifySmokeFailure = {
   ok: false;
-  stage: "health" | "tailor" | "judges";
+  stage: "health" | "tailor" | "docx" | "judges";
   error: string;
   status?: number;
 };
@@ -178,8 +178,8 @@ Existing `tests/smoke-helpers.test.ts` unaffected.
 The smoke runner is inherently integration-heavy (fetch, judges, gate evaluation). Test strategy:
 
 - **Library unit tests:** Mock `globalThis.fetch` at the HTTP layer — return pre-baked success/error responses. Mock `scoreJsonGrounding` and `scoreJsonJdFit` to return controlled scores. Mock `evaluateSmokeJudgeGates` to test gate-pass and gate-fail paths independently. No real network or LLM calls.
-- **What to test:** (a) health check failure → library returns error, (b) tailor POST failure/error status → library returns structured error, (c) invalid DOCX → caught, (d) judge failure → propagated, (e) gate pass/fail → correct `gatePassed` and `gateReasons`, (f) flexible mode includes `coverLetter` in result, (g) strict mode omits `coverLetter`.
-- **Script tests (optional):** Not required. The script is a thin CLI wrapper — if the library is tested, the script's correctness follows from manual smoke runs.
+- **What to test:** (a) health check failure → `VerifySmokeFailure` with `stage: "health"`, (b) tailor POST failure/error status → `VerifySmokeFailure` with `stage: "tailor"` and `status`, (c) invalid DOCX (valid HTTP 200, non-DOCX body) → `VerifySmokeFailure` with `stage: "docx"`, (d) judge parse failures (both `scoreJsonGrounding` and `scoreJsonJdFit` return `parseFailed: true`, never throw) → `VerifySmokeSuccess` with `gatePassed: false` and `gateReasons` populated by `evaluateSmokeJudgeGates`, (e) gate pass/pass-vs-fail → correct `gatePassed` and `gateReasons` values for pass, parse-fail, flagged-claims, and below-threshold scenarios, (f) flexible mode includes `coverLetter` in result, (g) strict mode omits `coverLetter`.
+- **Script tests:** Script-owned concerns (artifact writing, redaction, DOCX conversion, `resolveCurationMode`, exit codes) are not covered by library tests. Script correctness is verified via manual smoke (`npm run smoke`) before and after extraction. Automated script tests are deferred until the CLI surface stabilizes.
 
 ### Order
 
