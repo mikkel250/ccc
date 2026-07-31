@@ -124,7 +124,7 @@ type VerifySmokeResult = VerifySmokeSuccess | VerifySmokeFailure;
 - `loadJd()` / `defaultJdPath()` — file I/O
 - `loadMasterCv()` — its result is passed to the library
 - Artifact writing (all `writeFileSync` calls, redaction logic)
-- `main()` entrypoint — sequences: load master → health (or delegate to library) → call library → write artifacts → exit
+- `main()` entrypoint — sequences: load master → call library (which runs health check internally) → write artifacts → exit
 
 #### What stays independent (unchanged)
 
@@ -179,7 +179,7 @@ The smoke runner is inherently integration-heavy (fetch, judges, gate evaluation
 
 - **Library unit tests:** Mock `globalThis.fetch` at the HTTP layer — return pre-baked success/error responses. Mock `scoreJsonGrounding` and `scoreJsonJdFit` to return controlled scores. Mock `evaluateSmokeJudgeGates` to test gate-pass and gate-fail paths independently. No real network or LLM calls.
 - **What to test:** (a) health check failure → `VerifySmokeFailure` with `stage: "health"`, (b) tailor POST failure/error status → `VerifySmokeFailure` with `stage: "tailor"` and `status`, (c) invalid DOCX (valid HTTP 200, non-DOCX body) → `VerifySmokeFailure` with `stage: "docx"`, (d) judge parse failures (both `scoreJsonGrounding` and `scoreJsonJdFit` return `parseFailed: true`, never throw) → `VerifySmokeSuccess` with `gatePassed: false` and `gateReasons` populated by `evaluateSmokeJudgeGates`, (e) gate pass/pass-vs-fail → correct `gatePassed` and `gateReasons` values for pass, parse-fail, flagged-claims, and below-threshold scenarios, (f) flexible mode includes `coverLetter` in result, (g) strict mode omits `coverLetter`.
-- **Script tests:** Script-owned concerns (artifact writing, redaction, DOCX conversion, `resolveCurationMode`, exit codes) are not covered by library tests. Script correctness is verified via manual smoke (`npm run smoke`) before and after extraction. Automated script tests are deferred until the CLI surface stabilizes.
+- **Script tests:** Script-owned concerns must be tested before extraction is declared complete. Add tests in `tests/e2e-tailor-cv.test.ts` covering: (a) artifact writing — success and disk-full/perm-denied failure paths for JSON, DOCX, and cover-letter DOCX, (b) redaction — `writeFileSync` with redacted vs unredacted payload depending on `SMOKE_WRITE_UNREDACTED`, (c) cover-letter DOCX conversion — `markdownToDocxBase64` integration with `writeFileSync`, (d) `resolveCurationMode` — returns strict when `SMOKE_CURATION_MODE=strict` and `--flexible` is absent, returns flexible when `SMOKE_CURATION_MODE=flexible` or `--flexible` is passed, and exits with error on unset/malformed mode, (e) exit codes — `process.exit(0)` on success, `process.exit(1)` on failure for each stage (health, tailor, docx, judges). Mock `globalThis.fetch` and `process.exit`; use temp directories for artifact assertions. Write these tests before implementing the extraction so they are observed failing, then make them pass as part of U3.
 
 ### Order
 
