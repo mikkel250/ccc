@@ -611,6 +611,47 @@ export async function callAnthropic(
   };
 }
 
+/**
+ * PII-safe diagnostic when Google generateContent returns no .text.
+ * Never includes response body or candidate content — only structural metadata.
+ */
+export function describeGoogleEmptyContentResponse(response: unknown): string {
+  const r = response as {
+    candidates?: Array<{
+      finishReason?: string;
+      index?: number;
+    }>;
+    promptFeedback?: {
+      blockReason?: string;
+    };
+    usageMetadata?: {
+      promptTokenCount?: number;
+      candidatesTokenCount?: number;
+      totalTokenCount?: number;
+    };
+    modelVersion?: string;
+    responseId?: string;
+  };
+
+  const candidates = r.candidates ?? [];
+  const finishReasons = candidates
+    .map((c, i) => `${c.index ?? i}:${c.finishReason ?? 'null'}`)
+    .join(',');
+  const usage = r.usageMetadata;
+  const usagePart = usage
+    ? `promptTokens=${usage.promptTokenCount ?? 0},candidatesTokens=${usage.candidatesTokenCount ?? 0},totalTokens=${usage.totalTokenCount ?? 0}`
+    : 'usage=null';
+
+  return [
+    `candidateCount=${candidates.length}`,
+    `finishReasons=[${finishReasons}]`,
+    `blockReason=${r.promptFeedback?.blockReason ?? 'null'}`,
+    usagePart,
+    `modelVersion=${r.modelVersion ?? 'null'}`,
+    `responseId=${r.responseId ?? 'null'}`,
+  ].join(' ');
+}
+
 async function callGoogle(
   messages: Omit<ChatMessage, 'role'>[] | ChatMessage[],
   systemPrompt: string,
@@ -640,7 +681,7 @@ async function callGoogle(
 
   const content = response.text;
   if (!content) {
-    console.log('Response structure:', JSON.stringify(response, null, 2));
+    console.log('Google empty content response:', describeGoogleEmptyContentResponse(response));
     throw new Error('No text content in response from Google');
   }
 
