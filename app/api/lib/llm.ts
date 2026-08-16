@@ -82,6 +82,8 @@ export interface ChatOptions {
   deepseekClient?: OpenAI;
   /** Test-only: inject Anthropic client */
   anthropicClient?: Anthropic;
+  /** Test-only: inject Google client */
+  googleClient?: GoogleGenAI;
 }
 
 let openaiClient: OpenAI | null = null;
@@ -118,7 +120,10 @@ function getAnthropic(options?: ChatOptions): Anthropic {
   return anthropicClient;
 }
 
-function getGoogle(): GoogleGenAI {
+function getGoogle(options?: ChatOptions): GoogleGenAI {
+  if (options?.googleClient) {
+    return options.googleClient;
+  }
   if (!googleClient) {
     const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey) {
@@ -617,21 +622,16 @@ async function callGoogle(
   if (!model) throw new Error('model is required for callGoogle');
 
   const formattedMessages = formatMessages(messages);
+  const contents = formattedMessages.map((msg) => ({
+    role: msg.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: msg.content }],
+  }));
 
-  let fullPrompt = `${systemPrompt}\n\n---\n\nConversation History:\n`;
-
-  for (let i = 0; i < formattedMessages.length - 1; i++) {
-    const msg = formattedMessages[i];
-    const role = msg.role === 'user' ? 'User' : 'Assistant';
-    fullPrompt += `${role}: ${msg.content}\n\n`;
-  }
-
-  fullPrompt += `User: ${formattedMessages[formattedMessages.length - 1]?.content || ''}`;
-
-  const response = await getGoogle().models.generateContent({
+  const response = await getGoogle(options).models.generateContent({
     model: model,
-    contents: fullPrompt,
+    contents,
     config: {
+      systemInstruction: systemPrompt,
       temperature,
       maxOutputTokens: maxTokens,
       ...(options.signal ? { abortSignal: options.signal } : {}),
