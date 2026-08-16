@@ -16,7 +16,7 @@ import {
   type ReasoningEffort,
 } from "../../../lib/env";
 import { RateLimitError, ServiceError } from "./errors";
-import { getConfiguredTailorApiKey } from "./tailor-auth";
+import { getConfiguredTailorApiKey, isTailorAuthBypassRequested } from "./tailor-auth";
 import { hashTailorApiKeyForRateLimit, getRateLimitConfig } from "./rate-limit";
 import {
   getTailorRequestMaxBytes,
@@ -296,6 +296,17 @@ function isValidRevisePayload(
   return parsed !== null && typeof parsed === "object";
 }
 
+function resolveSecretBucketKey(): string {
+  const configuredKey = getConfiguredTailorApiKey();
+  if (configuredKey) {
+    return hashTailorApiKeyForRateLimit(configuredKey);
+  }
+  if (isTailorAuthBypassRequested()) {
+    return hashTailorApiKeyForRateLimit("bypass:bypass");
+  }
+  return hashTailorApiKeyForRateLimit("bypass:unconfigured");
+}
+
 // ---------------------------------------------------------------------------
 // Pipeline
 // ---------------------------------------------------------------------------
@@ -304,25 +315,14 @@ export async function buildTailorResponse(
   deps: TailorPipelineDeps,
   request: NextRequest
 ): Promise<TailorPipelineResult> {
-  // 1. Auth
-  const auth = deps.authenticateTailorRequest(
-    request.headers.get("authorization")
-  );
-  if (!auth.ok) {
-    return { ok: false, error: auth.error, status: auth.status };
-  }
-
-  // 2. IP resolution
+  // 1. IP resolution
   const ipAddress = parseClientIp(request);
   if (ipAddress === "unknown") {
     return { ok: false, error: "Cannot determine client IP", status: 400 };
   }
 
-  // 3. Rate limit
-  const configuredKey = getConfiguredTailorApiKey();
-  const secretBucketKey = configuredKey
-    ? hashTailorApiKeyForRateLimit(configuredKey)
-    : hashTailorApiKeyForRateLimit(`bypass:${auth.mode}`);
+  // 2. Rate limit (before auth so failed credential guesses consume quota)
+  const secretBucketKey = resolveSecretBucketKey();
 
   let rateLimit: Awaited<ReturnType<typeof deps.checkRateLimit>>;
   try {
@@ -354,6 +354,14 @@ export async function buildTailorResponse(
       resetTime: rateLimit.resetTime,
       remaining: rateLimit.remaining,
     };
+  }
+
+  // 3. Auth
+  const auth = deps.authenticateTailorRequest(
+    request.headers.get("authorization")
+  );
+  if (!auth.ok) {
+    return { ok: false, error: auth.error, status: auth.status };
   }
 
   // 4. Body cap

@@ -14,6 +14,7 @@ import {
 } from "../tests/helpers/tailor-request";
 import { BUILDER_VERSION } from "../app/api/lib/json-docx-builder";
 import { getTailorJdMaxChars } from "../app/api/lib/cv-schema";
+import { getRateLimitConfig } from "../app/api/lib/rate-limit";
 import { buildTailorResponse } from "../app/api/lib/tailor-pipeline";
 import { __injectRatelimitForTest } from "../app/api/lib/rate-limit";
 
@@ -98,6 +99,44 @@ describe("buildTailorResponse — pipeline orchestration", () => {
     );
     assert.equal(result.ok, false);
     if (!result.ok) assert.equal(result.status, 401);
+  });
+
+  it("rate-limits failed auth attempts before returning 401", async () => {
+    const config = getRateLimitConfig();
+    const headers = { "x-forwarded-for": "198.51.100.55" };
+
+    for (let i = 0; i < config.maxRequests; i++) {
+      const result = await buildTailorResponse(
+        tailorCvDeps,
+        buildPostRequest(VALID_BODY, {
+          ...headers,
+          authorization: "Bearer wrong-key",
+        })
+      );
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.equal(result.status, 401);
+    }
+
+    const blocked = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(VALID_BODY, {
+        ...headers,
+        authorization: "Bearer wrong-key",
+      })
+    );
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.status, 429);
+  });
+
+  it("calls rate limit before auth when Authorization is missing", async () => {
+    const checkRateLimitSpy = mock.method(tailorCvDeps, "checkRateLimit");
+    const result = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(VALID_BODY, { "x-forwarded-for": "198.51.100.42" })
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.status, 401);
+    assert.ok(checkRateLimitSpy.mock.callCount() >= 1);
   });
 
   // --- IP resolution ---
