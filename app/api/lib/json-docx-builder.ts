@@ -13,11 +13,20 @@ import {
 } from "docx";
 
 /** Bump when layout or output semantics change (R5c). */
-export const BUILDER_VERSION = "1.0.0";
+export const BUILDER_VERSION = "1.0.1";
 
 const COLOR_MUTED = "333333";
 const COLOR_BORDER = "1A2B4C";
 const FONT = "Times New Roman";
+
+/** Hyperlink schemes permitted in OOXML ExternalHyperlink relationships. */
+const ALLOWED_HYPERLINK_SCHEME = /^(https?|mailto):/i;
+
+export function isAllowedDocxHyperlinkUri(uri: string): boolean {
+  const trimmed = uri.trim();
+  if (!trimmed) return false;
+  return ALLOWED_HYPERLINK_SCHEME.test(trimmed);
+}
 
 /** C0 controls except TAB (0x09) and LF (0x0A); also DEL (KTD11 / R6d). */
 const DISALLOWED_CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
@@ -128,13 +137,35 @@ function bullet(text: string, opts: { after?: number } = {}): Paragraph {
   });
 }
 
-function linkRun(label: string, url: string): ExternalHyperlink {
+function hyperlinkOrText(
+  label: string,
+  url: string,
+  opts: { size: number; bold?: boolean }
+): TextRun | ExternalHyperlink {
+  if (!isAllowedDocxHyperlinkUri(url)) {
+    return new TextRun({
+      text: label,
+      bold: opts.bold,
+      size: opts.size,
+      font: FONT,
+    });
+  }
   return new ExternalHyperlink({
     link: url,
     children: [
-      new TextRun({ text: label, style: "Hyperlink", size: 19, font: FONT }),
+      new TextRun({
+        text: label,
+        style: "Hyperlink",
+        bold: opts.bold ?? false,
+        size: opts.size,
+        font: FONT,
+      }),
     ],
   });
+}
+
+function linkRun(label: string, url: string): TextRun | ExternalHyperlink {
+  return hyperlinkOrText(label, url, { size: 19 });
 }
 
 function contactLine(contact: Contact): Paragraph {
@@ -289,18 +320,7 @@ function buildDocument(data: ResumeCv): Document {
       ];
       if (p.linkUrl && p.linkLabel) {
         headingChildren.push(
-          new ExternalHyperlink({
-            link: p.linkUrl,
-            children: [
-              new TextRun({
-                text: p.linkLabel,
-                bold: false,
-                style: "Hyperlink",
-                size: 21,
-                font: FONT,
-              }),
-            ],
-          })
+          hyperlinkOrText(p.linkLabel, p.linkUrl, { size: 21, bold: false })
         );
       }
       children.push(

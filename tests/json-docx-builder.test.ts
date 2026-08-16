@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, mkdtempSync, existsSync, rmSync } from "node:fs";
+import { readFileSync, mkdtempSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -8,6 +8,7 @@ import {
   BUILDER_VERSION,
   buildJsonDocx,
   buildJsonDocxBase64,
+  isAllowedDocxHyperlinkUri,
   sanitizeCvText,
   sanitizeCvJson,
 } from "../app/api/lib/json-docx-builder";
@@ -18,6 +19,25 @@ const FIXTURE = JSON.parse(
 
 function isDocxZip(buf: Buffer): boolean {
   return buf.length > 100 && buf[0] === 0x50 && buf[1] === 0x4b;
+}
+
+function readDocxExternalHyperlinkTargets(buf: Buffer): string[] {
+  const dir = mkdtempSync(join(tmpdir(), "docx-rels-"));
+  const docxPath = join(dir, "cv.docx");
+  try {
+    writeFileSync(docxPath, buf);
+    const result = spawnSync(
+      "unzip",
+      ["-p", docxPath, "word/_rels/document.xml.rels"],
+      { encoding: "utf8" }
+    );
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return [...result.stdout.matchAll(/hyperlink" Target="([^"]+)"/gi)].map(
+      (match) => match[1]
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 describe("json-docx-builder", () => {
@@ -88,6 +108,57 @@ describe("json-docx-builder", () => {
   it("rejects non-object input", async () => {
     const result = await buildJsonDocx(null);
     assert.equal(result.ok, false);
+  });
+
+  it("allows only http, https, and mailto hyperlink schemes", () => {
+    assert.equal(isAllowedDocxHyperlinkUri("https://example.com"), true);
+    assert.equal(isAllowedDocxHyperlinkUri("http://example.com"), true);
+    assert.equal(isAllowedDocxHyperlinkUri("mailto:user@example.com"), true);
+    assert.equal(isAllowedDocxHyperlinkUri("HTTPS://Example.COM/path"), true);
+    assert.equal(isAllowedDocxHyperlinkUri("\\\\attacker.com\\share"), false);
+    assert.equal(isAllowedDocxHyperlinkUri("javascript:alert(1)"), false);
+    assert.equal(isAllowedDocxHyperlinkUri("file:///etc/passwd"), false);
+    assert.equal(isAllowedDocxHyperlinkUri(""), false);
+  });
+
+  it("omits disallowed hyperlink targets from generated docx relationships", async () => {
+    const cv = structuredClone(FIXTURE) as {
+      contact: {
+        location: string;
+        phone: string;
+        email: string;
+        links: Array<{ label: string; url: string }>;
+      };
+      projects: Array<{
+        name: string;
+        linkLabel?: string;
+        linkUrl?: string;
+        bullets: string[];
+      }>;
+    };
+    cv.contact.links = [
+      { label: "evil", url: "\\\\attacker.com\\share" },
+      { label: "safe", url: "https://example.com" },
+    ];
+    cv.projects = [
+      {
+        name: "Risky",
+        linkLabel: "js",
+        linkUrl: "javascript:alert(1)",
+        bullets: ["x"],
+      },
+    ];
+
+    const result = await buildJsonDocx(cv);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+
+    const targets = readDocxExternalHyperlinkTargets(result.buffer);
+    assert.deepEqual(targets, [
+      "mailto:jane.example@example.com",
+      "https://example.com",
+      "https://example-site.example.com",
+    ]);
   });
 });
 
