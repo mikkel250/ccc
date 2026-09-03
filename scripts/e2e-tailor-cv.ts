@@ -6,7 +6,7 @@
  *   npm run smoke -- [baseUrl] [jdPath] [--flexible]
  *   npx tsx scripts/e2e-tailor-cv.ts [baseUrl] [jdPath] [--flexible]
  *
- * Requires: running server, TAILOR_API_KEY, MASTER_CV_JSON|PATH, judge model keys.
+ * Requires: running server, TAILOR_API_KEY, MASTER_CV_JSON|PATH.
  * Optional: SMOKE_WRITE_UNREDACTED=1 to write full curated JSON locally (default redacts).
  * Optional: SMOKE_CURATION_MODE=strict|flexible (default strict); --flexible forces flexible.
  */
@@ -28,11 +28,8 @@ import {
   isCurationMode,
   type CurationMode,
 } from "../app/api/lib/curation-mode";
-import { getEvalJudgeModel } from "../lib/env";
 import {
   redactCuratedForArtifact,
-  getSmokeGroundingMin,
-  getSmokeJdFitMin,
   shouldWriteCoverLetterDocx,
   smokeArtifactPaths,
 } from "../app/api/lib/smoke-helpers";
@@ -182,51 +179,20 @@ export async function runSmokeCli(options: RunSmokeCliOptions): Promise<void> {
     process.exit(1);
   }
 
-  const judgeModel = getEvalJudgeModel();
-  const groundingMin = getSmokeGroundingMin();
-  const jdFitMin = getSmokeJdFitMin();
-  console.log(
-    `Judges: model=${judgeModel} groundingMin=${groundingMin} jdFitMin=${jdFitMin}`
-  );
-
-  const result = await verifySmokePipeline(master.data, jd.text, {
+  const result = await verifySmokePipeline(jd.text, {
     baseUrl: options.baseUrl,
     curationMode,
     apiKey,
-    judgeModel,
-    groundingMin,
-    jdFitMin,
     deps: options.deps,
   });
 
   if (!result.ok) {
     console.error(`FAIL ${result.stage}:`, result.error);
-    if (
-      result.stage === "judges" &&
-      result.docxBase64 != null &&
-      result.curatedJson != null
-    ) {
-      await writeSmokeArtifacts({
-        jdPath: jd.path,
-        curated: result.curatedJson,
-        builderVersion: result.builderVersion,
-        cvBase64: result.docxBase64,
-        curationMode,
-        coverLetter: result.coverLetter,
-        artifactDir: options.artifactDir,
-      });
-    }
     process.exit(1);
   }
 
   console.log(
     `PASS tailor model=${result.model} builder=${result.builderVersion}`
-  );
-  console.log(
-    `grounding score=${result.groundingScore} parseFailed=${result.groundingParseFailed} flagged=${result.groundingFlaggedCount}`
-  );
-  console.log(
-    `jd-fit score=${result.jdFitScore} parseFailed=${result.jdFitParseFailed} reasoning=${result.jdFitReasoning}`
   );
 
   await writeSmokeArtifacts({
@@ -238,11 +204,6 @@ export async function runSmokeCli(options: RunSmokeCliOptions): Promise<void> {
     coverLetter: result.coverLetter,
     artifactDir: options.artifactDir,
   });
-
-  if (!result.gatePassed) {
-    console.error("FAIL smoke gates:", result.gateReasons.join("; "));
-    process.exit(1);
-  }
 
   console.log("PASS smoke");
   process.exit(0);

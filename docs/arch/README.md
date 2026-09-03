@@ -23,7 +23,7 @@ The project was cloned from `portfolio-react-ts` and stripped of all portfolio p
 | Language | TypeScript 5 | Strict mode |
 | Framework | Next.js 15 App Router | API routes only (`app/api/`). No pages, no components, no layout beyond API root. |
 | Runtime | Node.js 22 LTS (≥22.0.0) | Railway (Nixpacks reads `.nvmrc`); no Edge Functions |
-| LLM | OpenAI, Anthropic, Google, DeepSeek, OpenRouter (multi-provider dispatch) | Model strings use `provider/model` namespace. No bare aliases. Provider detection is a config lookup, not an `if` chain. OpenRouter supports `service_tier: flex` (discounted, latency-tolerant) for OpenAI/Google models; Anthropic batch processing requires direct API. Separate `TAILOR_MODEL` for CV generation. LLM-as-Judge eval pipeline — complete (MVP). Native batch APIs deferred. |
+| LLM | OpenAI, Anthropic, Google, DeepSeek, OpenRouter (multi-provider dispatch) | Model strings use `provider/model` namespace. No bare aliases. Provider detection is a config lookup, not an `if` chain. OpenRouter supports `service_tier: flex` (discounted, latency-tolerant) for OpenAI/Google models; Anthropic batch processing requires direct API. Separate `TAILOR_MODEL` for CV generation. Tailor is a single curator pass; live quality is `npm run smoke` artifacts plus operator review. Native batch APIs deferred. |
 | Auth | None | MVP is single-user, no auth layer |
 | Database | SQLite (MVP), PostgreSQL + pgvector (future) | Learning system stores feedback, few-shot examples, and hallucination corrections. Not needed for MVP (single-pass, stateless). |
 | Storage | None | CV .docx is generated in-memory per request, returned as base64 |

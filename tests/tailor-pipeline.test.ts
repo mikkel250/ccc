@@ -65,7 +65,7 @@ function mockPipelineSuccess(
 
 describe("buildTailorResponse — pipeline orchestration", () => {
   beforeEach(() => {
-    ensureEnv({ critiqueReviseEnabled: false });
+    ensureEnv();
     resetRedisClientForTest();
     injectSlidingWindowMock();
   });

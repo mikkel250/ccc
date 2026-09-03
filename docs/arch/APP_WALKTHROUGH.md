@@ -156,7 +156,7 @@ Production curator generations link to Langfuse prompt `cv-curator-json` via `la
 npm run smoke -- http://localhost:3000 [optional-jd-path] [--flexible]
 ```
 
-Loads master via the same `MASTER_CV_*` env as the server, POSTs with Bearer + `curationMode` (`strict` default; `--flexible` or `SMOKE_CURATION_MODE=flexible`), asserts `.docx` + `curatedJson` + `builderVersion`, then always runs `scoreJsonGrounding` + `scoreJsonJdFit` (env mins `SMOKE_GROUNDING_MIN` / `SMOKE_JD_FIT_MIN`). Markdown generation eval is retired — use smoke only.
+Loads master via the same `MASTER_CV_*` env as the server, POSTs with Bearer + `curationMode` (`strict` default; `--flexible` or `SMOKE_CURATION_MODE=flexible`), asserts `.docx` + `curatedJson` + `builderVersion`, and writes redact-by-default artifacts. Markdown generation eval is retired — use smoke only. Quality is the operator reading the files.
 
 Local regen without LLM: `npm run regen-docx -- curated.json out.docx --builder-version=<BUILDER_VERSION>`.
 
@@ -174,7 +174,7 @@ Prompt files cloned from the portfolio chat bot remain for a hypothetical future
 
 | Script | Entry | Verifies |
 |--------|-------|----------|
-| `npm run smoke` (`scripts/e2e-tailor-cv.ts`) | `main()` | Live tailor + dual artifacts + JSON judges |
+| `npm run smoke` (`scripts/e2e-tailor-cv.ts`) | `main()` | Live tailor + dual artifacts |
 | `npm run regen-docx` | CLI | Mechanical rebuild from curated JSON |
 | `scripts/verify-rate-limit.ts` | `main()` | Live Upstash rate-limit behavior |
 | `npm run test:e2e` | Playwright | HTTP auth/validation (optional LLM gated) |

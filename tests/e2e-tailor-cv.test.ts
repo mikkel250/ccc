@@ -193,16 +193,12 @@ describe("writeSmokeArtifacts", () => {
 describe("runSmokeCli exit codes", () => {
   const prevKey = process.env.TAILOR_API_KEY;
   const prevMaster = process.env.MASTER_CV_JSON;
-  const prevGroundingMin = process.env.SMOKE_GROUNDING_MIN;
-  const prevJdFitMin = process.env.SMOKE_JD_FIT_MIN;
   let dir: string;
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "smoke-cli-"));
     process.env.TAILOR_API_KEY = "test-key";
     process.env.MASTER_CV_JSON = JSON.stringify(CURATED);
-    process.env.SMOKE_GROUNDING_MIN = "0.7";
-    process.env.SMOKE_JD_FIT_MIN = "3";
     __resetMasterCvCacheForTest();
   });
 
@@ -211,10 +207,6 @@ describe("runSmokeCli exit codes", () => {
     else process.env.TAILOR_API_KEY = prevKey;
     if (prevMaster === undefined) delete process.env.MASTER_CV_JSON;
     else process.env.MASTER_CV_JSON = prevMaster;
-    if (prevGroundingMin === undefined) delete process.env.SMOKE_GROUNDING_MIN;
-    else process.env.SMOKE_GROUNDING_MIN = prevGroundingMin;
-    if (prevJdFitMin === undefined) delete process.env.SMOKE_JD_FIT_MIN;
-    else process.env.SMOKE_JD_FIT_MIN = prevJdFitMin;
     __resetMasterCvCacheForTest();
     rmSync(dir, { recursive: true, force: true });
     mock.restoreAll();
@@ -244,16 +236,6 @@ describe("runSmokeCli exit codes", () => {
           artifactDir: dir,
           deps: {
             fetchFn: async () => jsonResponse({ status: "down" }),
-            scoreJsonGrounding: async () => ({
-              score: 1,
-              flaggedClaims: [],
-              parseFailed: false,
-            }),
-            scoreJsonJdFit: async () => ({
-              score: 5,
-              reasoning: "ok",
-              parseFailed: false,
-            }),
           },
         }),
       /process\.exit\(1\)/
@@ -285,16 +267,6 @@ describe("runSmokeCli exit codes", () => {
               }
               return jsonResponse({ error: "boom" }, 500);
             },
-            scoreJsonGrounding: async () => ({
-              score: 1,
-              flaggedClaims: [],
-              parseFailed: false,
-            }),
-            scoreJsonJdFit: async () => ({
-              score: 5,
-              reasoning: "ok",
-              parseFailed: false,
-            }),
           },
         }),
       /process\.exit\(1\)/
@@ -330,108 +302,6 @@ describe("runSmokeCli exit codes", () => {
                 model: "test/model",
               });
             },
-            scoreJsonGrounding: async () => ({
-              score: 1,
-              flaggedClaims: [],
-              parseFailed: false,
-            }),
-            scoreJsonJdFit: async () => ({
-              score: 5,
-              reasoning: "ok",
-              parseFailed: false,
-            }),
-          },
-        }),
-      /process\.exit\(1\)/
-    );
-    assert.deepEqual(exits, [1]);
-  });
-
-  it("writes artifacts then exits 1 when a judge throws", async () => {
-    writeFileSync(join(dir, "jd.md"), "Need a solutions engineer");
-    const docx = await markdownToDocxBase64("# CV\n- bullet");
-    const exits: number[] = [];
-    mock.method(process, "exit", ((code?: number) => {
-      exits.push(code ?? 0);
-      throw new Error(`process.exit(${code ?? 0})`);
-    }) as typeof process.exit);
-
-    await assert.rejects(
-      () =>
-        runSmokeCli({
-          baseUrl: "http://localhost:3000",
-          jdPath: join(dir, "jd.md"),
-          wantFlexible: false,
-          artifactDir: dir,
-          deps: {
-            fetchFn: async (input: RequestInfo | URL) => {
-              const url = String(input);
-              if (url.endsWith("/api/hello")) {
-                return jsonResponse({ status: "ok" });
-              }
-              return jsonResponse({
-                cv: docx,
-                curatedJson: CURATED,
-                builderVersion: "v1",
-                model: "test/model",
-              });
-            },
-            scoreJsonGrounding: async () => {
-              throw new Error("grounding transport failed");
-            },
-            scoreJsonJdFit: async () => ({
-              score: 5,
-              reasoning: "ok",
-              parseFailed: false,
-            }),
-          },
-        }),
-      /process\.exit\(1\)/
-    );
-    assert.deepEqual(exits, [1]);
-    assert.ok(existsSync(join(dir, "jd.curated.json")));
-    assert.ok(existsSync(join(dir, "jd.docx")));
-  });
-
-  it("exits 1 when smoke gates fail", async () => {
-    writeFileSync(join(dir, "jd.md"), "Need a solutions engineer");
-    const docx = await markdownToDocxBase64("# CV\n- bullet");
-    const exits: number[] = [];
-    mock.method(process, "exit", ((code?: number) => {
-      exits.push(code ?? 0);
-      throw new Error(`process.exit(${code ?? 0})`);
-    }) as typeof process.exit);
-
-    await assert.rejects(
-      () =>
-        runSmokeCli({
-          baseUrl: "http://localhost:3000",
-          jdPath: join(dir, "jd.md"),
-          wantFlexible: false,
-          artifactDir: dir,
-          deps: {
-            fetchFn: async (input: RequestInfo | URL) => {
-              const url = String(input);
-              if (url.endsWith("/api/hello")) {
-                return jsonResponse({ status: "ok" });
-              }
-              return jsonResponse({
-                cv: docx,
-                curatedJson: CURATED,
-                builderVersion: "v1",
-                model: "test/model",
-              });
-            },
-            scoreJsonGrounding: async () => ({
-              score: 0.1,
-              flaggedClaims: ["bad claim"],
-              parseFailed: false,
-            }),
-            scoreJsonJdFit: async () => ({
-              score: 1,
-              reasoning: "weak",
-              parseFailed: false,
-            }),
           },
         }),
       /process\.exit\(1\)/
@@ -468,16 +338,6 @@ describe("runSmokeCli exit codes", () => {
                 model: "test/model",
               });
             },
-            scoreJsonGrounding: async () => ({
-              score: 0.95,
-              flaggedClaims: [],
-              parseFailed: false,
-            }),
-            scoreJsonJdFit: async () => ({
-              score: 5,
-              reasoning: "strong",
-              parseFailed: false,
-            }),
           },
         }),
       /process\.exit\(0\)/

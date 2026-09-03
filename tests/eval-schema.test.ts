@@ -1,6 +1,5 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import {
   EvalDimension,
   FormatSection,
@@ -10,8 +9,6 @@ import {
   RELEVANCE_JUDGE_PROMPT,
   HALLUCINATION_JUDGE_PROMPT,
   EXTRACTION_JUDGE_PROMPT,
-  JSON_JD_FIT_JUDGE_PROMPT,
-  DEFAULT_JSON_JD_FIT_JUDGE_PROMPT,
   DEFAULT_EVAL_JUDGE_MODEL,
   DEFAULT_EVAL_EXTRACTION_MIN_SCORE,
   DEFAULT_EVAL_EXTRACTION_MODEL,
@@ -291,55 +288,6 @@ describe("eval-schema — lazy getJudgeMap", () => {
     } finally {
       console.warn = originalWarn;
     }
-  });
-});
-
-describe("eval-schema — JSON_JD_FIT_JUDGE_PROMPT", () => {
-  it("default template penalizes surviving off-domain clutter, not just must-have coverage", () => {
-    assert.match(DEFAULT_JSON_JD_FIT_JUDGE_PROMPT, /clutter/i);
-    assert.match(DEFAULT_JSON_JD_FIT_JUDGE_PROMPT, /lower the score/i);
-  });
-
-  it("resolved prompt matches default when JSON_JD_FIT_JUDGE_PROMPT env is unset at import", () => {
-    // This suite imports eval-schema at load time; if the env var is unset in the
-    // parent process, the resolved export must equal the default template.
-    if (process.env.JSON_JD_FIT_JUDGE_PROMPT) {
-      return; // override present — covered by the spawn test below
-    }
-    assert.equal(JSON_JD_FIT_JUDGE_PROMPT, DEFAULT_JSON_JD_FIT_JUDGE_PROMPT);
-  });
-
-  it("honors JSON_JD_FIT_JUDGE_PROMPT env override when module loads after env is set", () => {
-    const result = spawnSync(
-      process.execPath,
-      [
-        "--import",
-        "tsx",
-        "-e",
-        `
-(async () => {
-  process.env.JSON_JD_FIT_JUDGE_PROMPT = "OVERRIDE_JD_FIT_PROMPT_MARKER clutter lower the score";
-  const mod = await import("./app/api/lib/eval-schema.ts");
-  const prompt =
-    mod.JSON_JD_FIT_JUDGE_PROMPT ??
-    mod.default?.JSON_JD_FIT_JUDGE_PROMPT;
-  if (typeof prompt !== "string" || !prompt.includes("OVERRIDE_JD_FIT_PROMPT_MARKER")) {
-    console.error("override not applied:", prompt);
-    process.exit(1);
-  }
-})().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
-`,
-      ],
-      {
-        cwd: process.cwd(),
-        encoding: "utf8",
-        env: { ...process.env },
-      }
-    );
-    assert.equal(result.status, 0, result.stderr || result.stdout);
   });
 });
 

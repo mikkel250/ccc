@@ -16,9 +16,9 @@ All models use the `provider/model` namespace (see [Provider/model namespace](./
 | `openrouter/google/gemini-3.1-pro-preview` | OpenRouter flex | Google baseline |
 | `openrouter/deepseek/deepseek-v4-pro` | OpenRouter | Credit-fallback when direct DeepSeek quota exhausted |
 
-**Complete:** Live JSON quality via `npm run smoke` (grounding + JD-fit judges). Historical markdown-era composites informed the initial `TAILOR_MODEL` default.
+**Complete:** Live JSON quality via `npm run smoke` (dual artifacts; operator reviews the files). Historical markdown-era composites informed the initial `TAILOR_MODEL` default.
 
-**Deferred:** Anthropic Message Batches API (async submit/poll/retrieve).
+**Deferred:** Anthropic Message Batches API (async submit/poll/retrieve). Do not build batch inside Next.js.
 
 ## Provider strategy
 
@@ -37,12 +37,10 @@ Live quality for the JSON curator pipeline is **`npm run smoke`** (not part of `
 
 1. Hit a running server with Bearer auth (`TAILOR_API_KEY`) and a JD (default or path override).
 2. Assert dual artifacts: base64 `.docx` (`cv`) + schema-valid `curatedJson` + `builderVersion`.
-3. Always run JSON judges on master + curated + JD:
-   - **Grounding** (`scoreJsonGrounding`) — identity-preserving claims vs master (0.0–1.0; hard fail below `SMOKE_GROUNDING_MIN`).
-   - **JD-fit** (`scoreJsonJdFit`) — how well curated JSON targets the JD (1–5; hard fail below `SMOKE_JD_FIT_MIN`).
-4. Optional `--flexible` / `SMOKE_CURATION_MODE=flexible` selects curation posture; grounding judge gets a matching mode addendum.
+3. Write redact-by-default files under `tmp/smoke/`. Optional `--flexible` / `SMOKE_CURATION_MODE=flexible` selects curation posture and may write a cover-letter DOCX.
+4. Exit 0 if health, tailor, schema, and docx succeed. There is no grounding/JD-fit score gate and no judge model call.
 
-Artifacts (redact-by-default under `tmp/smoke/`): `<jd-slug>.docx` + `<jd-slug>.curated.json` named from the JD basename. Test JDs are raw recruiter text in `knowledge-base/test-jds/` (no YAML frontmatter). Judge helpers and prompts live in `app/api/lib/eval-*.ts` / `eval-schema.ts`.
+Artifacts: `<jd-slug>.docx` + `<jd-slug>.curated.json` named from the JD basename. Test JDs are raw recruiter text in `knowledge-base/test-jds/` (no YAML frontmatter). Operator review of those files is the quality signal.
 
 ### Historical model-selection eval (markdown era)
 

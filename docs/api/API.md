@@ -102,8 +102,6 @@ Request body size capped by `TAILOR_REQUEST_MAX_BYTES` (default 65536).
 | `curationMode` | Echo of the mode used for this tailor (`strict` or `flexible`) |
 | `remaining` / `resetTime` | More restrictive of dual rate-limit buckets |
 
-> **Critique-revise loop:** Opt-in (`CRITIQUE_REVISE_ENABLED=false` by default). When enabled, an adversarial judge critiques the draft and the curator revises it before the final response is delivered. Enable only after sizing `CRITIQUE_REVISE_BUDGET_MS` / `CRITIQUE_REVISE_CALL_TIMEOUT_MS` (and ideally weighted quotas) — rate limiting still counts the whole tailor as one request.
-
 Total JSON response size capped by `TAILOR_RESPONSE_MAX_BYTES` (default 2MiB).
 
 #### 400 Bad Request
@@ -160,7 +158,6 @@ Errors use `{ "error": string }`. `remaining` / `resetTime` appear on 429 only.
 | `RATE_LIMIT_WINDOW` | Sliding window length (ms) | `60000` |
 | `TAILOR_REQUEST_MAX_BYTES` / `TAILOR_JD_MAX_CHARS` | Ingress limits | `65536` / `50000` |
 | `TAILOR_CURATED_JSON_MAX_BYTES` / `TAILOR_RESPONSE_MAX_BYTES` | Egress limits | `512000` / `2097152` |
-| `CRITIQUE_REVISE_ENABLED` | Opt-in on-path critique-revise loop | `false` |
 
 Full catalog with comments: [`.env.example`](../../.env.example)
 
@@ -169,7 +166,7 @@ Full catalog with comments: [`.env.example`](../../.env.example)
 ## Operator commands
 
 ```bash
-# Live smoke (Bearer + dual artifacts + grounding/JD-fit judges) — not part of npm test
+# Live smoke (Bearer + dual artifacts) — not part of npm test
 npm run smoke -- http://localhost:3000
 
 # Regen .docx from retained curated JSON (no LLM)

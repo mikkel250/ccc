@@ -6,7 +6,6 @@ import {
   getEnvNumber,
   getEnvString,
   getEvalExtractionModel,
-  getEvalJudgeModel,
   getEvalModels,
   getLLMConfig,
   getTailorModel,
@@ -18,7 +17,6 @@ import { KNOWN_PROVIDERS as KNOWN_PROVIDERS_FROM_LLM } from "../app/api/lib/llm"
 import {
   CANDIDATE_GENERATION_MODELS,
   DEFAULT_EVAL_EXTRACTION_MODEL,
-  DEFAULT_EVAL_JUDGE_MODEL,
   DEFAULT_EVAL_MODELS_CSV,
   getJudgeMap,
   resetJudgeMapCache,
@@ -169,50 +167,6 @@ describe("getDefaultCurationMode", () => {
   it("falls back to strict when invalid", () => {
     process.env[key] = "loose";
     assert.equal(getDefaultCurationMode(), "strict");
-  });
-});
-
-describe("getEvalJudgeModel", () => {
-  const originalJudgeModel = process.env.EVAL_JUDGE_MODEL;
-
-  afterEach(() => {
-    if (originalJudgeModel === undefined) delete process.env.EVAL_JUDGE_MODEL;
-    else process.env.EVAL_JUDGE_MODEL = originalJudgeModel;
-  });
-
-  it("prefers EVAL_JUDGE_MODEL when set", () => {
-    process.env.EVAL_JUDGE_MODEL = "deepseek/deepseek-v4-pro";
-    assert.equal(getEvalJudgeModel(), "deepseek/deepseek-v4-pro");
-  });
-
-  it("uses default when EVAL_JUDGE_MODEL is unset", () => {
-    delete process.env.EVAL_JUDGE_MODEL;
-    assert.equal(getEvalJudgeModel(), DEFAULT_EVAL_JUDGE_MODEL);
-  });
-
-  it("uses default when EVAL_JUDGE_MODEL is empty string", () => {
-    process.env.EVAL_JUDGE_MODEL = "";
-    assert.equal(getEvalJudgeModel(), DEFAULT_EVAL_JUDGE_MODEL);
-  });
-
-  it("returns valid namespaced EVAL_JUDGE_MODEL when set", () => {
-    process.env.EVAL_JUDGE_MODEL = "deepseek/deepseek-v4-pro";
-    assert.equal(getEvalJudgeModel(), "deepseek/deepseek-v4-pro");
-  });
-
-  it('throws when EVAL_JUDGE_MODEL is unnamespaced "claude"', () => {
-    process.env.EVAL_JUDGE_MODEL = "claude";
-    assert.throws(() => getEvalJudgeModel(), /namespaced|provider\/model/i);
-  });
-
-  it('throws when EVAL_JUDGE_MODEL has unknown provider "fake/gpt"', () => {
-    process.env.EVAL_JUDGE_MODEL = "fake/gpt";
-    assert.throws(() => getEvalJudgeModel(), /unknown provider|fake/i);
-  });
-
-  it("passes validation for default when env var is unset", () => {
-    delete process.env.EVAL_JUDGE_MODEL;
-    assert.doesNotThrow(() => getEvalJudgeModel());
   });
 });
 

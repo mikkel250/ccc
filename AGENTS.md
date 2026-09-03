@@ -335,12 +335,12 @@ Full cost-quality data: `docs/solutions/mid-tier-review-models-match-frontier-at
 - Prefer a large, complete master skills/experience inventory that can be cut for a JD over a sparse master that needs manual re-adds.
 - Do not couple product behavior or prompts tightly to one industry; engineers may be first users, but design stays industry-agnostic.
 - CV content quality matters more than page-length limits; avoid treating page count as a hard requirement.
-- Prefer LLM judges and calibrated model routing over heavy mechanical allowlists for grounding unless manual failures justify otherwise.
+- Prefer operator (later: user) review over heavy mechanical allowlists for grounding unless manual failures justify it.
 - When asked to ship fixes to an already-open PR, verify the active branch first (`git branch --show-current`); never write files, commit, or push when on `main`; once branch safety is confirmed, commit and push to the correct PR branch and do not babysit the PR unless asked.
 - Set reasoning/thinking effort explicitly for tailoring and smoke runs (especially via OpenRouter) instead of relying on provider defaults.
 - Flexible/pivot curation should foreground transferable skills without fabricating experience; tenure claims must not sum overlapping spans or rebrand off-domain years.
 - Keep production and tailoring prompts portable across providers; do not tune them to a single model (inference still being evaluated across DeepSeek, Gemini, GPT, etc.).
-- For flexible curation success criteria, prefer a holistic judge verdict that the resume is "strong enough" over hard numeric pass/fail thresholds on individual scores.
+- For flexible curation success criteria, prefer a holistic human read that the resume is "strong enough" over hard numeric pass/fail thresholds on individual scores.
 - Calibrate model choice per task; for `/ce-code-review` when tiering is requested, use Grok 4.5 high for complex/thinking tasks, Composer 2.5 for mid non-thinking work, and Auto for routine ones. Never select Fast Composer (`composer-2.5-fast` / `composer-*-fast`) for Task, Explore, scouts, or other subagents — always standard `composer-2.5` when Composer is chosen.
 
 ## Learned Workspace Facts
@@ -349,7 +349,7 @@ Pointer-first bootstrap (canonical detail lives in linked docs; do not restate s
 
 - Master CV: one complete JSON career record (not parallel industry masters); local SoT is gitignored under `secrets/` — runtime uses `MASTER_CV_JSON` / `MASTER_CV_PATH` (see `.env.example`, `@docs/arch/APP_WALKTHROUGH.md`).
 - Curation modes: `strict` (default, linear/in-field Struan) vs `flexible` (transferable-skills pivot path) — `@docs/api/API.md`; product strategy in `STRATEGY.md`.
-- `npm run smoke` (manual live-API + judges; not part of `npm test` / CI): `@docs/test/TESTING.md`, `@docs/arch/MODEL_SELECTION.md`
+- `npm run smoke` (manual live-API + artifacts; not part of `npm test` / CI): `@docs/test/TESTING.md`, `@docs/arch/MODEL_SELECTION.md`
 - MVP auth (`TAILOR_API_KEY` Bearer) and artifacts (curated JSON + `.docx`); flexible responses may include `coverLetter` markdown — `@docs/api/API.md`
 - Observability (Langfuse on-path / LangSmith fire-and-forget; redaction + flush bounds): `@docs/solutions/architecture-patterns/dual-tracer-redact-and-flush-timeout.md`
 - Cost calibration: DeepSeek via direct API; OpenAI/Google via OpenRouter flex; for tailoring quality prefer best-fit over cost alone — `@docs/arch/MODEL_SELECTION.md`

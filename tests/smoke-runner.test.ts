@@ -4,16 +4,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { validateCvJson } from "../app/api/lib/cv-schema";
 import { markdownToDocxBase64 } from "../app/api/lib/markdown-docx";
-import type {
-  JsonGroundingScore,
-  JsonJdFitScore,
-} from "../app/api/lib/eval-judge";
 import {
   verifySmokePipeline,
   type SmokePipelineDeps,
 } from "../app/api/lib/smoke-runner";
 
-const MASTER = { name: "JANE EXAMPLE", summary: ["Evergreen"] };
 const curatedRaw: unknown = JSON.parse(
   readFileSync(
     join(process.cwd(), "tests/fixtures/curated-cv-valid.json"),
@@ -27,34 +22,11 @@ if (!curatedValidated.ok) {
 const CURATED = curatedValidated.data;
 const JD = "Senior solutions engineer role";
 
-function grounding(
-  overrides: Partial<JsonGroundingScore> = {}
-): JsonGroundingScore {
-  return {
-    score: 0.9,
-    flaggedClaims: [],
-    parseFailed: false,
-    ...overrides,
-  };
-}
-
-function jdFit(overrides: Partial<JsonJdFitScore> = {}): JsonJdFitScore {
-  return {
-    score: 4,
-    reasoning: "strong fit",
-    parseFailed: false,
-    ...overrides,
-  };
-}
-
 function baseOptions(deps: SmokePipelineDeps) {
   return {
     baseUrl: "http://localhost:3000",
     curationMode: "strict" as const,
     apiKey: "test-key",
-    judgeModel: "test/judge",
-    groundingMin: 0.7,
-    jdFitMin: 3,
     deps,
   };
 }
@@ -101,7 +73,7 @@ describe("verifySmokePipeline", () => {
 
   it("returns stage health when hello check fails", async () => {
     const fetchFn = mock.fn(async () => jsonResponse({ status: "down" }, 200));
-    const result = await verifySmokePipeline(MASTER, JD, baseOptions({ fetchFn }));
+    const result = await verifySmokePipeline(JD, baseOptions({ fetchFn }));
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.equal(result.stage, "health");
@@ -112,7 +84,7 @@ describe("verifySmokePipeline", () => {
     const fetchFn = mock.fn(
       async () => new Response("unavailable", { status: 503 })
     );
-    const result = await verifySmokePipeline(MASTER, JD, baseOptions({ fetchFn }));
+    const result = await verifySmokePipeline(JD, baseOptions({ fetchFn }));
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.equal(result.stage, "health");
@@ -125,7 +97,7 @@ describe("verifySmokePipeline", () => {
     const fetchFn = mock.fn(async () => {
       throw new TypeError("fetch failed");
     });
-    const result = await verifySmokePipeline(MASTER, JD, baseOptions({ fetchFn }));
+    const result = await verifySmokePipeline(JD, baseOptions({ fetchFn }));
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.equal(result.stage, "health");
@@ -143,7 +115,7 @@ describe("verifySmokePipeline", () => {
         },
       });
     });
-    const result = await verifySmokePipeline(MASTER, JD, baseOptions({ fetchFn }));
+    const result = await verifySmokePipeline(JD, baseOptions({ fetchFn }));
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.equal(result.stage, "health");
@@ -156,7 +128,6 @@ describe("verifySmokePipeline", () => {
     for (const body of [null, [], "ok", 1]) {
       const fetchFn = mock.fn(async () => jsonResponse(body));
       const result = await verifySmokePipeline(
-        MASTER,
         JD,
         baseOptions({ fetchFn })
       );
@@ -181,7 +152,7 @@ describe("verifySmokePipeline", () => {
       }
       return jsonResponse({ error: "unauthorized" }, 401);
     });
-    const result = await verifySmokePipeline(MASTER, JD, baseOptions({ fetchFn }));
+    const result = await verifySmokePipeline(JD, baseOptions({ fetchFn }));
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.equal(result.stage, "tailor");
@@ -193,7 +164,7 @@ describe("verifySmokePipeline", () => {
     const fetchFn = helloThen(() => {
       throw new TypeError("connect ECONNREFUSED");
     });
-    const result = await verifySmokePipeline(MASTER, JD, baseOptions({ fetchFn }));
+    const result = await verifySmokePipeline(JD, baseOptions({ fetchFn }));
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.equal(result.stage, "tailor");
@@ -211,7 +182,7 @@ describe("verifySmokePipeline", () => {
         },
       });
     });
-    const result = await verifySmokePipeline(MASTER, JD, baseOptions({ fetchFn }));
+    const result = await verifySmokePipeline(JD, baseOptions({ fetchFn }));
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.equal(result.stage, "tailor");
@@ -224,7 +195,6 @@ describe("verifySmokePipeline", () => {
     for (const body of [null, [], "oops", 1]) {
       const fetchFn = helloThen(() => jsonResponse(body));
       const result = await verifySmokePipeline(
-        MASTER,
         JD,
         baseOptions({ fetchFn })
       );
@@ -253,7 +223,6 @@ describe("verifySmokePipeline", () => {
       const { [key]: _omitted, ...body } = complete;
       const fetchFn = helloThen(() => jsonResponse(body));
       const result = await verifySmokePipeline(
-        MASTER,
         JD,
         baseOptions({ fetchFn })
       );
@@ -278,7 +247,6 @@ describe("verifySmokePipeline", () => {
         })
       );
       const result = await verifySmokePipeline(
-        MASTER,
         JD,
         baseOptions({ fetchFn })
       );
@@ -296,7 +264,7 @@ describe("verifySmokePipeline", () => {
 
   it("POSTs tailor-cv with bearer auth, curation mode, and job description", async () => {
     const fetchFn = helloThen(() => jsonResponse({ error: "unauthorized" }, 401));
-    const result = await verifySmokePipeline(MASTER, JD, baseOptions({ fetchFn }));
+    const result = await verifySmokePipeline(JD, baseOptions({ fetchFn }));
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.equal(result.stage, "tailor");
@@ -329,8 +297,6 @@ describe("verifySmokePipeline", () => {
       ["array-not-cv"],
       { name: "incomplete" },
     ]) {
-      const scoreJsonGrounding = mock.fn(async () => grounding());
-      const scoreJsonJdFit = mock.fn(async () => jdFit());
       const fetchFn = helloThen(() =>
         jsonResponse({
           cv: docx,
@@ -340,9 +306,8 @@ describe("verifySmokePipeline", () => {
         })
       );
       const result = await verifySmokePipeline(
-        MASTER,
         JD,
-        baseOptions({ fetchFn, scoreJsonGrounding, scoreJsonJdFit })
+        baseOptions({ fetchFn })
       );
       assert.equal(
         result.ok,
@@ -354,8 +319,6 @@ describe("verifySmokePipeline", () => {
         assert.match(result.error, /schema validation/i);
         assert.equal(result.status, 200);
       }
-      assert.equal(scoreJsonGrounding.mock.calls.length, 0);
-      assert.equal(scoreJsonJdFit.mock.calls.length, 0);
     }
   });
 
@@ -372,180 +335,22 @@ describe("verifySmokePipeline", () => {
         model: "test/model",
       });
     });
-    const result = await verifySmokePipeline(MASTER, JD, baseOptions({ fetchFn }));
+    const result = await verifySmokePipeline(JD, baseOptions({ fetchFn }));
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.equal(result.stage, "docx");
     }
   });
 
-  it("returns gatePassed false when judges parseFailed", async () => {
-    const docx = await markdownToDocxBase64("# CV\n- bullet");
-    const fetchFn = mock.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/api/hello")) {
-        return jsonResponse({ status: "ok" });
-      }
-      return jsonResponse({
-        cv: docx,
-        curatedJson: CURATED,
-        builderVersion: "test-builder",
-        model: "test/model",
-      });
-    });
-    const result = await verifySmokePipeline(
-      MASTER,
-      JD,
-      baseOptions({
-        fetchFn,
-        scoreJsonGrounding: async () => grounding({ parseFailed: true }),
-        scoreJsonJdFit: async () => jdFit({ parseFailed: true }),
-      })
-    );
+  it("succeeds without judge scores after valid tailor artifacts", async () => {
+    const { fetchFn } = await okTailorFetch();
+    const result = await verifySmokePipeline(JD, baseOptions({ fetchFn }));
     assert.equal(result.ok, true);
     if (result.ok) {
-      assert.equal(result.gatePassed, false);
-      assert.ok(result.gateReasons.some((r) => /grounding/.test(r)));
-      assert.ok(result.gateReasons.some((r) => /jd-fit/.test(r)));
-    }
-  });
-
-  it("returns stage judges when a judge throws", async () => {
-    const { fetchFn } = await okTailorFetch();
-    let jdFitCalled = false;
-    const result = await verifySmokePipeline(
-      MASTER,
-      JD,
-      baseOptions({
-        fetchFn,
-        scoreJsonGrounding: async () => {
-          throw new Error("grounding transport failed");
-        },
-        scoreJsonJdFit: async () => {
-          jdFitCalled = true;
-          return jdFit();
-        },
-      })
-    );
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.equal(result.stage, "judges");
-      assert.equal(result.error, "grounding transport failed");
-      assert.equal("gatePassed" in result, false);
-      assert.deepEqual(result.curatedJson, CURATED);
-      assert.equal(typeof result.docxBase64, "string");
-      assert.ok((result.docxBase64 ?? "").length > 0);
+      assert.equal(result.model, "test/model");
       assert.equal(result.builderVersion, "test-builder");
-    }
-    assert.equal(jdFitCalled, false);
-  });
-
-  it("enforces groundingMin without failing jd-fit", async () => {
-    const { fetchFn } = await okTailorFetch();
-    const result = await verifySmokePipeline(MASTER, JD, {
-      ...baseOptions({
-        fetchFn,
-        scoreJsonGrounding: async () => grounding({ score: 0.8 }),
-        scoreJsonJdFit: async () => jdFit({ score: 5 }),
-      }),
-      groundingMin: 0.9,
-      jdFitMin: 1,
-    });
-    assert.equal(result.ok, true);
-    if (result.ok) {
-      assert.equal(result.gatePassed, false);
-      assert.ok(result.gateReasons.some((r) => /grounding score/.test(r)));
-      assert.equal(
-        result.gateReasons.some((r) => /jd-fit score/.test(r)),
-        false
-      );
-    }
-  });
-
-  it("enforces jdFitMin without failing grounding", async () => {
-    const { fetchFn } = await okTailorFetch();
-    const result = await verifySmokePipeline(MASTER, JD, {
-      ...baseOptions({
-        fetchFn,
-        scoreJsonGrounding: async () => grounding({ score: 0.9 }),
-        scoreJsonJdFit: async () => jdFit({ score: 3 }),
-      }),
-      groundingMin: 0,
-      jdFitMin: 4,
-    });
-    assert.equal(result.ok, true);
-    if (result.ok) {
-      assert.equal(result.gatePassed, false);
-      assert.ok(result.gateReasons.some((r) => /jd-fit score/.test(r)));
-      assert.equal(
-        result.gateReasons.some((r) => /grounding score/.test(r)),
-        false
-      );
-    }
-  });
-
-  it("returns gatePassed true when scores meet mins", async () => {
-    const docx = await markdownToDocxBase64("# CV\n- bullet");
-    const fetchFn = mock.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/api/hello")) {
-        return jsonResponse({ status: "ok" });
-      }
-      return jsonResponse({
-        cv: docx,
-        curatedJson: CURATED,
-        builderVersion: "test-builder",
-        model: "test/model",
-      });
-    });
-    const result = await verifySmokePipeline(
-      MASTER,
-      JD,
-      baseOptions({
-        fetchFn,
-        scoreJsonGrounding: async () => grounding(),
-        scoreJsonJdFit: async () => jdFit(),
-      })
-    );
-    assert.equal(result.ok, true);
-    if (result.ok) {
-      assert.equal(result.gatePassed, true);
-      assert.deepEqual(result.gateReasons, []);
-      assert.equal(result.groundingScore, 0.9);
-      assert.equal(result.jdFitScore, 4);
-    }
-  });
-
-  it("returns gatePassed false for flagged claims and below-threshold scores", async () => {
-    const docx = await markdownToDocxBase64("# CV\n- bullet");
-    const fetchFn = mock.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/api/hello")) {
-        return jsonResponse({ status: "ok" });
-      }
-      return jsonResponse({
-        cv: docx,
-        curatedJson: CURATED,
-        builderVersion: "test-builder",
-        model: "test/model",
-      });
-    });
-    const result = await verifySmokePipeline(
-      MASTER,
-      JD,
-      baseOptions({
-        fetchFn,
-        scoreJsonGrounding: async () =>
-          grounding({ score: 0.2, flaggedClaims: ["invented metric"] }),
-        scoreJsonJdFit: async () => jdFit({ score: 1 }),
-      })
-    );
-    assert.equal(result.ok, true);
-    if (result.ok) {
-      assert.equal(result.gatePassed, false);
-      assert.ok(result.gateReasons.some((r) => /flaggedClaims/.test(r)));
-      assert.ok(result.gateReasons.some((r) => /grounding score/.test(r)));
-      assert.ok(result.gateReasons.some((r) => /jd-fit score/.test(r)));
+      assert.equal("gatePassed" in result, false);
+      assert.equal("groundingScore" in result, false);
     }
   });
 
@@ -564,12 +369,8 @@ describe("verifySmokePipeline", () => {
         coverLetter: "Dear hiring manager,",
       });
     });
-    const result = await verifySmokePipeline(MASTER, JD, {
-      ...baseOptions({
-        fetchFn,
-        scoreJsonGrounding: async () => grounding(),
-        scoreJsonJdFit: async () => jdFit(),
-      }),
+    const result = await verifySmokePipeline(JD, {
+      ...baseOptions({ fetchFn }),
       curationMode: "flexible",
     });
     assert.equal(result.ok, true);
@@ -594,13 +395,8 @@ describe("verifySmokePipeline", () => {
       });
     });
     const result = await verifySmokePipeline(
-      MASTER,
       JD,
-      baseOptions({
-        fetchFn,
-        scoreJsonGrounding: async () => grounding(),
-        scoreJsonJdFit: async () => jdFit(),
-      })
+      baseOptions({ fetchFn })
     );
     assert.equal(result.ok, true);
     if (result.ok) {

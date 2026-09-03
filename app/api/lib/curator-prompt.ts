@@ -257,17 +257,6 @@ export function wrapJobDescriptionInNonceChannel(jobDescription: string): string
 }
 
 /**
- * Wrap untrusted judge critique text in a per-request nonce-delimited channel.
- */
-export function wrapJudgeCritiqueInNonceChannel(critiqueText: string): string {
-  return wrapUntrustedDataInNonceChannel(
-    "judge_critique",
-    critiqueText,
-    "CRITIQUE"
-  );
-}
-
-/**
  * User turn: JD only, in an explicit delimited data channel (R24).
  * Per-request nonce so JD text cannot close the envelope early.
  * Master lives in the system prompt — never concatenate JD into system text.

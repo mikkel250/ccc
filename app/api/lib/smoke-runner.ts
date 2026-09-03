@@ -1,31 +1,19 @@
 /**
- * Smoke pipeline library: health → tailor → docx validate → dual judges → gates.
+ * Smoke pipeline library: health → tailor → docx/schema validate.
  * Script owns env loading, artifact I/O, and process.exit.
  */
 import type { CurationMode } from "./curation-mode";
 import { validateCvJson } from "./cv-schema";
-import {
-  scoreJsonGrounding as defaultScoreJsonGrounding,
-  scoreJsonJdFit as defaultScoreJsonJdFit,
-  type JsonGroundingScore,
-  type JsonJdFitScore,
-} from "./eval-judge";
 import { isValidDocxBase64 } from "./markdown-docx";
-import { evaluateSmokeJudgeGates } from "./smoke-helpers";
 
 export type SmokePipelineDeps = {
   fetchFn?: typeof fetch;
-  scoreJsonGrounding?: typeof defaultScoreJsonGrounding;
-  scoreJsonJdFit?: typeof defaultScoreJsonJdFit;
 };
 
 export type SmokePipelineOptions = {
   baseUrl: string;
   curationMode: CurationMode;
   apiKey: string;
-  judgeModel: string;
-  groundingMin: number;
-  jdFitMin: number;
   deps?: SmokePipelineDeps;
 };
 
@@ -36,19 +24,11 @@ export type VerifySmokeSuccess = {
   builderVersion: string;
   coverLetter?: string;
   model: string;
-  groundingScore: number;
-  groundingParseFailed: boolean;
-  groundingFlaggedCount: number;
-  jdFitScore: number;
-  jdFitParseFailed: boolean;
-  jdFitReasoning: string;
-  gatePassed: boolean;
-  gateReasons: string[];
 };
 
 export type VerifySmokeFailure = {
   ok: false;
-  stage: "health" | "tailor" | "docx" | "judges";
+  stage: "health" | "tailor" | "docx";
   error: string;
   status?: number;
   curatedJson?: unknown;
@@ -107,14 +87,10 @@ async function fetchForStage(
 }
 
 export async function verifySmokePipeline(
-  masterCv: unknown,
   jd: string,
   options: SmokePipelineOptions
 ): Promise<VerifySmokeResult> {
   const fetchFn = options.deps?.fetchFn ?? fetch;
-  const scoreGrounding =
-    options.deps?.scoreJsonGrounding ?? defaultScoreJsonGrounding;
-  const scoreJdFit = options.deps?.scoreJsonJdFit ?? defaultScoreJsonJdFit;
   const baseUrl = options.baseUrl.replace(/\/$/, "");
 
   const healthAttempt = await fetchForStage(
@@ -234,66 +210,12 @@ export async function verifySmokePipeline(
   }
   const curatedJson = schemaResult.data;
 
-  let grounding: JsonGroundingScore;
-  let jdFit: JsonJdFitScore;
-  try {
-    grounding = await scoreGrounding(
-      masterCv,
-      curatedJson,
-      jd,
-      options.judgeModel,
-      { curationMode: options.curationMode }
-    );
-    jdFit = await scoreJdFit(
-      masterCv,
-      curatedJson,
-      jd,
-      options.judgeModel
-    );
-  } catch (err) {
-    const failure: VerifySmokeFailure = {
-      ok: false,
-      stage: "judges",
-      error: errorMessage(err),
-      curatedJson,
-      docxBase64,
-      builderVersion,
-    };
-    if (
-      options.curationMode === "flexible" &&
-      typeof data.coverLetter === "string"
-    ) {
-      failure.coverLetter = data.coverLetter;
-    }
-    return failure;
-  }
-
-  const gate = evaluateSmokeJudgeGates(grounding, jdFit, {
-    groundingMin: options.groundingMin,
-    jdFitMin: options.jdFitMin,
-  });
-
-  let gatePassed = true;
-  let gateReasons: string[] = [];
-  if (!gate.ok) {
-    gatePassed = false;
-    gateReasons = gate.reasons;
-  }
-
   const success: VerifySmokeSuccess = {
     ok: true,
     curatedJson,
     docxBase64,
     builderVersion,
     model: typeof data.model === "string" ? data.model : "",
-    groundingScore: grounding.score,
-    groundingParseFailed: grounding.parseFailed,
-    groundingFlaggedCount: grounding.flaggedClaims.length,
-    jdFitScore: jdFit.score,
-    jdFitParseFailed: jdFit.parseFailed,
-    jdFitReasoning: jdFit.reasoning,
-    gatePassed,
-    gateReasons,
   };
 
   if (
