@@ -175,12 +175,16 @@ describe("writeSmokeArtifacts", () => {
 describe("runSmokeCli exit codes", () => {
   const prevKey = process.env.TAILOR_API_KEY;
   const prevMaster = process.env.MASTER_CV_JSON;
+  const prevGroundingMin = process.env.SMOKE_GROUNDING_MIN;
+  const prevJdFitMin = process.env.SMOKE_JD_FIT_MIN;
   let dir: string;
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "smoke-cli-"));
     process.env.TAILOR_API_KEY = "test-key";
     process.env.MASTER_CV_JSON = JSON.stringify(CURATED);
+    process.env.SMOKE_GROUNDING_MIN = "0.7";
+    process.env.SMOKE_JD_FIT_MIN = "3";
     __resetMasterCvCacheForTest();
   });
 
@@ -189,6 +193,10 @@ describe("runSmokeCli exit codes", () => {
     else process.env.TAILOR_API_KEY = prevKey;
     if (prevMaster === undefined) delete process.env.MASTER_CV_JSON;
     else process.env.MASTER_CV_JSON = prevMaster;
+    if (prevGroundingMin === undefined) delete process.env.SMOKE_GROUNDING_MIN;
+    else process.env.SMOKE_GROUNDING_MIN = prevGroundingMin;
+    if (prevJdFitMin === undefined) delete process.env.SMOKE_JD_FIT_MIN;
+    else process.env.SMOKE_JD_FIT_MIN = prevJdFitMin;
     __resetMasterCvCacheForTest();
     rmSync(dir, { recursive: true, force: true });
     mock.restoreAll();

@@ -79,5 +79,6 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 ├── .coderabbit.yaml             # CodeRabbit review config
 ├── .env.example                 # Environment variable template
 ├── package.json                 # Dependencies
-└── tsconfig.json                # TypeScript config
+├── tsconfig.json                # TypeScript config (Next build; excludes tests/)
+└── tsconfig.test.json           # tsc for tests/ + app/lib/scripts (`npm run typecheck:tests`)
 ```

@@ -12,6 +12,7 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "node --import ./tests/set-node-env-test.mjs --import tsx --test tests/**/*.test.ts",
+    "typecheck:tests": "tsc -p tsconfig.test.json --noEmit",
     "test:e2e": "playwright test",
     "regen-docx": "tsx scripts/regen-docx.ts",
     "smoke": "tsx scripts/e2e-tailor-cv.ts"

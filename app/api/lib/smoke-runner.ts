@@ -10,7 +10,11 @@ import {
   type JsonJdFitScore,
 } from "./eval-judge";
 import { isValidDocxBase64 } from "./markdown-docx";
-import { evaluateSmokeJudgeGates } from "./smoke-helpers";
+import {
+  evaluateSmokeJudgeGates,
+  getSmokeGroundingMin,
+  getSmokeJdFitMin,
+} from "./smoke-helpers";
 
 export type SmokePipelineDeps = {
   fetchFn?: typeof fetch;
@@ -54,14 +58,52 @@ export type VerifySmokeFailure = {
 
 export type VerifySmokeResult = VerifySmokeSuccess | VerifySmokeFailure;
 
-type TailorSmokeResponse = {
-  cv?: unknown;
-  curatedJson?: unknown;
-  builderVersion?: unknown;
-  coverLetter?: unknown;
-  model?: unknown;
-  error?: string;
-};
+const HEALTH_JSON_FIELDS = ["status"] as const;
+const TAILOR_JSON_FIELDS = [
+  "cv",
+  "curatedJson",
+  "builderVersion",
+  "coverLetter",
+  "model",
+  "error",
+] as const;
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function jsonRecord<K extends string>(
+  value: unknown,
+  keys: readonly K[]
+): { [P in K]?: unknown } {
+  if (!isJsonRecord(value)) {
+    return {};
+  }
+  const out: { [P in K]?: unknown } = {};
+  for (const key of keys) {
+    if (Object.hasOwn(value, key)) {
+      out[key] = value[key];
+    }
+  }
+  return out;
+}
+
+async function fetchForStage(
+  fetchFn: typeof fetch,
+  stage: "health" | "tailor",
+  input: string,
+  init?: RequestInit
+): Promise<{ ok: true; response: Response } | VerifySmokeFailure> {
+  try {
+    return { ok: true, response: await fetchFn(input, init) };
+  } catch (err) {
+    return { ok: false, stage, error: errorMessage(err) };
+  }
+}
 
 export async function verifySmokePipeline(
   masterCv: unknown,
@@ -74,7 +116,15 @@ export async function verifySmokePipeline(
   const scoreJdFit = options.deps?.scoreJsonJdFit ?? defaultScoreJsonJdFit;
   const baseUrl = options.baseUrl.replace(/\/$/, "");
 
-  const healthRes = await fetchFn(`${baseUrl}/api/hello`);
+  const healthAttempt = await fetchForStage(
+    fetchFn,
+    "health",
+    `${baseUrl}/api/hello`
+  );
+  if (!healthAttempt.ok) {
+    return healthAttempt;
+  }
+  const healthRes = healthAttempt.response;
   if (!healthRes.ok) {
     return {
       ok: false,
@@ -83,9 +133,9 @@ export async function verifySmokePipeline(
       status: healthRes.status,
     };
   }
-  let healthBody: { status?: string } = {};
+  let healthParsed: unknown;
   try {
-    healthBody = (await healthRes.json()) as { status?: string };
+    healthParsed = await healthRes.json();
   } catch {
     return {
       ok: false,
@@ -94,6 +144,7 @@ export async function verifySmokePipeline(
       status: healthRes.status,
     };
   }
+  const healthBody = jsonRecord(healthParsed, HEALTH_JSON_FIELDS);
   if (healthBody.status !== "ok") {
     return {
       ok: false,
@@ -103,22 +154,31 @@ export async function verifySmokePipeline(
     };
   }
 
-  const tailorRes = await fetchFn(`${baseUrl}/api/tailor-cv`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${options.apiKey}`,
-    },
-    body: JSON.stringify({
-      jobDescription: jd,
-      sessionId: `smoke-${Date.now()}`,
-      curationMode: options.curationMode,
-    }),
-  });
+  const tailorAttempt = await fetchForStage(
+    fetchFn,
+    "tailor",
+    `${baseUrl}/api/tailor-cv`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${options.apiKey}`,
+      },
+      body: JSON.stringify({
+        jobDescription: jd,
+        sessionId: `smoke-${Date.now()}`,
+        curationMode: options.curationMode,
+      }),
+    }
+  );
+  if (!tailorAttempt.ok) {
+    return tailorAttempt;
+  }
+  const tailorRes = tailorAttempt.response;
 
-  let data: TailorSmokeResponse = {};
+  let tailorParsed: unknown;
   try {
-    data = (await tailorRes.json()) as TailorSmokeResponse;
+    tailorParsed = await tailorRes.json();
   } catch {
     return {
       ok: false,
@@ -127,12 +187,13 @@ export async function verifySmokePipeline(
       status: tailorRes.status,
     };
   }
+  const data = jsonRecord(tailorParsed, TAILOR_JSON_FIELDS);
 
   if (!tailorRes.ok) {
     return {
       ok: false,
       stage: "tailor",
-      error: `HTTP ${tailorRes.status}: ${data.error ?? "request failed"}`,
+      error: `HTTP ${tailorRes.status}: ${typeof data.error === "string" ? data.error : "request failed"}`,
       status: tailorRes.status,
     };
   }
@@ -179,20 +240,14 @@ export async function verifySmokePipeline(
     return {
       ok: false,
       stage: "judges",
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     };
   }
 
-  const gate = evaluateSmokeJudgeGates(
-    grounding,
-    jdFit,
-    options.groundingMin != null && options.jdFitMin != null
-      ? {
-          groundingMin: options.groundingMin,
-          jdFitMin: options.jdFitMin,
-        }
-      : undefined
-  );
+  const gate = evaluateSmokeJudgeGates(grounding, jdFit, {
+    groundingMin: options.groundingMin ?? getSmokeGroundingMin(),
+    jdFitMin: options.jdFitMin ?? getSmokeJdFitMin(),
+  });
 
   let gatePassed = true;
   let gateReasons: string[] = [];

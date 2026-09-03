@@ -97,6 +97,7 @@ Fast, no server, no API keys:
 
 ```bash
 npm test
+npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 ```
 
 | File | Covers |
@@ -106,7 +107,9 @@ npm test
 | `tests/env.test.ts` | Env var parsing, provider/model validation |
 | `tests/errors.test.ts` | Typed error classes (`RateLimitError`, `ServiceError`) |
 | `tests/eval-architecture-docs.test.ts` | Eval architecture doc cross-references |
+| `tests/e2e-tailor-cv.test.ts` | Smoke CLI: artifacts, redaction, curation mode, exit codes |
 | `tests/smoke-helpers.test.ts` | Smoke judge gates + redaction |
+| `tests/smoke-runner.test.ts` | `verifySmokePipeline` library with mocked fetch/judges |
 | `tests/json-docx-builder.test.ts` | JSON→docx builder + regen CLI |
 | `tests/curator-prompt.test.ts` | Curator prompt contract |
 | `tests/knowledge-base.test.ts` | Legacy KB helpers (not tailor hot path) |

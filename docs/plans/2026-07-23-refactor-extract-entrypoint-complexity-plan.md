@@ -40,7 +40,7 @@ Sourcery review of PR #15 identified three entrypoints where logic density makes
 - **Utility placement:** `parseClientIp`, `isValidIp`, `readRequestBodyCapped`, `retryAfterSeconds` moved to `tailor-pipeline.ts`. `safeTailorLog` stays in `route.ts`. Pipeline uses `console.error` for LLM errors.
 - **Verification:** Route tests pass (39/39). Pipeline tests pass (25/25). `npm test` baseline: 510 pass, 2 unrelated pre-existing failures (kebab-case + curation-mode), 4 skip.
 
-### U3: Smoke CLI → Library ← REMAINING WORK
+### U3: Smoke CLI → Library ✅ COMPLETE (implemented on `feature/smoke-runner-extract`)
 
 - **Description:** Extract core smoke logic from `scripts/e2e-tailor-cv.ts` (325 lines) into `verifySmokePipeline(masterCv, jd, options)` library function. Script becomes a thin CLI wrapper (~100 lines).
 - **Complexity:** Complex

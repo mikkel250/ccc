@@ -8,6 +8,7 @@ import {
   flexibleCoverLetter,
   CURATION_MODE_POLICY_PLACEHOLDER,
   DEFAULT_CURATION_MODE,
+  FLEXIBLE_PIVOT_FALLBACK_PROMPT,
 } from "../app/api/lib/curation-mode";
 import { getDefaultCurationMode } from "../lib/env";
 import { validateCvJson } from "../app/api/lib/cv-schema";

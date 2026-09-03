@@ -11,7 +11,7 @@
  * Optional: SMOKE_CURATION_MODE=strict|flexible (default strict); --flexible forces flexible.
  */
 
-import "dotenv/config";
+import { config as loadDotenv } from "dotenv";
 import {
   existsSync,
   readFileSync,
@@ -233,6 +233,7 @@ export async function runSmokeCli(options: RunSmokeCliOptions): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  loadDotenv();
   const argv = process.argv.slice(2);
   const wantFlexible = argv.includes("--flexible");
   const positional = argv.filter((a) => a !== "--flexible");
