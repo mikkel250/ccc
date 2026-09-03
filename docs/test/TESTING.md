@@ -97,6 +97,7 @@ Fast, no server, no API keys:
 
 ```bash
 npm test
+npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 ```
 
 | File | Covers |
@@ -106,7 +107,9 @@ npm test
 | `tests/env.test.ts` | Env var parsing, provider/model validation |
 | `tests/errors.test.ts` | Typed error classes (`RateLimitError`, `ServiceError`) |
 | `tests/eval-architecture-docs.test.ts` | Eval architecture doc cross-references |
+| `tests/e2e-tailor-cv.test.ts` | Smoke CLI: artifacts, redaction, curation mode, exit codes |
 | `tests/smoke-helpers.test.ts` | Smoke judge gates + redaction |
+| `tests/smoke-runner.test.ts` | `verifySmokePipeline` library with mocked fetch/judges |
 | `tests/json-docx-builder.test.ts` | JSON→docx builder + regen CLI |
 | `tests/curator-prompt.test.ts` | Curator prompt contract |
 | `tests/knowledge-base.test.ts` | Legacy KB helpers (not tailor hot path) |
@@ -126,7 +129,7 @@ npm run smoke -- http://localhost:3000 path/to/jd.md
 npm run smoke -- http://localhost:3000 path/to/jd.md --flexible
 ```
 
-Requires running server, `TAILOR_API_KEY`, `MASTER_CV_*`, judge model keys. Asserts dual artifacts and always runs grounding + JD-fit judges (hard fail on `parseFailed` or scores below `SMOKE_*_MIN`). Default `curationMode` is `strict`; pass `--flexible` or set `SMOKE_CURATION_MODE=flexible`. Writes `tmp/smoke/<jd-slug>.docx` and `tmp/smoke/<jd-slug>.curated.json` (JD basename; does not overwrite other JDs with distinct basenames). Flexible runs also write `tmp/smoke/<jd-slug>.cover-letter.docx` when `coverLetter` is returned (missing/empty letters warn and skip). Like CV DOCX, cover-letter DOCX is written unredacted (`SMOKE_WRITE_UNREDACTED` remains specific to `curated.json`). Reusing a basename warns before overwriting its artifacts.
+Requires running server, `TAILOR_API_KEY`, `MASTER_CV_*`, judge model keys. Asserts dual artifacts and always runs grounding + JD-fit judges (hard fail on `parseFailed` or scores below `SMOKE_*_MIN`). A judge transport/throw failure still writes the tailored DOCX + curated JSON, then exits 1 (same as the pre-extract CLI). Default `curationMode` is `strict`; pass `--flexible` or set `SMOKE_CURATION_MODE=flexible`. Writes `tmp/smoke/<jd-slug>.docx` and `tmp/smoke/<jd-slug>.curated.json` (JD basename; does not overwrite other JDs with distinct basenames). Flexible runs also write `tmp/smoke/<jd-slug>.cover-letter.docx` when `coverLetter` is returned (missing/empty letters warn and skip). Like CV DOCX, cover-letter DOCX is written unredacted (`SMOKE_WRITE_UNREDACTED` remains specific to `curated.json`). Reusing a basename warns before overwriting its artifacts.
 
 Mechanical regen (no LLM):
 

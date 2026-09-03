@@ -11,15 +11,17 @@
  * Optional: SMOKE_CURATION_MODE=strict|flexible (default strict); --flexible forces flexible.
  */
 
-import "dotenv/config";
+import { config as loadDotenv } from "dotenv";
 import {
   existsSync,
   readFileSync,
   mkdirSync,
   writeFileSync,
   readdirSync,
+  realpathSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { loadMasterCv } from "../app/api/lib/master-cv";
 import {
   DEFAULT_CURATION_MODE,
@@ -28,11 +30,6 @@ import {
 } from "../app/api/lib/curation-mode";
 import { getEvalJudgeModel } from "../lib/env";
 import {
-  scoreJsonGrounding,
-  scoreJsonJdFit,
-} from "../app/api/lib/eval-judge";
-import {
-  evaluateSmokeJudgeGates,
   redactCuratedForArtifact,
   getSmokeGroundingMin,
   getSmokeJdFitMin,
@@ -43,18 +40,16 @@ import {
   markdownToDocxBase64,
   isValidDocxBase64,
 } from "../app/api/lib/markdown-docx";
+import {
+  verifySmokePipeline,
+  type SmokePipelineDeps,
+} from "../app/api/lib/smoke-runner";
 
-const argv = process.argv.slice(2);
-const wantFlexible = argv.includes("--flexible");
-const positional = argv.filter((a) => a !== "--flexible");
-
-const BASE_URL =
-  positional[0] || process.env.E2E_BASE_URL || "http://localhost:3000";
-const JD_PATH_ARG = positional[1];
-
-function resolveCurationMode(): CurationMode {
+export function resolveCurationMode(
+  wantFlexible: boolean,
+  fromEnv: string | undefined = process.env.SMOKE_CURATION_MODE?.trim()
+): CurationMode {
   if (wantFlexible) return "flexible";
-  const fromEnv = process.env.SMOKE_CURATION_MODE?.trim();
   if (fromEnv) {
     if (!isCurationMode(fromEnv)) {
       throw new Error(
@@ -65,8 +60,6 @@ function resolveCurationMode(): CurationMode {
   }
   return DEFAULT_CURATION_MODE;
 }
-
-const CURATION_MODE = resolveCurationMode();
 
 function defaultJdPath(): string {
   const dir = join(process.cwd(), "knowledge-base", "test-jds");
@@ -85,149 +78,67 @@ function defaultJdPath(): string {
   return join(dir, files[0]!);
 }
 
-function loadJd(): { path: string; text: string } {
-  const path = resolve(JD_PATH_ARG || defaultJdPath());
+function loadJd(jdPathArg?: string): { path: string; text: string } {
+  const path = resolve(jdPathArg || defaultJdPath());
   return { path, text: readFileSync(path, "utf8") };
 }
 
-async function healthCheck(): Promise<boolean> {
-  const res = await fetch(`${BASE_URL}/api/hello`);
-  if (!res.ok) {
-    console.error("Health check failed:", res.status);
-    return false;
-  }
-  const data = (await res.json()) as { status?: string };
-  console.log("Health:", data);
-  return data.status === "ok";
-}
-
-type TailorSmokeResponse = {
-  cv?: unknown;
-  curatedJson?: unknown;
-  builderVersion?: unknown;
-  curationMode?: unknown;
-  coverLetter?: unknown;
-  model?: unknown;
-  error?: string;
+export type WriteSmokeArtifactsInput = {
+  jdPath: string;
+  curated: unknown;
+  builderVersion: unknown;
+  cvBase64: string;
+  curationMode: CurationMode;
+  coverLetter: unknown;
+  artifactDir?: string;
 };
 
-async function postTailor(jd: string): Promise<{
-  ok: boolean;
-  status: number;
-  data: TailorSmokeResponse;
-  detail: string;
+export async function writeSmokeArtifacts(
+  input: WriteSmokeArtifactsInput
+): Promise<{
+  slug: string;
+  curatedPath: string;
+  docxPath: string;
+  coverLetterPath: string;
 }> {
-  const apiKey = process.env.TAILOR_API_KEY?.trim();
-  if (!apiKey) {
-    return {
-      ok: false,
-      status: 0,
-      data: {},
-      detail: "TAILOR_API_KEY is required for smoke",
-    };
-  }
-
-  const res = await fetch(`${BASE_URL}/api/tailor-cv`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      jobDescription: jd,
-      sessionId: `smoke-${Date.now()}`,
-      curationMode: CURATION_MODE,
-    }),
-  });
-
-  let data: TailorSmokeResponse = {};
-  try {
-    data = (await res.json()) as TailorSmokeResponse;
-  } catch {
-    return {
-      ok: false,
-      status: res.status,
-      data: {},
-      detail: `HTTP ${res.status}: non-JSON body`,
-    };
-  }
-
-  if (!res.ok) {
-    return {
-      ok: false,
-      status: res.status,
-      data,
-      detail: `HTTP ${res.status}: ${data.error ?? "request failed"}`,
-    };
-  }
-
-  if (typeof data.cv !== "string" || !data.curatedJson || !data.builderVersion) {
-    return {
-      ok: false,
-      status: res.status,
-      data,
-      detail: "Missing cv, curatedJson, or builderVersion",
-    };
-  }
-
-  const buf = Buffer.from(data.cv, "base64");
-  const isDocx = buf[0] === 0x50 && buf[1] === 0x4b;
-  if (!isDocx) {
-    return {
-      ok: false,
-      status: res.status,
-      data,
-      detail: "cv is not a docx zip",
-    };
-  }
-
-  return {
-    ok: true,
-    status: res.status,
-    data,
-    detail: `model=${data.model} builder=${data.builderVersion} bytes=${buf.length}`,
-  };
-}
-
-async function writeArtifacts(
-  jdPath: string,
-  curated: unknown,
-  builderVersion: unknown,
-  cvBase64: string,
-  curationMode: CurationMode,
-  coverLetter: unknown
-): Promise<void> {
-  const dir = join(process.cwd(), "tmp", "smoke");
+  const dir =
+    input.artifactDir ?? join(process.cwd(), "tmp", "smoke");
   mkdirSync(dir, { recursive: true });
-  const { slug, curatedPath, docxPath, coverLetterPath } =
-    smokeArtifactPaths(jdPath, dir);
-  if (existsSync(curatedPath) || existsSync(docxPath) || existsSync(coverLetterPath)) {
+  const paths = smokeArtifactPaths(input.jdPath, dir);
+  if (
+    existsSync(paths.curatedPath) ||
+    existsSync(paths.docxPath) ||
+    existsSync(paths.coverLetterPath)
+  ) {
     console.warn(
-      `Overwriting existing smoke artifacts for JD basename ${JSON.stringify(slug)}`
+      `Overwriting existing smoke artifacts for JD basename ${JSON.stringify(paths.slug)}`
     );
   }
   const unredacted = process.env.SMOKE_WRITE_UNREDACTED === "1";
   const payload = {
-    builderVersion,
-    curatedJson: unredacted ? curated : redactCuratedForArtifact(curated),
+    builderVersion: input.builderVersion,
+    curatedJson: unredacted
+      ? input.curated
+      : redactCuratedForArtifact(input.curated),
     redacted: !unredacted,
   };
-  writeFileSync(curatedPath, JSON.stringify(payload, null, 2));
-  writeFileSync(docxPath, Buffer.from(cvBase64, "base64"));
-  console.log(`Wrote ${docxPath} and ${curatedPath} (redacted=${!unredacted})`);
+  writeFileSync(paths.curatedPath, JSON.stringify(payload, null, 2));
+  writeFileSync(paths.docxPath, Buffer.from(input.cvBase64, "base64"));
+  console.log(
+    `Wrote ${paths.docxPath} and ${paths.curatedPath} (redacted=${!unredacted})`
+  );
 
-  // Cover-letter DOCX: flexible only, warn+skip when absent or conversion fails.
-  if (curationMode === "flexible") {
-    if (shouldWriteCoverLetterDocx(curationMode, coverLetter)) {
+  if (input.curationMode === "flexible") {
+    if (shouldWriteCoverLetterDocx(input.curationMode, input.coverLetter)) {
       try {
-        const clBase64 = await markdownToDocxBase64(coverLetter);
+        const clBase64 = await markdownToDocxBase64(input.coverLetter);
         if (!isValidDocxBase64(clBase64)) {
           console.warn(
             "Cover-letter DOCX failed validation after conversion, skipping write"
           );
         } else {
-          writeFileSync(coverLetterPath, Buffer.from(clBase64, "base64"));
-          console.log(`Wrote ${coverLetterPath}`);
+          writeFileSync(paths.coverLetterPath, Buffer.from(clBase64, "base64"));
+          console.log(`Wrote ${paths.coverLetterPath}`);
         }
       } catch (err) {
         console.warn(
@@ -241,77 +152,95 @@ async function writeArtifacts(
       );
     }
   }
+
+  return paths;
 }
 
-async function main(): Promise<void> {
+export type RunSmokeCliOptions = {
+  baseUrl: string;
+  jdPath?: string;
+  wantFlexible: boolean;
+  artifactDir?: string;
+  deps?: SmokePipelineDeps;
+};
+
+export async function runSmokeCli(options: RunSmokeCliOptions): Promise<void> {
+  const curationMode = resolveCurationMode(options.wantFlexible);
   const master = loadMasterCv();
   if (!master.ok) {
     console.error(`Master CV unavailable: ${master.error}`);
     process.exit(1);
   }
 
-  if (!(await healthCheck())) {
-    process.exit(1);
-  }
-
-  const jd = loadJd();
+  const jd = loadJd(options.jdPath);
   console.log(`JD: ${jd.path}`);
-  console.log(`curationMode: ${CURATION_MODE}`);
+  console.log(`curationMode: ${curationMode}`);
 
-  const tailor = await postTailor(jd.text);
-  console.log(tailor.ok ? "PASS tailor" : "FAIL tailor", tailor.detail);
-  if (!tailor.ok) {
+  const apiKey = process.env.TAILOR_API_KEY?.trim();
+  if (!apiKey) {
+    console.error("TAILOR_API_KEY is required for smoke");
     process.exit(1);
   }
-
-  await writeArtifacts(
-    jd.path,
-    tailor.data.curatedJson,
-    tailor.data.builderVersion,
-    tailor.data.cv as string,
-    CURATION_MODE,
-    tailor.data.coverLetter
-  );
 
   const judgeModel = getEvalJudgeModel();
+  const groundingMin = getSmokeGroundingMin();
+  const jdFitMin = getSmokeJdFitMin();
   console.log(
-    `Judges: model=${judgeModel} groundingMin=${getSmokeGroundingMin()} jdFitMin=${getSmokeJdFitMin()}`
+    `Judges: model=${judgeModel} groundingMin=${groundingMin} jdFitMin=${jdFitMin}`
   );
 
-  let grounding;
-  let jdFit;
-  try {
-    grounding = await scoreJsonGrounding(
-      master.data,
-      tailor.data.curatedJson,
-      jd.text,
-      judgeModel,
-      { curationMode: CURATION_MODE }
-    );
-    jdFit = await scoreJsonJdFit(
-      master.data,
-      tailor.data.curatedJson,
-      jd.text,
-      judgeModel
-    );
-  } catch (err) {
-    console.error(
-      "FAIL judges transport:",
-      err instanceof Error ? err.message : err
-    );
+  const result = await verifySmokePipeline(master.data, jd.text, {
+    baseUrl: options.baseUrl,
+    curationMode,
+    apiKey,
+    judgeModel,
+    groundingMin,
+    jdFitMin,
+    deps: options.deps,
+  });
+
+  if (!result.ok) {
+    console.error(`FAIL ${result.stage}:`, result.error);
+    if (
+      result.stage === "judges" &&
+      result.docxBase64 != null &&
+      result.curatedJson != null
+    ) {
+      await writeSmokeArtifacts({
+        jdPath: jd.path,
+        curated: result.curatedJson,
+        builderVersion: result.builderVersion,
+        cvBase64: result.docxBase64,
+        curationMode,
+        coverLetter: result.coverLetter,
+        artifactDir: options.artifactDir,
+      });
+    }
     process.exit(1);
   }
 
   console.log(
-    `grounding score=${grounding.score} parseFailed=${grounding.parseFailed} flagged=${grounding.flaggedClaims.length}`
+    `PASS tailor model=${result.model} builder=${result.builderVersion}`
   );
   console.log(
-    `jd-fit score=${jdFit.score} parseFailed=${jdFit.parseFailed} reasoning=${jdFit.reasoning}`
+    `grounding score=${result.groundingScore} parseFailed=${result.groundingParseFailed} flagged=${result.groundingFlaggedCount}`
+  );
+  console.log(
+    `jd-fit score=${result.jdFitScore} parseFailed=${result.jdFitParseFailed} reasoning=${result.jdFitReasoning}`
   );
 
-  const gate = evaluateSmokeJudgeGates(grounding, jdFit);
-  if (!gate.ok) {
-    console.error("FAIL smoke gates:", gate.reasons.join("; "));
+  await writeSmokeArtifacts({
+    jdPath: jd.path,
+    curated: result.curatedJson,
+    builderVersion: result.builderVersion,
+    cvBase64: result.docxBase64,
+    curationMode,
+    coverLetter: result.coverLetter,
+    artifactDir: options.artifactDir,
+  });
+
+  if (!result.gatePassed) {
+    console.error("FAIL smoke gates:", result.gateReasons.join("; "));
     process.exit(1);
   }
 
@@ -319,7 +248,37 @@ async function main(): Promise<void> {
   process.exit(0);
 }
 
-main().catch((err: unknown) => {
-  console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+async function main(): Promise<void> {
+  loadDotenv();
+  const argv = process.argv.slice(2);
+  const wantFlexible = argv.includes("--flexible");
+  const positional = argv.filter((a) => a !== "--flexible");
+  const baseUrl =
+    positional[0] || process.env.E2E_BASE_URL || "http://localhost:3000";
+  const jdPath = positional[1];
+
+  await runSmokeCli({
+    baseUrl,
+    jdPath,
+    wantFlexible,
+  });
+}
+
+/** Canonical href for the entry script, so symlinked invocation paths still count as a direct run. */
+export function isDirectRunScript(entryPath: string | undefined): boolean {
+  if (entryPath == null) return false;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(resolve(entryPath))).href;
+  } catch {
+    return import.meta.url === pathToFileURL(resolve(entryPath)).href;
+  }
+}
+
+const isDirectRun = isDirectRunScript(process.argv[1]);
+
+if (isDirectRun) {
+  main().catch((err: unknown) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
+}
