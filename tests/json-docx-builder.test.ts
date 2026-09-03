@@ -9,6 +9,7 @@ import {
   buildJsonDocx,
   buildJsonDocxBase64,
   isAllowedDocxHyperlinkUri,
+  normalizeAllowedDocxHyperlinkUri,
   sanitizeCvText,
   sanitizeCvJson,
 } from "../app/api/lib/json-docx-builder";
@@ -115,10 +116,15 @@ describe("json-docx-builder", () => {
     assert.equal(isAllowedDocxHyperlinkUri("http://example.com"), true);
     assert.equal(isAllowedDocxHyperlinkUri("mailto:user@example.com"), true);
     assert.equal(isAllowedDocxHyperlinkUri("HTTPS://Example.COM/path"), true);
+    assert.equal(isAllowedDocxHyperlinkUri("  https://example.com/path  "), true);
     assert.equal(isAllowedDocxHyperlinkUri("\\\\attacker.com\\share"), false);
     assert.equal(isAllowedDocxHyperlinkUri("javascript:alert(1)"), false);
     assert.equal(isAllowedDocxHyperlinkUri("file:///etc/passwd"), false);
     assert.equal(isAllowedDocxHyperlinkUri(""), false);
+    assert.equal(
+      normalizeAllowedDocxHyperlinkUri("  https://example.com/a  "),
+      "https://example.com/a"
+    );
   });
 
   it("omits disallowed hyperlink targets from generated docx relationships", async () => {
@@ -139,6 +145,7 @@ describe("json-docx-builder", () => {
     cv.contact.links = [
       { label: "evil", url: "\\\\attacker.com\\share" },
       { label: "safe", url: "https://example.com" },
+      { label: "padded", url: "  https://trimmed.example.com/path  " },
     ];
     cv.projects = [
       {
@@ -157,6 +164,7 @@ describe("json-docx-builder", () => {
     assert.deepEqual(targets, [
       "mailto:jane.example@example.com",
       "https://example.com",
+      "https://trimmed.example.com/path",
       "https://example-site.example.com",
     ]);
   });
