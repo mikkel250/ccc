@@ -3,6 +3,7 @@
  * Script owns env loading, artifact I/O, and process.exit.
  */
 import type { CurationMode } from "./curation-mode";
+import { validateCvJson } from "./cv-schema";
 import {
   scoreJsonGrounding as defaultScoreJsonGrounding,
   scoreJsonJdFit as defaultScoreJsonJdFit,
@@ -10,11 +11,7 @@ import {
   type JsonJdFitScore,
 } from "./eval-judge";
 import { isValidDocxBase64 } from "./markdown-docx";
-import {
-  evaluateSmokeJudgeGates,
-  getSmokeGroundingMin,
-  getSmokeJdFitMin,
-} from "./smoke-helpers";
+import { evaluateSmokeJudgeGates } from "./smoke-helpers";
 
 export type SmokePipelineDeps = {
   fetchFn?: typeof fetch;
@@ -27,8 +24,8 @@ export type SmokePipelineOptions = {
   curationMode: CurationMode;
   apiKey: string;
   judgeModel: string;
-  groundingMin?: number;
-  jdFitMin?: number;
+  groundingMin: number;
+  jdFitMin: number;
   deps?: SmokePipelineDeps;
 };
 
@@ -54,6 +51,10 @@ export type VerifySmokeFailure = {
   stage: "health" | "tailor" | "docx" | "judges";
   error: string;
   status?: number;
+  curatedJson?: unknown;
+  docxBase64?: string;
+  builderVersion?: string;
+  coverLetter?: string;
 };
 
 export type VerifySmokeResult = VerifySmokeSuccess | VerifySmokeFailure;
@@ -220,33 +221,54 @@ export async function verifySmokePipeline(
     };
   }
 
+  const schemaResult = validateCvJson(data.curatedJson);
+  if (!schemaResult.ok) {
+    return {
+      ok: false,
+      stage: "tailor",
+      error: schemaResult.error,
+      status: tailorRes.status,
+    };
+  }
+  const curatedJson = schemaResult.data;
+
   let grounding: JsonGroundingScore;
   let jdFit: JsonJdFitScore;
   try {
     grounding = await scoreGrounding(
       masterCv,
-      data.curatedJson,
+      curatedJson,
       jd,
       options.judgeModel,
       { curationMode: options.curationMode }
     );
     jdFit = await scoreJdFit(
       masterCv,
-      data.curatedJson,
+      curatedJson,
       jd,
       options.judgeModel
     );
   } catch (err) {
-    return {
+    const failure: VerifySmokeFailure = {
       ok: false,
       stage: "judges",
       error: errorMessage(err),
+      curatedJson,
+      docxBase64: data.cv,
+      builderVersion: String(data.builderVersion),
     };
+    if (
+      options.curationMode === "flexible" &&
+      typeof data.coverLetter === "string"
+    ) {
+      failure.coverLetter = data.coverLetter;
+    }
+    return failure;
   }
 
   const gate = evaluateSmokeJudgeGates(grounding, jdFit, {
-    groundingMin: options.groundingMin ?? getSmokeGroundingMin(),
-    jdFitMin: options.jdFitMin ?? getSmokeJdFitMin(),
+    groundingMin: options.groundingMin,
+    jdFitMin: options.jdFitMin,
   });
 
   let gatePassed = true;
@@ -258,7 +280,7 @@ export async function verifySmokePipeline(
 
   const success: VerifySmokeSuccess = {
     ok: true,
-    curatedJson: data.curatedJson,
+    curatedJson,
     docxBase64: data.cv,
     builderVersion: String(data.builderVersion),
     model: typeof data.model === "string" ? data.model : "",

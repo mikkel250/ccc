@@ -149,7 +149,11 @@ describe("knowledge-base/test-jds — test JD set", () => {
     assert.ok(files.length > 0, "no test JD files found");
     for (const filePath of files) {
       const slug = path.basename(filePath, ".md");
-      assert.match(slug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/, `${slug} must be kebab-case`);
+      assert.match(
+        slug,
+        /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+        `${slug} must be kebab-case`
+      );
     }
   });
 });

@@ -1,5 +1,7 @@
 import { describe, it, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { markdownToDocxBase64 } from "../app/api/lib/markdown-docx";
 import type {
   JsonGroundingScore,
@@ -11,7 +13,12 @@ import {
 } from "../app/api/lib/smoke-runner";
 
 const MASTER = { name: "JANE EXAMPLE", summary: ["Evergreen"] };
-const CURATED = { ...MASTER, summary: ["Tailored"] };
+const CURATED = JSON.parse(
+  readFileSync(
+    join(process.cwd(), "tests/fixtures/curated-cv-valid.json"),
+    "utf8"
+  )
+) as Record<string, unknown>;
 const JD = "Senior solutions engineer role";
 
 function grounding(
@@ -281,6 +288,43 @@ describe("verifySmokePipeline", () => {
     assert.match(body.sessionId, /^smoke-\d+$/);
   });
 
+  it("returns stage tailor when curatedJson fails CV schema validation", async () => {
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    for (const curatedJson of [
+      "not-an-object",
+      ["array-not-cv"],
+      { name: "incomplete" },
+    ]) {
+      const scoreJsonGrounding = mock.fn(async () => grounding());
+      const scoreJsonJdFit = mock.fn(async () => jdFit());
+      const fetchFn = helloThen(() =>
+        jsonResponse({
+          cv: docx,
+          curatedJson,
+          builderVersion: "test-builder",
+          model: "test/model",
+        })
+      );
+      const result = await verifySmokePipeline(
+        MASTER,
+        JD,
+        baseOptions({ fetchFn, scoreJsonGrounding, scoreJsonJdFit })
+      );
+      assert.equal(
+        result.ok,
+        false,
+        `expected schema failure for ${JSON.stringify(curatedJson)}`
+      );
+      if (!result.ok) {
+        assert.equal(result.stage, "tailor");
+        assert.match(result.error, /schema validation/i);
+        assert.equal(result.status, 200);
+      }
+      assert.equal(scoreJsonGrounding.mock.calls.length, 0);
+      assert.equal(scoreJsonJdFit.mock.calls.length, 0);
+    }
+  });
+
   it("returns stage docx when cv is not a valid docx", async () => {
     const fetchFn = mock.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -354,11 +398,15 @@ describe("verifySmokePipeline", () => {
       assert.equal(result.stage, "judges");
       assert.equal(result.error, "grounding transport failed");
       assert.equal("gatePassed" in result, false);
+      assert.deepEqual(result.curatedJson, CURATED);
+      assert.equal(typeof result.docxBase64, "string");
+      assert.ok((result.docxBase64 ?? "").length > 0);
+      assert.equal(result.builderVersion, "test-builder");
     }
     assert.equal(jdFitCalled, false);
   });
 
-  it("enforces groundingMin when jdFitMin is omitted", async () => {
+  it("enforces groundingMin without failing jd-fit", async () => {
     const { fetchFn } = await okTailorFetch();
     const result = await verifySmokePipeline(MASTER, JD, {
       ...baseOptions({
@@ -367,7 +415,7 @@ describe("verifySmokePipeline", () => {
         scoreJsonJdFit: async () => jdFit({ score: 5 }),
       }),
       groundingMin: 0.9,
-      jdFitMin: undefined,
+      jdFitMin: 1,
     });
     assert.equal(result.ok, true);
     if (result.ok) {
@@ -380,7 +428,7 @@ describe("verifySmokePipeline", () => {
     }
   });
 
-  it("enforces jdFitMin when groundingMin is omitted", async () => {
+  it("enforces jdFitMin without failing grounding", async () => {
     const { fetchFn } = await okTailorFetch();
     const result = await verifySmokePipeline(MASTER, JD, {
       ...baseOptions({
@@ -388,7 +436,7 @@ describe("verifySmokePipeline", () => {
         scoreJsonGrounding: async () => grounding({ score: 0.9 }),
         scoreJsonJdFit: async () => jdFit({ score: 3 }),
       }),
-      groundingMin: undefined,
+      groundingMin: 0,
       jdFitMin: 4,
     });
     assert.equal(result.ok, true);

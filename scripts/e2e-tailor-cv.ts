@@ -18,6 +18,7 @@ import {
   mkdirSync,
   writeFileSync,
   readdirSync,
+  realpathSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -200,6 +201,21 @@ export async function runSmokeCli(options: RunSmokeCliOptions): Promise<void> {
 
   if (!result.ok) {
     console.error(`FAIL ${result.stage}:`, result.error);
+    if (
+      result.stage === "judges" &&
+      result.docxBase64 != null &&
+      result.curatedJson != null
+    ) {
+      await writeSmokeArtifacts({
+        jdPath: jd.path,
+        curated: result.curatedJson,
+        builderVersion: result.builderVersion,
+        cvBase64: result.docxBase64,
+        curationMode,
+        coverLetter: result.coverLetter,
+        artifactDir: options.artifactDir,
+      });
+    }
     process.exit(1);
   }
 
@@ -248,9 +264,17 @@ async function main(): Promise<void> {
   });
 }
 
-const isDirectRun =
-  process.argv[1] != null &&
-  import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+/** Canonical href for the entry script, so symlinked invocation paths still count as a direct run. */
+export function isDirectRunScript(entryPath: string | undefined): boolean {
+  if (entryPath == null) return false;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(resolve(entryPath))).href;
+  } catch {
+    return import.meta.url === pathToFileURL(resolve(entryPath)).href;
+  }
+}
+
+const isDirectRun = isDirectRunScript(process.argv[1]);
 
 if (isDirectRun) {
   main().catch((err: unknown) => {

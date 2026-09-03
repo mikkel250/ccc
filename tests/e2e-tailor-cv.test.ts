@@ -127,6 +127,22 @@ describe("writeSmokeArtifacts", () => {
     assert.equal(buf[1], 0x4b);
   });
 
+  it("skips cover-letter DOCX in flexible mode when coverLetter is missing", async () => {
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const paths = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "flexible",
+      coverLetter: undefined,
+      artifactDir: dir,
+    });
+    assert.equal(existsSync(paths.coverLetterPath), false);
+    assert.ok(existsSync(paths.curatedPath));
+    assert.ok(existsSync(paths.docxPath));
+  });
+
   it("surfaces write failures for curated JSON", async () => {
     const docx = await markdownToDocxBase64("# CV\n- bullet");
     const blocked = join(dir, "blocked");
@@ -148,6 +164,8 @@ describe("writeSmokeArtifacts", () => {
 
   it("surfaces permission-denied write failures", async () => {
     if (process.platform === "win32") return;
+    // Root can write into mode 0555 dirs; the EACCES/EPERM assertion would be a false fail.
+    if (typeof process.getuid === "function" && process.getuid() === 0) return;
     const docx = await markdownToDocxBase64("# CV\n- bullet");
     const readonlyDir = mkdtempSync(join(tmpdir(), "smoke-ro-"));
     try {
@@ -329,6 +347,52 @@ describe("runSmokeCli exit codes", () => {
     assert.deepEqual(exits, [1]);
   });
 
+  it("writes artifacts then exits 1 when a judge throws", async () => {
+    writeFileSync(join(dir, "jd.md"), "Need a solutions engineer");
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const exits: number[] = [];
+    mock.method(process, "exit", ((code?: number) => {
+      exits.push(code ?? 0);
+      throw new Error(`process.exit(${code ?? 0})`);
+    }) as typeof process.exit);
+
+    await assert.rejects(
+      () =>
+        runSmokeCli({
+          baseUrl: "http://localhost:3000",
+          jdPath: join(dir, "jd.md"),
+          wantFlexible: false,
+          artifactDir: dir,
+          deps: {
+            fetchFn: async (input: RequestInfo | URL) => {
+              const url = String(input);
+              if (url.endsWith("/api/hello")) {
+                return jsonResponse({ status: "ok" });
+              }
+              return jsonResponse({
+                cv: docx,
+                curatedJson: CURATED,
+                builderVersion: "v1",
+                model: "test/model",
+              });
+            },
+            scoreJsonGrounding: async () => {
+              throw new Error("grounding transport failed");
+            },
+            scoreJsonJdFit: async () => ({
+              score: 5,
+              reasoning: "ok",
+              parseFailed: false,
+            }),
+          },
+        }),
+      /process\.exit\(1\)/
+    );
+    assert.deepEqual(exits, [1]);
+    assert.ok(existsSync(join(dir, "jd.curated.json")));
+    assert.ok(existsSync(join(dir, "jd.docx")));
+  });
+
   it("exits 1 when smoke gates fail", async () => {
     writeFileSync(join(dir, "jd.md"), "Need a solutions engineer");
     const docx = await markdownToDocxBase64("# CV\n- bullet");
@@ -421,5 +485,50 @@ describe("runSmokeCli exit codes", () => {
     assert.deepEqual(exits, [0]);
     assert.ok(existsSync(join(dir, "jd.curated.json")));
     assert.ok(existsSync(join(dir, "jd.docx")));
+  });
+
+  it("exits 1 when TAILOR_API_KEY is missing", async () => {
+    writeFileSync(join(dir, "jd.md"), "Need a solutions engineer");
+    delete process.env.TAILOR_API_KEY;
+    const exits: number[] = [];
+    mock.method(process, "exit", ((code?: number) => {
+      exits.push(code ?? 0);
+      throw new Error(`process.exit(${code ?? 0})`);
+    }) as typeof process.exit);
+
+    await assert.rejects(
+      () =>
+        runSmokeCli({
+          baseUrl: "http://localhost:3000",
+          jdPath: join(dir, "jd.md"),
+          wantFlexible: false,
+          artifactDir: dir,
+        }),
+      /process\.exit\(1\)/
+    );
+    assert.deepEqual(exits, [1]);
+  });
+
+  it("exits 1 when master CV cannot be loaded", async () => {
+    writeFileSync(join(dir, "jd.md"), "Need a solutions engineer");
+    process.env.MASTER_CV_JSON = "not-json";
+    __resetMasterCvCacheForTest();
+    const exits: number[] = [];
+    mock.method(process, "exit", ((code?: number) => {
+      exits.push(code ?? 0);
+      throw new Error(`process.exit(${code ?? 0})`);
+    }) as typeof process.exit);
+
+    await assert.rejects(
+      () =>
+        runSmokeCli({
+          baseUrl: "http://localhost:3000",
+          jdPath: join(dir, "jd.md"),
+          wantFlexible: false,
+          artifactDir: dir,
+        }),
+      /process\.exit\(1\)/
+    );
+    assert.deepEqual(exits, [1]);
   });
 });

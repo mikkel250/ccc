@@ -34,9 +34,11 @@ async function main() {
 
   let prevRemaining: number | null = null;
 
-  const secretKey = `smoke-secret-${identifier}`;
-
   for (let i = 0; i < config.maxRequests; i++) {
+    // Fresh secret bucket key per iteration so only the per-IP bucket
+    // accumulates; a shared key would hit RATE_LIMIT_SECRET_MAX (default
+    // floor(maxRequests/2)) and fail the loop against a healthy limiter.
+    const secretKey = `smoke-secret-${identifier}-${i}`;
     const result = await checkRateLimit("smoke-script", identifier, secretKey);
     const monotonic =
       prevRemaining === null || result.remaining < prevRemaining;
@@ -48,7 +50,11 @@ async function main() {
     prevRemaining = result.remaining;
   }
 
-  const blocked = await checkRateLimit("smoke-script", identifier, secretKey);
+  const blocked = await checkRateLimit(
+    "smoke-script",
+    identifier,
+    `smoke-secret-${identifier}-blocked`
+  );
   const blockedOk =
     blocked.allowed === false &&
     blocked.remaining === 0 &&
