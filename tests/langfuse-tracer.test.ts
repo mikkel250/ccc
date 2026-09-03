@@ -105,4 +105,34 @@ describe("buildLangfuseGenerationUpdate — content redaction (R8b)", () => {
       isFallback: false,
     });
   });
+
+  it("preserves explicit isFallback true and false", () => {
+    const asTrue = buildLangfuseGenerationUpdate({
+      ...basePayload,
+      langfusePrompt: {
+        name: "cv-curator-json",
+        version: 4,
+        isFallback: true,
+      },
+    });
+    assert.deepEqual(asTrue.prompt, {
+      name: "cv-curator-json",
+      version: 4,
+      isFallback: true,
+    });
+
+    const asFalse = buildLangfuseGenerationUpdate({
+      ...basePayload,
+      langfusePrompt: {
+        name: "cv-curator-json",
+        version: 5,
+        isFallback: false,
+      },
+    });
+    assert.deepEqual(asFalse.prompt, {
+      name: "cv-curator-json",
+      version: 5,
+      isFallback: false,
+    });
+  });
 });

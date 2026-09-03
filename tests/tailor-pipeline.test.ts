@@ -6,18 +6,21 @@ import { tailorCvDeps } from "../app/api/lib/tailor-cv-deps";
 import { RateLimitError, ServiceError } from "../app/api/lib/errors";
 import { resetRedisClientForTest } from "../app/api/lib/redis";
 import { createFailingMock } from "../tests/helpers/rate-limit-mock";
+import { BUILDER_VERSION } from "../app/api/lib/json-docx-builder";
+import { getTailorJdMaxChars } from "../app/api/lib/cv-schema";
+import {
+  getRateLimitConfig,
+  hashTailorApiKeyForRateLimit,
+  __injectRatelimitForTest,
+} from "../app/api/lib/rate-limit";
+import { buildTailorResponse } from "../app/api/lib/tailor-pipeline";
 import {
   authHeaders,
   buildPostRequest,
   ensureEnv,
   injectSlidingWindowMock,
+  TEST_API_KEY,
 } from "../tests/helpers/tailor-request";
-import { BUILDER_VERSION } from "../app/api/lib/json-docx-builder";
-import { getTailorJdMaxChars } from "../app/api/lib/cv-schema";
-import { getRateLimitConfig } from "../app/api/lib/rate-limit";
-import { buildTailorResponse } from "../app/api/lib/tailor-pipeline";
-import { __injectRatelimitForTest } from "../app/api/lib/rate-limit";
-
 const FIXTURE_CURATED = JSON.parse(
   readFileSync(
     join(process.cwd(), "tests/fixtures/curated-cv-valid.json"),
@@ -129,14 +132,99 @@ describe("buildTailorResponse — pipeline orchestration", () => {
   });
 
   it("calls rate limit before auth when Authorization is missing", async () => {
-    const checkRateLimitSpy = mock.method(tailorCvDeps, "checkRateLimit");
+    const events: string[] = [];
+    const secretKeys: string[] = [];
+    mock.method(
+      tailorCvDeps,
+      "checkRateLimit",
+      async (_phase: string, _ip: string, secretBucketKey: string) => {
+        events.push("rate-limit");
+        secretKeys.push(secretBucketKey);
+        return {
+          allowed: true,
+          remaining: 10,
+          resetTime: Date.now() + 60_000,
+        };
+      }
+    );
+    mock.method(tailorCvDeps, "authenticateTailorRequest", () => {
+      events.push("auth");
+      return { ok: false as const, error: "Unauthorized", status: 401 as const };
+    });
+
     const result = await buildTailorResponse(
       tailorCvDeps,
       buildPostRequest(VALID_BODY, { "x-forwarded-for": "198.51.100.42" })
     );
     assert.equal(result.ok, false);
     if (!result.ok) assert.equal(result.status, 401);
-    assert.ok(checkRateLimitSpy.mock.callCount() >= 1);
+    assert.deepEqual(events.slice(0, 2), ["rate-limit", "auth"]);
+    assert.deepEqual(secretKeys, [
+      hashTailorApiKeyForRateLimit(TEST_API_KEY),
+    ]);
+  });
+
+  it("uses unconfigured secret bucket when TAILOR_API_KEY is absent", async () => {
+    delete process.env.TAILOR_API_KEY;
+    delete process.env.TAILOR_AUTH_INSECURE_BYPASS;
+    const secretKeys: string[] = [];
+    mock.method(
+      tailorCvDeps,
+      "checkRateLimit",
+      async (_phase: string, _ip: string, secretBucketKey: string) => {
+        secretKeys.push(secretBucketKey);
+        return {
+          allowed: true,
+          remaining: 10,
+          resetTime: Date.now() + 60_000,
+        };
+      }
+    );
+
+    const result = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(VALID_BODY, { "x-forwarded-for": "198.51.100.42" })
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.status, 503);
+    assert.deepEqual(secretKeys, [
+      hashTailorApiKeyForRateLimit("bypass:unconfigured"),
+    ]);
+  });
+
+  it("uses bypass secret bucket when insecure bypass is enabled", async () => {
+    delete process.env.TAILOR_API_KEY;
+    process.env.TAILOR_AUTH_INSECURE_BYPASS = "true";
+    const secretKeys: string[] = [];
+    const events: string[] = [];
+    mock.method(
+      tailorCvDeps,
+      "checkRateLimit",
+      async (_phase: string, _ip: string, secretBucketKey: string) => {
+        events.push("rate-limit");
+        secretKeys.push(secretBucketKey);
+        return {
+          allowed: true,
+          remaining: 10,
+          resetTime: Date.now() + 60_000,
+        };
+      }
+    );
+    mock.method(tailorCvDeps, "authenticateTailorRequest", () => {
+      events.push("auth");
+      return { ok: true as const, mode: "bypass" as const };
+    });
+    mockPipelineSuccess();
+
+    const result = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(VALID_BODY, { "x-forwarded-for": "198.51.100.42" })
+    );
+    assert.equal(result.ok, true);
+    assert.deepEqual(events.slice(0, 2), ["rate-limit", "auth"]);
+    assert.deepEqual(secretKeys, [
+      hashTailorApiKeyForRateLimit("bypass:bypass"),
+    ]);
   });
 
   // --- IP resolution ---

@@ -227,18 +227,44 @@ export function compileCuratorPrompt(
 }
 
 /**
- * Wrap untrusted JD text in a per-request nonce-delimited data channel (R24).
- * The nonce prevents adversarial JD content from closing the envelope early.
+ * Wrap untrusted text in a per-request nonce-delimited data channel (R24).
+ * The nonce prevents adversarial content from closing the envelope early.
  */
-export function wrapJobDescriptionInNonceChannel(jobDescription: string): string {
+export function wrapUntrustedDataInNonceChannel(
+  tag: string,
+  data: string,
+  beginLabel: string
+): string {
   const nonce = randomBytes(16).toString("hex");
   return [
-    `<job_description nonce="${nonce}">`,
-    `---BEGIN_JD_${nonce}---`,
-    jobDescription,
-    `---END_JD_${nonce}---`,
-    "</job_description>",
+    `<${tag} nonce="${nonce}">`,
+    `---BEGIN_${beginLabel}_${nonce}---`,
+    data,
+    `---END_${beginLabel}_${nonce}---`,
+    `</${tag}>`,
   ].join("\n");
+}
+
+/**
+ * Wrap untrusted JD text in a per-request nonce-delimited data channel (R24).
+ */
+export function wrapJobDescriptionInNonceChannel(jobDescription: string): string {
+  return wrapUntrustedDataInNonceChannel(
+    "job_description",
+    jobDescription,
+    "JD"
+  );
+}
+
+/**
+ * Wrap untrusted judge critique text in a per-request nonce-delimited channel.
+ */
+export function wrapJudgeCritiqueInNonceChannel(critiqueText: string): string {
+  return wrapUntrustedDataInNonceChannel(
+    "judge_critique",
+    critiqueText,
+    "CRITIQUE"
+  );
 }
 
 /**

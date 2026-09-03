@@ -22,10 +22,16 @@ const FONT = "Times New Roman";
 /** Hyperlink schemes permitted in OOXML ExternalHyperlink relationships. */
 const ALLOWED_HYPERLINK_SCHEME = /^(https?|mailto):/i;
 
-export function isAllowedDocxHyperlinkUri(uri: string): boolean {
+/** Trim and allowlist a hyperlink URI; returns null when empty or disallowed. */
+export function normalizeAllowedDocxHyperlinkUri(uri: string): string | null {
   const trimmed = uri.trim();
-  if (!trimmed) return false;
-  return ALLOWED_HYPERLINK_SCHEME.test(trimmed);
+  if (!trimmed) return null;
+  if (!ALLOWED_HYPERLINK_SCHEME.test(trimmed)) return null;
+  return trimmed;
+}
+
+export function isAllowedDocxHyperlinkUri(uri: string): boolean {
+  return normalizeAllowedDocxHyperlinkUri(uri) !== null;
 }
 
 /** C0 controls except TAB (0x09) and LF (0x0A); also DEL (KTD11 / R6d). */
@@ -142,7 +148,8 @@ function hyperlinkOrText(
   url: string,
   opts: { size: number; bold?: boolean }
 ): TextRun | ExternalHyperlink {
-  if (!isAllowedDocxHyperlinkUri(url)) {
+  const link = normalizeAllowedDocxHyperlinkUri(url);
+  if (!link) {
     return new TextRun({
       text: label,
       bold: opts.bold,
@@ -151,7 +158,7 @@ function hyperlinkOrText(
     });
   }
   return new ExternalHyperlink({
-    link: url,
+    link,
     children: [
       new TextRun({
         text: label,

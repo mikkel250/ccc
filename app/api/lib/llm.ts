@@ -616,31 +616,36 @@ export async function callAnthropic(
  * Never includes response body or candidate content — only structural metadata.
  */
 export function describeGoogleEmptyContentResponse(response: unknown): string {
+  if (response === null || typeof response !== 'object') {
+    return `responseType=${response === null ? 'null' : typeof response}`;
+  }
+
   const r = response as {
     candidates?: Array<{
       finishReason?: string;
       index?: number;
-    }>;
+    }> | null;
     promptFeedback?: {
       blockReason?: string;
-    };
+    } | null;
     usageMetadata?: {
       promptTokenCount?: number;
       candidatesTokenCount?: number;
       totalTokenCount?: number;
-    };
+    } | null;
     modelVersion?: string;
     responseId?: string;
   };
 
-  const candidates = r.candidates ?? [];
+  const candidates = Array.isArray(r.candidates) ? r.candidates : [];
   const finishReasons = candidates
-    .map((c, i) => `${c.index ?? i}:${c.finishReason ?? 'null'}`)
+    .map((c, i) => `${c?.index ?? i}:${c?.finishReason ?? 'null'}`)
     .join(',');
   const usage = r.usageMetadata;
-  const usagePart = usage
-    ? `promptTokens=${usage.promptTokenCount ?? 0},candidatesTokens=${usage.candidatesTokenCount ?? 0},totalTokens=${usage.totalTokenCount ?? 0}`
-    : 'usage=null';
+  const usagePart =
+    usage && typeof usage === 'object'
+      ? `promptTokens=${usage.promptTokenCount ?? 0},candidatesTokens=${usage.candidatesTokenCount ?? 0},totalTokens=${usage.totalTokenCount ?? 0}`
+      : 'usage=null';
 
   return [
     `candidateCount=${candidates.length}`,
@@ -663,10 +668,14 @@ async function callGoogle(
   if (!model) throw new Error('model is required for callGoogle');
 
   const formattedMessages = formatMessages(messages);
-  const contents = formattedMessages.map((msg) => ({
-    role: msg.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: msg.content }],
-  }));
+  // systemInstruction already carries the system prompt — exclude any system
+  // turns from contents so they are not remapped as ordinary user messages.
+  const contents = formattedMessages
+    .filter((msg) => msg.role !== 'system')
+    .map((msg) => ({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: msg.content }],
+    }));
 
   const response = await getGoogle(options).models.generateContent({
     model: model,
