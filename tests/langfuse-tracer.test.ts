@@ -93,4 +93,16 @@ describe("buildLangfuseGenerationUpdate — content redaction (R8b)", () => {
     assert.equal(serialized.includes(SECRET_USER), false);
     assert.equal(serialized.includes(SECRET_RESPONSE), false);
   });
+
+  it("defaults isFallback to false when langfusePrompt omits it", () => {
+    const update = buildLangfuseGenerationUpdate({
+      ...basePayload,
+      langfusePrompt: { name: "cv-curator-json", version: 3 },
+    });
+    assert.deepEqual(update.prompt, {
+      name: "cv-curator-json",
+      version: 3,
+      isFallback: false,
+    });
+  });
 });

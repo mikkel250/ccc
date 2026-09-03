@@ -11,9 +11,9 @@ deepened: 2026-07-30
 
 Three independent structural refactorings to pull orchestration and configuration out of entrypoint files into reusable, testable library modules. No behavior changes. All three follow existing conventions: discriminated unions, named exports, plain object DI bag, env-var-driven configuration.
 
-**Status (2026-07-30):** U1 (schema path) and U2 (route pipeline) are complete and verified on `main`. U3 (smoke runner library) is the only remaining work.
+**Status (2026-07-30):** U1 (schema path) and U2 (route pipeline) are complete and verified on `main`. U3 (smoke runner library) implemented on `feature/smoke-runner-extract`.
 
-**Branch:** New branch off `main` for U3 only. U1 and U2 already landed via PR #27 and predecessor PRs.
+**Branch:** `feature/smoke-runner-extract` (U3).
 
 ## Problem Statement
 
@@ -200,14 +200,15 @@ U3 is the only remaining unit. Single commit, single PR. No cross-dependencies w
 
 ### Refactoring 2: Smoke Library
 
-- [ ] `app/api/lib/smoke-runner.ts` exists with `verifySmokePipeline(masterCv, jd, options)` export
-- [ ] `scripts/e2e-tailor-cv.ts` is a thin CLI wrapper (~100 lines): parse args, resolve JD + master CV, call `verifySmokePipeline`, write artifacts
-- [ ] `smoke-helpers.ts` unchanged (imported by library, not absorbed)
-- [ ] `eval-judge.ts` unchanged
-- [ ] Artifact writing (JSON, DOCX, cover-letter DOCX) stays in script, not library
-- [ ] New `tests/smoke-runner.test.ts` tests library with mocked `globalThis.fetch` and mocked judges
-- [ ] `npm run build` passes (smoke script still compiles)
-- [ ] Manual smoke: `npm run smoke` against running dev server confirms end-to-end still works
+- [x] `app/api/lib/smoke-runner.ts` exists with `verifySmokePipeline(masterCv, jd, options)` export
+- [x] `scripts/e2e-tailor-cv.ts` is a thin CLI wrapper: parse args, resolve JD + master CV, call `verifySmokePipeline`, write artifacts
+- [x] `smoke-helpers.ts` unchanged (imported by library, not absorbed)
+- [x] `eval-judge.ts` unchanged
+- [x] Artifact writing (JSON, DOCX, cover-letter DOCX) stays in script, not library
+- [x] New `tests/smoke-runner.test.ts` tests library with mocked fetch/judges via optional `deps`
+- [x] Script tests in `tests/e2e-tailor-cv.test.ts` cover artifacts, redaction, curation mode, exit codes
+- [x] `npm run build` passes (smoke script still compiles)
+- [x] Manual smoke: `npm run smoke` against running dev server confirms end-to-end still works
 
 ### Refactoring 3: Schema Path ✅ VERIFIED (2026-07-30)
 

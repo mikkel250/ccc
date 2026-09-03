@@ -41,6 +41,13 @@ export interface LangfusePromptRef {
   isFallback?: boolean;
 }
 
+/** Shape required by Langfuse `generation.update()` — isFallback must be explicit. */
+export type LangfuseGenerationPromptRef = {
+  name: string;
+  version: number;
+  isFallback: boolean;
+};
+
 function isEnabled(): boolean {
   return process.env.LANGFUSE_TRACING === 'true';
 }
@@ -60,7 +67,7 @@ export function buildLangfuseGenerationUpdate(payload: TracePayload): {
     completionTokens: number;
     totalTokens: number;
   };
-  prompt?: LangfusePromptRef;
+  prompt?: LangfuseGenerationPromptRef;
 } {
   const { provider, model, response, startTime, options, langfusePrompt } = payload;
   const durationMs = Date.now() - startTime;

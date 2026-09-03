@@ -16,7 +16,7 @@ import {
   type ReasoningEffort,
 } from "../../../lib/env";
 import { RateLimitError, ServiceError } from "./errors";
-import { getConfiguredTailorApiKey } from "./tailor-auth";
+import { getConfiguredTailorApiKey, type TailorAuthResult } from "./tailor-auth";
 import { hashTailorApiKeyForRateLimit, getRateLimitConfig } from "./rate-limit";
 import {
   getTailorRequestMaxBytes,
@@ -141,7 +141,7 @@ async function readRequestBodyCapped(
 export interface TailorPipelineDeps {
   authenticateTailorRequest: (
     authorization: string | null
-  ) => { ok: true; mode: string } | { ok: false; error: string; status: 401 };
+  ) => TailorAuthResult;
   checkRateLimit: (
     phase: string,
     ipAddress: string,
@@ -152,7 +152,7 @@ export interface TailorPipelineDeps {
     resetTime: number;
     message?: string;
   }>;
-  requireMasterCv: () => Record<string, unknown>;
+  requireMasterCv: () => unknown;
   getCuratorPrompt: (mode?: CurationMode) => Promise<{
     systemPrompt: string;
     langfusePrompt?: {
@@ -164,7 +164,7 @@ export interface TailorPipelineDeps {
   applyCurationModePolicy: (prompt: string, mode: CurationMode) => string;
   compileCuratorPrompt: (
     prompt: string,
-    masterCv: Record<string, unknown>
+    masterCv: unknown
   ) => { ok: true; systemPrompt: string } | { ok: false; error: string };
   buildCuratorUserMessage: (
     jobDescription: string,

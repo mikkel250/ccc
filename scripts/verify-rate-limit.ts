@@ -34,8 +34,10 @@ async function main() {
 
   let prevRemaining: number | null = null;
 
+  const secretKey = `smoke-secret-${identifier}`;
+
   for (let i = 0; i < config.maxRequests; i++) {
-    const result = await checkRateLimit("smoke-script", identifier);
+    const result = await checkRateLimit("smoke-script", identifier, secretKey);
     const monotonic =
       prevRemaining === null || result.remaining < prevRemaining;
     const ok = result.allowed === true && monotonic;
@@ -46,7 +48,7 @@ async function main() {
     prevRemaining = result.remaining;
   }
 
-  const blocked = await checkRateLimit("smoke-script", identifier);
+  const blocked = await checkRateLimit("smoke-script", identifier, secretKey);
   const blockedOk =
     blocked.allowed === false &&
     blocked.remaining === 0 &&
