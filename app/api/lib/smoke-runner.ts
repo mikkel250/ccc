@@ -202,7 +202,7 @@ export async function verifySmokePipeline(
   if (
     typeof data.cv !== "string" ||
     data.curatedJson == null ||
-    data.builderVersion == null
+    typeof data.builderVersion !== "string"
   ) {
     return {
       ok: false,
@@ -211,8 +211,10 @@ export async function verifySmokePipeline(
       status: tailorRes.status,
     };
   }
+  const docxBase64 = data.cv;
+  const builderVersion = data.builderVersion;
 
-  if (!isValidDocxBase64(data.cv)) {
+  if (!isValidDocxBase64(docxBase64)) {
     return {
       ok: false,
       stage: "docx",
@@ -254,8 +256,8 @@ export async function verifySmokePipeline(
       stage: "judges",
       error: errorMessage(err),
       curatedJson,
-      docxBase64: data.cv,
-      builderVersion: String(data.builderVersion),
+      docxBase64,
+      builderVersion,
     };
     if (
       options.curationMode === "flexible" &&
@@ -281,8 +283,8 @@ export async function verifySmokePipeline(
   const success: VerifySmokeSuccess = {
     ok: true,
     curatedJson,
-    docxBase64: data.cv,
-    builderVersion: String(data.builderVersion),
+    docxBase64,
+    builderVersion,
     model: typeof data.model === "string" ? data.model : "",
     groundingScore: grounding.score,
     groundingParseFailed: grounding.parseFailed,

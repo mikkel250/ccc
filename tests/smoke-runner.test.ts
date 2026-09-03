@@ -2,6 +2,7 @@ import { describe, it, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { validateCvJson } from "../app/api/lib/cv-schema";
 import { markdownToDocxBase64 } from "../app/api/lib/markdown-docx";
 import type {
   JsonGroundingScore,
@@ -13,12 +14,17 @@ import {
 } from "../app/api/lib/smoke-runner";
 
 const MASTER = { name: "JANE EXAMPLE", summary: ["Evergreen"] };
-const CURATED = JSON.parse(
+const curatedRaw: unknown = JSON.parse(
   readFileSync(
     join(process.cwd(), "tests/fixtures/curated-cv-valid.json"),
     "utf8"
   )
-) as Record<string, unknown>;
+);
+const curatedValidated = validateCvJson(curatedRaw);
+if (!curatedValidated.ok) {
+  throw new Error(`CURATED fixture invalid: ${curatedValidated.error}`);
+}
+const CURATED = curatedValidated.data;
 const JD = "Senior solutions engineer role";
 
 function grounding(
@@ -256,6 +262,34 @@ describe("verifySmokePipeline", () => {
         assert.equal(result.stage, "tailor");
         assert.equal(result.error, "Missing cv, curatedJson, or builderVersion");
         assert.equal(result.status, 200);
+      }
+    }
+  });
+
+  it("returns stage tailor when builderVersion is not a string", async () => {
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    for (const builderVersion of [1, true, { v: "1" }, ["v1"]]) {
+      const fetchFn = helloThen(() =>
+        jsonResponse({
+          cv: docx,
+          curatedJson: CURATED,
+          builderVersion,
+          model: "test/model",
+        })
+      );
+      const result = await verifySmokePipeline(
+        MASTER,
+        JD,
+        baseOptions({ fetchFn })
+      );
+      assert.equal(
+        result.ok,
+        false,
+        `expected failure for builderVersion=${JSON.stringify(builderVersion)}`
+      );
+      if (!result.ok) {
+        assert.equal(result.stage, "tailor");
+        assert.equal(result.error, "Missing cv, curatedJson, or builderVersion");
       }
     }
   });
