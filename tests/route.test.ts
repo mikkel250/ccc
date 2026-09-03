@@ -156,6 +156,30 @@ describe("POST /api/tailor-cv — request hardening", () => {
     assertNoStore(response);
   });
 
+  it("returns 429 after repeated failed auth attempts exhaust the IP limit", async () => {
+    const config = getRateLimitConfig();
+    const headers = { "x-forwarded-for": "198.51.100.77" };
+
+    for (let i = 0; i < config.maxRequests; i++) {
+      const response = await POST(
+        buildPostRequest(VALID_BODY, {
+          ...headers,
+          authorization: "Bearer wrong-key",
+        })
+      );
+      assert.equal(response.status, 401);
+    }
+
+    const blocked = await POST(
+      buildPostRequest(VALID_BODY, {
+        ...headers,
+        authorization: "Bearer wrong-key",
+      })
+    );
+    assert.equal(blocked.status, 429);
+    assertNoStore(blocked);
+  });
+
   it("returns 400 with structured error for empty body when authorized", async () => {
     const response = await POST(
       buildPostRequest("", authHeaders({ "x-forwarded-for": "198.51.100.42" }))

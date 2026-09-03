@@ -81,8 +81,8 @@ function parseBearerToken(authorizationHeader: string | null): string | null {
 }
 
 /**
- * Authenticate a tailor request. Call before master load / LLM / rate-limit work
- * that should not run for anonymous callers.
+ * Authenticate a tailor request. Call before master load / LLM work that should
+ * not run for anonymous callers. Rate limiting runs before this check.
  */
 export function authenticateTailorRequest(
   authorizationHeader: string | null

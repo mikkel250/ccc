@@ -82,6 +82,8 @@ export interface ChatOptions {
   deepseekClient?: OpenAI;
   /** Test-only: inject Anthropic client */
   anthropicClient?: Anthropic;
+  /** Test-only: inject Google client */
+  googleClient?: GoogleGenAI;
 }
 
 let openaiClient: OpenAI | null = null;
@@ -118,7 +120,10 @@ function getAnthropic(options?: ChatOptions): Anthropic {
   return anthropicClient;
 }
 
-function getGoogle(): GoogleGenAI {
+function getGoogle(options?: ChatOptions): GoogleGenAI {
+  if (options?.googleClient) {
+    return options.googleClient;
+  }
   if (!googleClient) {
     const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey) {
@@ -606,6 +611,47 @@ export async function callAnthropic(
   };
 }
 
+/**
+ * PII-safe diagnostic when Google generateContent returns no .text.
+ * Never includes response body or candidate content — only structural metadata.
+ */
+export function describeGoogleEmptyContentResponse(response: unknown): string {
+  const r = response as {
+    candidates?: Array<{
+      finishReason?: string;
+      index?: number;
+    }>;
+    promptFeedback?: {
+      blockReason?: string;
+    };
+    usageMetadata?: {
+      promptTokenCount?: number;
+      candidatesTokenCount?: number;
+      totalTokenCount?: number;
+    };
+    modelVersion?: string;
+    responseId?: string;
+  };
+
+  const candidates = r.candidates ?? [];
+  const finishReasons = candidates
+    .map((c, i) => `${c.index ?? i}:${c.finishReason ?? 'null'}`)
+    .join(',');
+  const usage = r.usageMetadata;
+  const usagePart = usage
+    ? `promptTokens=${usage.promptTokenCount ?? 0},candidatesTokens=${usage.candidatesTokenCount ?? 0},totalTokens=${usage.totalTokenCount ?? 0}`
+    : 'usage=null';
+
+  return [
+    `candidateCount=${candidates.length}`,
+    `finishReasons=[${finishReasons}]`,
+    `blockReason=${r.promptFeedback?.blockReason ?? 'null'}`,
+    usagePart,
+    `modelVersion=${r.modelVersion ?? 'null'}`,
+    `responseId=${r.responseId ?? 'null'}`,
+  ].join(' ');
+}
+
 async function callGoogle(
   messages: Omit<ChatMessage, 'role'>[] | ChatMessage[],
   systemPrompt: string,
@@ -617,21 +663,16 @@ async function callGoogle(
   if (!model) throw new Error('model is required for callGoogle');
 
   const formattedMessages = formatMessages(messages);
+  const contents = formattedMessages.map((msg) => ({
+    role: msg.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: msg.content }],
+  }));
 
-  let fullPrompt = `${systemPrompt}\n\n---\n\nConversation History:\n`;
-
-  for (let i = 0; i < formattedMessages.length - 1; i++) {
-    const msg = formattedMessages[i];
-    const role = msg.role === 'user' ? 'User' : 'Assistant';
-    fullPrompt += `${role}: ${msg.content}\n\n`;
-  }
-
-  fullPrompt += `User: ${formattedMessages[formattedMessages.length - 1]?.content || ''}`;
-
-  const response = await getGoogle().models.generateContent({
+  const response = await getGoogle(options).models.generateContent({
     model: model,
-    contents: fullPrompt,
+    contents,
     config: {
+      systemInstruction: systemPrompt,
       temperature,
       maxOutputTokens: maxTokens,
       ...(options.signal ? { abortSignal: options.signal } : {}),
@@ -640,7 +681,7 @@ async function callGoogle(
 
   const content = response.text;
   if (!content) {
-    console.log('Response structure:', JSON.stringify(response, null, 2));
+    console.log('Google empty content response:', describeGoogleEmptyContentResponse(response));
     throw new Error('No text content in response from Google');
   }
 
