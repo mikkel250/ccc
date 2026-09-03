@@ -11,7 +11,6 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { markdownToDocxBase64 } from "../app/api/lib/markdown-docx";
-import { __resetMasterCvCacheForTest } from "../app/api/lib/master-cv";
 import {
   resolveCurationMode,
   writeSmokeArtifacts,
@@ -198,8 +197,6 @@ describe("runSmokeCli exit codes", () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "smoke-cli-"));
     process.env.TAILOR_API_KEY = "test-key";
-    process.env.MASTER_CV_JSON = JSON.stringify(CURATED);
-    __resetMasterCvCacheForTest();
   });
 
   afterEach(() => {
@@ -207,7 +204,6 @@ describe("runSmokeCli exit codes", () => {
     else process.env.TAILOR_API_KEY = prevKey;
     if (prevMaster === undefined) delete process.env.MASTER_CV_JSON;
     else process.env.MASTER_CV_JSON = prevMaster;
-    __resetMasterCvCacheForTest();
     rmSync(dir, { recursive: true, force: true });
     mock.restoreAll();
   });
@@ -369,10 +365,10 @@ describe("runSmokeCli exit codes", () => {
     assert.deepEqual(exits, [1]);
   });
 
-  it("exits 1 when master CV cannot be loaded", async () => {
+  it("exits 0 when local MASTER_CV_* is absent", async () => {
     writeFileSync(join(dir, "jd.md"), "Need a solutions engineer");
-    process.env.MASTER_CV_JSON = "not-json";
-    __resetMasterCvCacheForTest();
+    delete process.env.MASTER_CV_JSON;
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
     const exits: number[] = [];
     mock.method(process, "exit", ((code?: number) => {
       exits.push(code ?? 0);
@@ -386,9 +382,25 @@ describe("runSmokeCli exit codes", () => {
           jdPath: join(dir, "jd.md"),
           wantFlexible: false,
           artifactDir: dir,
+          deps: {
+            fetchFn: async (input: RequestInfo | URL) => {
+              const url = String(input);
+              if (url.endsWith("/api/hello")) {
+                return jsonResponse({ status: "ok" });
+              }
+              return jsonResponse({
+                cv: docx,
+                curatedJson: CURATED,
+                builderVersion: "v1",
+                model: "test/model",
+              });
+            },
+          },
         }),
-      /process\.exit\(1\)/
+      /process\.exit\(0\)/
     );
-    assert.deepEqual(exits, [1]);
+    assert.deepEqual(exits, [0]);
+    assert.ok(existsSync(join(dir, "jd.curated.json")));
+    assert.ok(existsSync(join(dir, "jd.docx")));
   });
 });

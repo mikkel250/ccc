@@ -20,6 +20,8 @@ const FIXTURE_CURATED = JSON.parse(
 ) as Record<string, unknown>;
 
 describe("tailor pipeline — single curator pass", () => {
+  const previousCritiqueReviseEnabled = process.env.CRITIQUE_REVISE_ENABLED;
+
   beforeEach(() => {
     ensureEnv();
     process.env.CRITIQUE_REVISE_ENABLED = "true";
@@ -30,7 +32,11 @@ describe("tailor pipeline — single curator pass", () => {
   afterEach(() => {
     mock.restoreAll();
     resetRedisClientForTest();
-    delete process.env.CRITIQUE_REVISE_ENABLED;
+    if (previousCritiqueReviseEnabled === undefined) {
+      delete process.env.CRITIQUE_REVISE_ENABLED;
+    } else {
+      process.env.CRITIQUE_REVISE_ENABLED = previousCritiqueReviseEnabled;
+    }
   });
 
   const XFF = authHeaders({ "x-forwarded-for": "198.51.100.42" });

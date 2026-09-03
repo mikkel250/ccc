@@ -6,7 +6,8 @@
  *   npm run smoke -- [baseUrl] [jdPath] [--flexible]
  *   npx tsx scripts/e2e-tailor-cv.ts [baseUrl] [jdPath] [--flexible]
  *
- * Requires: running server, TAILOR_API_KEY, MASTER_CV_JSON|PATH.
+ * Requires: running server, TAILOR_API_KEY.
+ * Server-side MASTER_CV_* is the running server's concern, not this client's.
  * Optional: SMOKE_WRITE_UNREDACTED=1 to write full curated JSON locally (default redacts).
  * Optional: SMOKE_CURATION_MODE=strict|flexible (default strict); --flexible forces flexible.
  */
@@ -22,7 +23,6 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { loadMasterCv } from "../app/api/lib/master-cv";
 import {
   DEFAULT_CURATION_MODE,
   isCurationMode,
@@ -163,11 +163,6 @@ export type RunSmokeCliOptions = {
 
 export async function runSmokeCli(options: RunSmokeCliOptions): Promise<void> {
   const curationMode = resolveCurationMode(options.wantFlexible);
-  const master = loadMasterCv();
-  if (!master.ok) {
-    console.error(`Master CV unavailable: ${master.error}`);
-    process.exit(1);
-  }
 
   const jd = loadJd(options.jdPath);
   console.log(`JD: ${jd.path}`);

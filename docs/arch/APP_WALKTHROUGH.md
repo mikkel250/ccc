@@ -156,7 +156,7 @@ Production curator generations link to Langfuse prompt `cv-curator-json` via `la
 npm run smoke -- http://localhost:3000 [optional-jd-path] [--flexible]
 ```
 
-Loads master via the same `MASTER_CV_*` env as the server, POSTs with Bearer + `curationMode` (`strict` default; `--flexible` or `SMOKE_CURATION_MODE=flexible`), asserts `.docx` + `curatedJson` + `builderVersion`, and writes redact-by-default artifacts. Markdown generation eval is retired — use smoke only. Quality is the operator reading the files.
+Hits a running server (master CV is resolved server-side via `MASTER_CV_*`; smoke does not require local `MASTER_CV_*` before health or tailor). POSTs with Bearer + `curationMode` (`strict` default; `--flexible` or `SMOKE_CURATION_MODE=flexible`), asserts `.docx` + `curatedJson` + `builderVersion`, and writes redact-by-default artifacts. Markdown generation eval is retired — use smoke only. Quality is the operator reading the files.
 
 Local regen without LLM: `npm run regen-docx -- curated.json out.docx --builder-version=<BUILDER_VERSION>`.
 

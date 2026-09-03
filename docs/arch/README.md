@@ -12,7 +12,7 @@ Architecture decisions, code conventions, module boundaries, and infrastructure 
 
 ## Stack context (for agents)
 
-This project is the **CV Tailoring API** — a lightweight Next.js 15 backend that will be deployed on Railway. It exposes a single endpoint (`POST /api/tailor-cv`) that accepts a job description and returns a tailored CV as a base64-encoded `.docx` file, generated via LLM against a canonical career knowledge base. There is no frontend and no auth — the knowledge base lives as markdown files on disk. A learning system with local SQLite storage is planned post-MVP.
+This project is the **CV Tailoring API** — a lightweight Next.js 15 backend that will be deployed on Railway. It exposes a single endpoint (`POST /api/tailor-cv`) that accepts a job description and returns a tailored CV as a base64-encoded `.docx` file. Bearer auth (`TAILOR_API_KEY`); master CV is JSON via `MASTER_CV_JSON` / `MASTER_CV_PATH`; the LLM returns schema-validated curated JSON; the server mechanically builds `.docx`. No frontend. A learning system with local SQLite storage is planned post-MVP.
 
 The project was cloned from `portfolio-react-ts` and stripped of all portfolio pages, components, and styles. Only the API layer and knowledge base were retained.
 
@@ -24,7 +24,7 @@ The project was cloned from `portfolio-react-ts` and stripped of all portfolio p
 | Framework | Next.js 15 App Router | API routes only (`app/api/`). No pages, no components, no layout beyond API root. |
 | Runtime | Node.js 22 LTS (≥22.0.0) | Railway (Nixpacks reads `.nvmrc`); no Edge Functions |
 | LLM | OpenAI, Anthropic, Google, DeepSeek, OpenRouter (multi-provider dispatch) | Model strings use `provider/model` namespace. No bare aliases. Provider detection is a config lookup, not an `if` chain. OpenRouter supports `service_tier: flex` (discounted, latency-tolerant) for OpenAI/Google models; Anthropic batch processing requires direct API. Separate `TAILOR_MODEL` for CV generation. Tailor is a single curator pass; live quality is `npm run smoke` artifacts plus operator review. Native batch APIs deferred. |
-| Auth | None | MVP is single-user, no auth layer |
+| Auth | Bearer shared-secret (`TAILOR_API_KEY`) | Required for `POST /api/tailor-cv` |
 | Database | SQLite (MVP), PostgreSQL + pgvector (future) | Learning system stores feedback, few-shot examples, and hallucination corrections. Not needed for MVP (single-pass, stateless). |
 | Storage | None | CV .docx is generated in-memory per request, returned as base64 |
 | Testing (unit) | node:test + node:assert/strict | Zero dependency, no config drift. Test-only injection via optional function parameters. Run: `npm test`. |
@@ -48,29 +48,33 @@ POST /api/tailor-cv
 tailor-cv/route.ts
   ├── validate(jobDescription)
   ├── rateLimit(sessionId)
-  ├── getCvPrompt()             → Langfuse Prompt Management ("cv-tailor-system", label: production)
-  │     └── fallback: hardcoded prompt in cv-prompt.ts (kept in sync with Langfuse)
-  ├── compileCvPrompt(prompt, context)  → substitute {{CONTEXT}}
-  ├── getAllContext()           → knowledge-base/*.md
+  ├── authenticate (Bearer TAILOR_API_KEY)
+  ├── requireMasterCv (MASTER_CV_JSON / MASTER_CV_PATH)
+  ├── getCuratorPrompt()        → Langfuse Prompt Management ("cv-curator-json", label: production)
+  │     └── fallback: hardcoded prompt in curator-prompt.ts (kept in sync with Langfuse)
+  ├── applyCurationModePolicy(prompt, curationMode)
+  ├── compileCuratorPrompt(prompt, masterCv)
   ├── chat(messages, systemPrompt, { langfusePrompt })  → LLM (via TAILOR_MODEL)
   │     └── generation.linkedPrompt = { name, version, isFallback }
-  ├── generateDocx(cvMarkdown)  → docx npm package
-  └── return { cv: base64docx }
+  ├── extractStructuredJson(content)
+  ├── validateCvJson(curatedJson)
+  ├── buildJsonDocxBase64(curatedJson)
+  └── return { cv, curatedJson, builderVersion, ... }
 ```
 
 See [Pipeline enhancements](./PIPELINE_ENHANCEMENTS.md) for the two-pass pipeline and batch processing designs.
 
 ### Key decisions
 
-- **Full context injection**: All knowledge base files are loaded into every LLM call. No selective retrieval in MVP. This is ~50-60k tokens, well within frontier model context windows. Fine-grained RAG and metadata tagging are explicitly rejected in v1 to preserve architectural simplicity.
+- **Master CV injection**: The canonical master CV JSON is injected into the curator prompt. No selective retrieval in MVP. Fine-grained RAG and metadata tagging are explicitly rejected in v1 to preserve architectural simplicity.
 - **Multi-Tenant Road Map & Isolation (Future)**: When scaling to a multi-user model, user career data will remain strictly isolated at the level of private Markdown files (rather than shared database entries). Onboarding will utilize an automated ingestion pipeline featuring an "Onboarding Iceberg Principle"—extracting unpolished, under-the-radar scale, team size, budget, and impact metrics typically pruned from a single uploaded CV, converting them to high-fidelity Markdown blocks using an agentic conversation flow.
-- **Word .docx output**: LLM produces markdown-formatted CV; server converts to `.docx` via the `docx` npm package. Returns as base64. CCC (separate app) decodes and attaches to Gmail drafts.
+- **Word .docx output**: LLM produces schema-validated curated JSON; server mechanically builds `.docx` via the `docx` npm package. Returns as base64. CCC (separate app) decodes and attaches to Gmail drafts.
 - **Provider-specific pricing tiers are per-request configuration.** OpenRouter supports `service_tier: flex` for OpenAI and Google models — discounted, latency-tolerant execution (controlled via the `openRouterFlex` flag on `ChatOptions`, default `true`). Providers that don't support flex silently ignore the option. Anthropic batch processing requires calling the Anthropic API directly (not via OpenRouter), which is why Anthropic models always use the direct provider. The caller chooses the pricing tier per request through the provider and options it selects — there is no global "always flex" or "always instant" setting.
 - **Provider/model namespace for all LLM routing**: Every model identifier is `provider/model`. The first `/`-delimited segment names the provider; the remainder is the model ID passed to that provider's API. No bare aliases (e.g. `sonnet`, `gpt-4o`) — the provider must be explicit. Adding a new model or provider is a config change (env var), not a code change (no new `if` branches in routing logic). This contract eliminates the ambiguity of inferring a provider from model name conventions.
 - **Separate model**: CV generation uses a different model (`TAILOR_MODEL` env var) than the chat bot. Frontier model expected (Gemini 2.5 Pro, DeepSeek V4 Pro, Sonnet) since reasoning quality matters more than cost here.
 - **No reply draft in MVP**: Recruiter reply generation is deferred. Will be added as a second LLM call in the same endpoint invocation later.
-- **Langfuse Prompt Management**: The CV tailoring system prompt lives in Langfuse (`cv-tailor-system`, text type, `{{CONTEXT}}` variable). At runtime, the app fetches the `production`-labeled version with 300s caching. A hardcoded fallback in `cv-prompt.ts` ensures availability if Langfuse is unreachable. Prompt updates are done programmatically via the Langfuse API/SDK — no UI-only workflows. Each LLM generation is linked to its prompt version via the native `prompt` attribute for tracing full version lineage.
-- **No auth**: Single-user. No sessions, no accounts. A simple shared secret or API key may be added later.
+- **Langfuse Prompt Management**: The curator system prompt lives in Langfuse (`cv-curator-json`, text type). At runtime, the app fetches the `production`-labeled version with 300s caching. A hardcoded fallback in `curator-prompt.ts` ensures availability if Langfuse is unreachable. Prompt updates are done programmatically via the Langfuse API/SDK — no UI-only workflows. Each LLM generation is linked to its prompt version via the native `prompt` attribute for tracing full version lineage.
+- **Bearer auth**: `POST /api/tailor-cv` requires `Authorization: Bearer <TAILOR_API_KEY>`. Single-user shared secret; no sessions or accounts.
 
 ### Anti-patterns
 

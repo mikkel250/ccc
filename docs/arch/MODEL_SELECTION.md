@@ -40,7 +40,7 @@ Live quality for the JSON curator pipeline is **`npm run smoke`** (not part of `
 3. Write redact-by-default files under `tmp/smoke/`. Optional `--flexible` / `SMOKE_CURATION_MODE=flexible` selects curation posture and may write a cover-letter DOCX.
 4. Exit 0 if health, tailor, schema, and docx succeed. There is no grounding/JD-fit score gate and no judge model call.
 
-Artifacts: `<jd-slug>.docx` + `<jd-slug>.curated.json` named from the JD basename. Test JDs are raw recruiter text in `knowledge-base/test-jds/` (no YAML frontmatter). Operator review of those files is the quality signal.
+Artifacts: `<jd-slug>.docx` + `<jd-slug>.curated.json` named from the JD basename; flexible runs may also write `<jd-slug>.cover-letter.docx`. Test JDs are raw recruiter text in `knowledge-base/test-jds/` (no YAML frontmatter). Operators review all generated files — that review is the quality signal.
 
 ### Historical model-selection eval (markdown era)
 

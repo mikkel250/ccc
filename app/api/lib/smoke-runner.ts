@@ -31,10 +31,6 @@ export type VerifySmokeFailure = {
   stage: "health" | "tailor" | "docx";
   error: string;
   status?: number;
-  curatedJson?: unknown;
-  docxBase64?: string;
-  builderVersion?: string;
-  coverLetter?: string;
 };
 
 export type VerifySmokeResult = VerifySmokeSuccess | VerifySmokeFailure;
