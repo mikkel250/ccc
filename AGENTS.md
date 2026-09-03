@@ -105,7 +105,7 @@ Document findings in the active plan file under `docs/plans/` or create a soluti
 
 | When | Read (in order) | Purpose |
 |------|-----------------|---------|
-| Session / task start | `docs/plans/README.md` (active milestone), then its linked plan | Objective, constraints, acceptance criteria |
+| Session / task start | `docs/plans/README.md` (active milestone), then its linked plan(s) | Objective, constraints, acceptance criteria |
 | Before coding or changing architecture | `docs/arch/README.md` | Stack, decisions, invariants |
 | When debugging past decisions or incidents | `docs/solutions/` | Prior learnings and gotchas |
 | When researching before planning | `docs/brainstorms/` | Prior exploration and design decisions |
