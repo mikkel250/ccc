@@ -336,7 +336,7 @@ Full cost-quality data: `docs/solutions/mid-tier-review-models-match-frontier-at
 - Prefer a large, complete master skills/experience inventory that can be cut for a JD over a sparse master that needs manual re-adds.
 - Do not couple product behavior or prompts tightly to one industry; engineers may be first users, but design stays industry-agnostic.
 - CV content quality matters more than page-length limits; avoid treating page count as a hard requirement.
-- Prefer operator (later: user) review over heavy mechanical allowlists for grounding unless manual failures justify it.
+- Prefer operator (later: user) review of CV quality over on-path LLM judges, critique-revise loops, or heavy mechanical allowlists; gather product feedback from users rather than scoring inside the tailor loop unless manual failures justify extra gates.
 - When asked to ship fixes to an already-open PR, verify the active branch first (`git branch --show-current`); never write files, commit, or push when on `main`; once branch safety is confirmed, commit and push to the correct PR branch and do not babysit the PR unless asked.
 - Set reasoning/thinking effort explicitly for tailoring and smoke runs (especially via OpenRouter) instead of relying on provider defaults.
 - Flexible/pivot curation should foreground transferable skills without fabricating experience; tenure claims must not sum overlapping spans or rebrand off-domain years.
@@ -350,7 +350,8 @@ Pointer-first bootstrap (canonical detail lives in linked docs; do not restate s
 
 - Master CV: one complete JSON career record (not parallel industry masters); local SoT is gitignored under `secrets/` — runtime uses `MASTER_CV_JSON` / `MASTER_CV_PATH` (see `.env.example`, `@docs/arch/APP_WALKTHROUGH.md`).
 - Curation modes: `strict` (default, linear/in-field Struan) vs `flexible` (transferable-skills pivot path) — `@docs/api/API.md`; product strategy in `STRATEGY.md`.
-- `npm run smoke` (manual live-API + artifacts; not part of `npm test` / CI): `@docs/test/TESTING.md`, `@docs/arch/MODEL_SELECTION.md`
+- `npm run smoke` (manual live-API + artifacts; not part of `npm test` / CI); asserts artifacts, not judge scores; master CV is resolved server-side — `@docs/test/TESTING.md`, `@docs/arch/MODEL_SELECTION.md`, `@docs/arch/APP_WALKTHROUGH.md`
+- Tailor is single-pass JSON curation (no on-path critique-revise / LLM-as-judge); operators review smoke artifacts — `@docs/test/TESTING.md`, `@docs/arch/APP_WALKTHROUGH.md`
 - MVP auth (`TAILOR_API_KEY` Bearer) and artifacts (curated JSON + `.docx`); flexible responses may include `coverLetter` markdown — `@docs/api/API.md`
 - Observability (Langfuse on-path / LangSmith fire-and-forget; redaction + flush bounds): `@docs/solutions/architecture-patterns/dual-tracer-redact-and-flush-timeout.md`
 - Cost calibration: DeepSeek via direct API; OpenAI/Google via OpenRouter flex; for tailoring quality prefer best-fit over cost alone — `@docs/arch/MODEL_SELECTION.md`
