@@ -1,17 +1,11 @@
-import { describe, it, afterEach } from "node:test";
+import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   EvalDimension,
   FormatSection,
-  JUDGE_MAP,
-  getJudgeMap,
-  resetJudgeMapCache,
-  DEFAULT_EVAL_JUDGE_MODEL,
   DEFAULT_EVAL_EXTRACTION_MIN_SCORE,
-  DEFAULT_EVAL_EXTRACTION_MODEL,
   DEFAULT_EVAL_MODELS_CSV,
   CANDIDATE_GENERATION_MODELS,
-  providerOf,
   type FormatScore,
   type RelevanceScore,
   type HallucinationScore,
@@ -162,42 +156,9 @@ describe("eval-schema — JdExtraction and JdRequirement types", () => {
   });
 });
 
-describe("eval-schema — cross-provider judge mapping", () => {
-  it("CANDIDATE_GENERATION_MODELS lists all four eval models", () => {
+describe("eval-schema — candidate generation models", () => {
+  it("CANDIDATE_GENERATION_MODELS lists all eval models", () => {
     assert.deepEqual([...CANDIDATE_GENERATION_MODELS].sort(), [...EXPECTED_CANDIDATE_MODELS].sort());
-  });
-
-  it("JUDGE_MAP is exhaustive for every candidate generation model", () => {
-    for (const model of EXPECTED_CANDIDATE_MODELS) {
-      assert.ok(
-        model in JUDGE_MAP,
-        `JUDGE_MAP missing entry for ${model}`
-      );
-      assert.equal(typeof JUDGE_MAP[model], "string");
-      assert.ok(JUDGE_MAP[model]!.includes("/"), `judge for ${model} must be namespaced`);
-    }
-  });
-
-  it("each generator maps to a judge from a different provider", () => {
-    for (const model of EXPECTED_CANDIDATE_MODELS) {
-      const judge = JUDGE_MAP[model]!;
-      assert.notEqual(
-        providerOf(model),
-        providerOf(judge),
-        `${model} must not be judged by same provider (${judge})`
-      );
-      assert.notEqual(judge, model, `judge must differ from generator for ${model}`);
-    }
-  });
-
-  it("JUDGE_MAP includes DEFAULT_EVAL_EXTRACTION_MODEL with cross-provider judge", () => {
-    assert.ok(
-      DEFAULT_EVAL_EXTRACTION_MODEL in JUDGE_MAP,
-      `JUDGE_MAP must cover extraction model ${DEFAULT_EVAL_EXTRACTION_MODEL}`
-    );
-    const judge = JUDGE_MAP[DEFAULT_EVAL_EXTRACTION_MODEL as keyof typeof JUDGE_MAP];
-    assert.equal(typeof judge, "string");
-    assert.notEqual(providerOf(DEFAULT_EVAL_EXTRACTION_MODEL), providerOf(judge!));
   });
 
   it("DEFAULT_EVAL_MODELS_CSV matches CANDIDATE_GENERATION_MODELS", () => {
@@ -205,63 +166,7 @@ describe("eval-schema — cross-provider judge mapping", () => {
   });
 });
 
-describe("eval-schema — lazy getJudgeMap", () => {
-  const originalMapJson = process.env.EVAL_JUDGE_MAP_JSON;
-
-  afterEach(() => {
-    if (originalMapJson === undefined) delete process.env.EVAL_JUDGE_MAP_JSON;
-    else process.env.EVAL_JUDGE_MAP_JSON = originalMapJson;
-    resetJudgeMapCache();
-  });
-
-  it("reflects valid EVAL_JUDGE_MAP_JSON override", () => {
-    process.env.EVAL_JUDGE_MAP_JSON = JSON.stringify({
-      "deepseek/deepseek-v4-pro": "anthropic/claude",
-    });
-    resetJudgeMapCache();
-    const map = getJudgeMap();
-    assert.equal(map["deepseek/deepseek-v4-pro"], "anthropic/claude");
-  });
-
-  it("falls back to defaults when EVAL_JUDGE_MAP_JSON is invalid JSON", () => {
-    const warnings: string[] = [];
-    const originalWarn = console.warn;
-    console.warn = (msg: unknown) => warnings.push(String(msg));
-    try {
-      process.env.EVAL_JUDGE_MAP_JSON = "{not-json";
-      resetJudgeMapCache();
-      const map = getJudgeMap();
-      assert.equal(map["deepseek/deepseek-v4-pro"], "openrouter/google/gemini-3.1-pro-preview");
-      assert.ok(warnings.some((w) => /EVAL_JUDGE_MAP_JSON/i.test(w)));
-    } finally {
-      console.warn = originalWarn;
-    }
-  });
-
-  it("rejects same-provider override with warning and does not merge entry", () => {
-    const warnings: string[] = [];
-    const originalWarn = console.warn;
-    console.warn = (msg: unknown) => warnings.push(String(msg));
-    try {
-      process.env.EVAL_JUDGE_MAP_JSON = JSON.stringify({
-        "anthropic/sonnet": "anthropic/claude",
-      });
-      resetJudgeMapCache();
-      const map = getJudgeMap();
-      assert.notEqual(map["anthropic/sonnet"], "anthropic/claude");
-      assert.ok(warnings.some((w) => /same-provider|Rejected/i.test(w)));
-    } finally {
-      console.warn = originalWarn;
-    }
-  });
-});
-
 describe("eval-schema — env var defaults", () => {
-  it("DEFAULT_EVAL_JUDGE_MODEL is a valid namespaced model string", () => {
-    assert.match(DEFAULT_EVAL_JUDGE_MODEL, /^[a-z]+\/.+/);
-    assert.equal(DEFAULT_EVAL_JUDGE_MODEL, "openrouter/google/gemini-3.1-pro-preview");
-  });
-
   it("DEFAULT_EVAL_EXTRACTION_MIN_SCORE defaults to 0.7 and is parseable as float", () => {
     assert.equal(DEFAULT_EVAL_EXTRACTION_MIN_SCORE, 0.7);
     assert.ok(Number.isFinite(DEFAULT_EVAL_EXTRACTION_MIN_SCORE));

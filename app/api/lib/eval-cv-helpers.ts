@@ -6,7 +6,6 @@ import path from "node:path";
 import { validateGenerationModels } from "./eval-model-validation";
 import {
   CANDIDATE_GENERATION_MODELS,
-  warnUnmappedJudgeModels,
   type ExtractionScore,
   type FormatScore,
   type HallucinationScore,
@@ -24,7 +23,9 @@ export interface EvalScoresPayload {
   metadata: {
     jdSlug: string;
     model: string;
+    /** Historical eval-results field; smoke/on-path judges are retired. */
     judgeModel: string;
+    /** Historical eval-results field; smoke/on-path judges are retired. */
     extractionJudgeModel: string;
   };
 }
@@ -46,7 +47,6 @@ export function parseEvalModels(): string[] {
         .map((m) => m.trim())
         .filter(Boolean);
   validateGenerationModels(models);
-  warnUnmappedJudgeModels(models);
   return models;
 }
 

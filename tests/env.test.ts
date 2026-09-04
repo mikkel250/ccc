@@ -18,8 +18,6 @@ import {
   CANDIDATE_GENERATION_MODELS,
   DEFAULT_EVAL_EXTRACTION_MODEL,
   DEFAULT_EVAL_MODELS_CSV,
-  getJudgeMap,
-  resetJudgeMapCache,
 } from "../app/api/lib/eval-schema";
 
 describe("getEnvFloat", () => {
@@ -224,31 +222,6 @@ describe("getEvalExtractionModel", () => {
   it("passes validation for default when env var is unset", () => {
     delete process.env.EVAL_EXTRACTION_MODEL;
     assert.doesNotThrow(() => getEvalExtractionModel());
-  });
-});
-
-describe("getJudgeMap — lazy init after env change", () => {
-  const originalMapJson = process.env.EVAL_JUDGE_MAP_JSON;
-
-  afterEach(() => {
-    if (originalMapJson === undefined) delete process.env.EVAL_JUDGE_MAP_JSON;
-    else process.env.EVAL_JUDGE_MAP_JSON = originalMapJson;
-    resetJudgeMapCache();
-  });
-
-  it("reflects EVAL_JUDGE_MAP_JSON set after module load", () => {
-    delete process.env.EVAL_JUDGE_MAP_JSON;
-    resetJudgeMapCache();
-    const before = getJudgeMap()["anthropic/sonnet"];
-
-    process.env.EVAL_JUDGE_MAP_JSON = JSON.stringify({
-      "anthropic/sonnet": "openrouter/openai/gpt-5.4-mini",
-    });
-    resetJudgeMapCache();
-    const after = getJudgeMap()["anthropic/sonnet"];
-
-    assert.notEqual(after, before);
-    assert.equal(after, "openrouter/openai/gpt-5.4-mini");
   });
 });
 
