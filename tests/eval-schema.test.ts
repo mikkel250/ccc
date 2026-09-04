@@ -6,9 +6,6 @@ import {
   JUDGE_MAP,
   getJudgeMap,
   resetJudgeMapCache,
-  RELEVANCE_JUDGE_PROMPT,
-  HALLUCINATION_JUDGE_PROMPT,
-  EXTRACTION_JUDGE_PROMPT,
   DEFAULT_EVAL_JUDGE_MODEL,
   DEFAULT_EVAL_EXTRACTION_MIN_SCORE,
   DEFAULT_EVAL_EXTRACTION_MODEL,
@@ -205,38 +202,6 @@ describe("eval-schema — cross-provider judge mapping", () => {
 
   it("DEFAULT_EVAL_MODELS_CSV matches CANDIDATE_GENERATION_MODELS", () => {
     assert.equal(DEFAULT_EVAL_MODELS_CSV, CANDIDATE_GENERATION_MODELS.join(","));
-  });
-});
-
-describe("eval-schema — judge prompt templates", () => {
-  it("relevance prompt references extracted requirements, not raw job description", () => {
-    const prompt = RELEVANCE_JUDGE_PROMPT;
-    assert.match(prompt, /extracted requirements/i);
-    assert.match(prompt, /1/i);
-    assert.match(prompt, /5/i);
-    for (const level of [1, 2, 3, 4, 5]) {
-      assert.match(prompt, new RegExp(String(level)));
-    }
-    assert.match(prompt, /(anchor|rubric|scale|score)/i);
-    assert.match(prompt, /relevant accomplishments/i);
-  });
-
-  it("hallucination prompt contains 0.0–1.0 rubric and references extraction context", () => {
-    const prompt = HALLUCINATION_JUDGE_PROMPT;
-    assert.match(prompt, /0\.0|0\.0–1\.0|0-1|0 to 1/i);
-    assert.match(prompt, /(hallucinat|fabricat|invent|misattribut)/i);
-    assert.match(prompt, /(knowledge base|ground truth|context)/i);
-    assert.match(prompt, /flaggedClaims|flagged claims/i);
-    assert.match(prompt, /extracted|requirements|keywords/i);
-  });
-
-  it("extraction judge prompt contains 0.0–1.0 completeness and accuracy rubric", () => {
-    const prompt = EXTRACTION_JUDGE_PROMPT;
-    assert.match(prompt, /0\.0|0\.0–1\.0|0-1|0 to 1/i);
-    assert.match(prompt, /(completeness|accuracy|complete|accurate)/i);
-    assert.match(prompt, /(requirements|keywords|implicit success|hallucinat|fabricat)/i);
-    assert.match(prompt, /gaps/i);
-    assert.match(prompt, /reasoning/i);
   });
 });
 

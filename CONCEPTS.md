@@ -33,7 +33,7 @@ A single `POST /api/tailor-cv` invocation that authenticates with a shared secre
 Semver-like constant on the mechanical JSON→docx builder. Callers retaining curated JSON for regen must keep the recorded version; style-stable regen applies only when it matches the builder invoked (`npm run regen-docx`).
 
 ### Smoke
-Manual live-API operator path (`npm run smoke`): hits a running server with Bearer auth, asserts dual artifacts (and cover-letter DOCX when flexible), writes redact-by-default files under `tmp/smoke/`. Quality is the operator reading those files. Not part of `npm test` / CI.
+Manual live-API operator path (`npm run smoke`): hits a running server with Bearer auth, asserts dual artifacts, and writes redact-by-default files under `tmp/smoke/`. Flexible runs also write a cover-letter DOCX only when `writeSmokeArtifacts` produces one — non-empty cover letter that passes `isValidDocxBase64`; otherwise that file may be absent. Quality is the operator reading those files. Not part of `npm test` / CI.
 
 ### Knowledge base
 *Avoid as the name for career truth after cutover — use Master CV.* Historically: on-disk markdown career corpus injected into every tailor request. Retained only as a legacy term for pre-cutover behavior and non-tailor prose / test JD fixtures under `knowledge-base/test-jds/`.

@@ -1,12 +1,12 @@
 /**
- * Eval scoring dimensions, types, judge prompts, and cross-provider judge mapping.
+ * Eval scoring dimensions, types, and cross-provider judge mapping.
  *
  * Config-only module — consumed by eval-format.ts, eval-extract.ts, and
  * scripts/seed-eval-results.ts. Defines the 4 historical eval dimensions used
- * to select TAILOR_MODEL. JSON smoke judges are retired.
+ * to select TAILOR_MODEL. JSON smoke judges are retired; prompt env overrides
+ * were removed with the scorers (no remaining production caller).
  */
 
-import { getEnvString } from "../../../lib/env";
 import {
   DEFAULT_EVAL_EXTRACTION_MODEL,
   DEFAULT_EVAL_JUDGE_MODEL,
@@ -216,65 +216,4 @@ export function warnUnmappedJudgeModels(models: readonly string[]): void {
     }
   }
 }
-
-export const RELEVANCE_JUDGE_PROMPT = getEnvString(
-  "RELEVANCE_JUDGE_PROMPT",
-  `You are an expert evaluator scoring CV tailoring quality.
-
-Score how well the "Relevant Accomplishments" section of the CV maps to the extracted requirements from the job description (normalized statements with Must-Have/Nice-to-Have weights and keyword bank).
-
-Use this 1-5 rubric scale with anchor descriptions:
-1 — No meaningful alignment; accomplishments are generic or unrelated to extracted requirements.
-2 — Weak alignment; only tangential overlap with extracted requirements.
-3 — Moderate alignment; some extracted requirements addressed but gaps remain.
-4 — Strong alignment; most extracted requirements reflected in relevant accomplishments.
-5 — Excellent alignment; accomplishments directly and comprehensively address extracted requirements.
-
-Respond with JSON only:
-{"score": <1-5 integer>, "reasoning": "<brief explanation>"}`
-)!;
-
-export const HALLUCINATION_JUDGE_PROMPT = getEnvString(
-  "HALLUCINATION_JUDGE_PROMPT",
-  `You are an expert fact-checker evaluating a tailored CV for hallucinations.
-
-Cross-reference every factual claim in the CV against the provided knowledge base (ground truth). Use the extracted requirements, keywords, and hiring context only as supplementary JD context — the knowledge base is the primary ground truth for factual verification.
-
-Hallucination criteria — flag claims that are:
-- Fabricated metrics or numbers not present in the knowledge base
-- Invented roles, employers, or projects
-- Misattributed experience or technologies
-- Acceptable: rephrasing, summarizing, or omitting information from the knowledge base
-
-Score hallucination rate on a 0.0–1.0 scale:
-0.0 — No hallucinations detected; all claims grounded in knowledge base.
-0.25 — Minor unsupported embellishments.
-0.5 — Several unverified or exaggerated claims.
-0.75 — Many fabricated or misattributed claims.
-1.0 — Predominantly hallucinated content.
-
-Respond with JSON only:
-{"score": <0.0-1.0 number>, "flaggedClaims": ["<claim 1>", "<claim 2>"]}`
-)!;
-
-export const EXTRACTION_JUDGE_PROMPT = getEnvString(
-  "EXTRACTION_JUDGE_PROMPT",
-  `You are an expert evaluator assessing JD metadata extraction quality.
-
-Compare the structured extraction against the raw job description text. Score completeness and accuracy on a 0.0–1.0 scale.
-
-Assess:
-(a) Are all JD requirements captured as normalized statements?
-(b) Are requirement weights (Must-Have vs Nice-to-Have) correct?
-(c) Is the keyword bank complete (must-haves, tools, certifications, verbs)?
-(d) Are implicit success signals plausible and grounded in the JD?
-(e) Are there any fabricated or hallucinated requirements not present in the raw JD?
-
-0.0 — Empty or entirely inaccurate extraction.
-0.5 — Partial extraction with significant gaps or weight errors.
-1.0 — Complete and accurate extraction with no fabrication.
-
-Respond with JSON only:
-{"score": <0.0-1.0 number>, "reasoning": "<brief explanation>", "gaps": ["<gap 1>", "<gap 2>"]}`
-)!;
 
