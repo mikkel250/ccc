@@ -61,7 +61,7 @@ Full reference: [`docs/api/API.md`](docs/api/API.md)
 
 ## Quick Examples
 
-Supported manual live-API path (Bearer + dual artifacts + judges):
+Supported manual live-API path (Bearer + dual artifacts; operator reviews the files):
 
 ```bash
 npm run smoke -- http://localhost:3000
@@ -82,12 +82,12 @@ Ad-hoc `curl` to `POST /api/tailor-cv` is **not** a supported operator method on
 
 ```bash
 npm test                 # unit — no live tailor/smoke LLM
-npm run smoke -- http://localhost:3000   # manual live API + judges (not CI)
+npm run smoke -- http://localhost:3000   # manual live API + artifacts (not CI)
 npm run regen-docx -- curated.json out.docx --builder-version=1.0.0
 npm run test:e2e         # Playwright HTTP checks (Bearer; TAILOR_AUTH_INSECURE_BYPASS is local/dev/test-only and rejected in production)
 ```
 
-Live quality uses `npm run smoke` (not CI). Judge helpers used by smoke live under `app/api/lib/eval-*.ts`.
+Live quality uses `npm run smoke` (not CI). Operator review of the written files is the quality signal.
 
 See [`docs/test/TESTING.md`](docs/test/TESTING.md).
 

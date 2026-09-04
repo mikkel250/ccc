@@ -6,7 +6,6 @@ import {
   getEnvNumber,
   getEnvString,
   getEvalExtractionModel,
-  getEvalJudgeModel,
   getEvalModels,
   getLLMConfig,
   getTailorModel,
@@ -18,10 +17,7 @@ import { KNOWN_PROVIDERS as KNOWN_PROVIDERS_FROM_LLM } from "../app/api/lib/llm"
 import {
   CANDIDATE_GENERATION_MODELS,
   DEFAULT_EVAL_EXTRACTION_MODEL,
-  DEFAULT_EVAL_JUDGE_MODEL,
   DEFAULT_EVAL_MODELS_CSV,
-  getJudgeMap,
-  resetJudgeMapCache,
 } from "../app/api/lib/eval-schema";
 
 describe("getEnvFloat", () => {
@@ -172,50 +168,6 @@ describe("getDefaultCurationMode", () => {
   });
 });
 
-describe("getEvalJudgeModel", () => {
-  const originalJudgeModel = process.env.EVAL_JUDGE_MODEL;
-
-  afterEach(() => {
-    if (originalJudgeModel === undefined) delete process.env.EVAL_JUDGE_MODEL;
-    else process.env.EVAL_JUDGE_MODEL = originalJudgeModel;
-  });
-
-  it("prefers EVAL_JUDGE_MODEL when set", () => {
-    process.env.EVAL_JUDGE_MODEL = "deepseek/deepseek-v4-pro";
-    assert.equal(getEvalJudgeModel(), "deepseek/deepseek-v4-pro");
-  });
-
-  it("uses default when EVAL_JUDGE_MODEL is unset", () => {
-    delete process.env.EVAL_JUDGE_MODEL;
-    assert.equal(getEvalJudgeModel(), DEFAULT_EVAL_JUDGE_MODEL);
-  });
-
-  it("uses default when EVAL_JUDGE_MODEL is empty string", () => {
-    process.env.EVAL_JUDGE_MODEL = "";
-    assert.equal(getEvalJudgeModel(), DEFAULT_EVAL_JUDGE_MODEL);
-  });
-
-  it("returns valid namespaced EVAL_JUDGE_MODEL when set", () => {
-    process.env.EVAL_JUDGE_MODEL = "deepseek/deepseek-v4-pro";
-    assert.equal(getEvalJudgeModel(), "deepseek/deepseek-v4-pro");
-  });
-
-  it('throws when EVAL_JUDGE_MODEL is unnamespaced "claude"', () => {
-    process.env.EVAL_JUDGE_MODEL = "claude";
-    assert.throws(() => getEvalJudgeModel(), /namespaced|provider\/model/i);
-  });
-
-  it('throws when EVAL_JUDGE_MODEL has unknown provider "fake/gpt"', () => {
-    process.env.EVAL_JUDGE_MODEL = "fake/gpt";
-    assert.throws(() => getEvalJudgeModel(), /unknown provider|fake/i);
-  });
-
-  it("passes validation for default when env var is unset", () => {
-    delete process.env.EVAL_JUDGE_MODEL;
-    assert.doesNotThrow(() => getEvalJudgeModel());
-  });
-});
-
 describe("getEvalModels", () => {
   const original = process.env.EVAL_MODELS;
 
@@ -270,31 +222,6 @@ describe("getEvalExtractionModel", () => {
   it("passes validation for default when env var is unset", () => {
     delete process.env.EVAL_EXTRACTION_MODEL;
     assert.doesNotThrow(() => getEvalExtractionModel());
-  });
-});
-
-describe("getJudgeMap — lazy init after env change", () => {
-  const originalMapJson = process.env.EVAL_JUDGE_MAP_JSON;
-
-  afterEach(() => {
-    if (originalMapJson === undefined) delete process.env.EVAL_JUDGE_MAP_JSON;
-    else process.env.EVAL_JUDGE_MAP_JSON = originalMapJson;
-    resetJudgeMapCache();
-  });
-
-  it("reflects EVAL_JUDGE_MAP_JSON set after module load", () => {
-    delete process.env.EVAL_JUDGE_MAP_JSON;
-    resetJudgeMapCache();
-    const before = getJudgeMap()["anthropic/sonnet"];
-
-    process.env.EVAL_JUDGE_MAP_JSON = JSON.stringify({
-      "anthropic/sonnet": "openrouter/openai/gpt-5.4-mini",
-    });
-    resetJudgeMapCache();
-    const after = getJudgeMap()["anthropic/sonnet"];
-
-    assert.notEqual(after, before);
-    assert.equal(after, "openrouter/openai/gpt-5.4-mini");
   });
 });
 

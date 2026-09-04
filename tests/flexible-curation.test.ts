@@ -64,7 +64,7 @@ function mockFlexiblePipelineSuccess() {
 
 describe("flexible curation — cover letter + wrapper response", () => {
   beforeEach(() => {
-    ensureEnv({ critiqueReviseEnabled: false });
+    ensureEnv();
     resetRedisClientForTest();
     injectSlidingWindowMock();
   });

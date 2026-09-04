@@ -1,62 +1,8 @@
 /**
- * Smoke helpers: threshold evaluation + redact-by-default artifacts (KTD9 / R18).
+ * Smoke helpers: redact-by-default artifacts.
  */
 import { basename, join } from "node:path";
-import { getEnvFloat, getEnvNumber } from "../../../lib/env";
 import type { CurationMode } from "./curation-mode";
-import type { JsonGroundingScore, JsonJdFitScore } from "./eval-judge";
-
-export function getSmokeGroundingMin(): number {
-  return Math.min(1, Math.max(0, getEnvFloat("SMOKE_GROUNDING_MIN", 0.7)));
-}
-
-export function getSmokeJdFitMin(): number {
-  return Math.min(5, Math.max(1, getEnvNumber("SMOKE_JD_FIT_MIN", 3)));
-}
-
-export type SmokeJudgeGateResult =
-  | { ok: true }
-  | { ok: false; reasons: string[] };
-
-/**
- * Fail closed on parseFailed / transport-shaped failures, then enforce mins (R11).
- */
-export function evaluateSmokeJudgeGates(
-  grounding: JsonGroundingScore,
-  jdFit: JsonJdFitScore,
-  mins: { groundingMin: number; jdFitMin: number } = {
-    groundingMin: getSmokeGroundingMin(),
-    jdFitMin: getSmokeJdFitMin(),
-  }
-): SmokeJudgeGateResult {
-  const reasons: string[] = [];
-
-  if (grounding.parseFailed) {
-    reasons.push("grounding judge parseFailed");
-  }
-  if (jdFit.parseFailed) {
-    reasons.push("jd-fit judge parseFailed");
-  }
-  if (reasons.length > 0) {
-    return { ok: false, reasons };
-  }
-
-  if (grounding.flaggedClaims.length > 0) {
-    reasons.push(
-      `grounding flaggedClaims (${grounding.flaggedClaims.length}) must be empty`
-    );
-  }
-  if (grounding.score < mins.groundingMin) {
-    reasons.push(
-      `grounding score ${grounding.score} < min ${mins.groundingMin}`
-    );
-  }
-  if (jdFit.score < mins.jdFitMin) {
-    reasons.push(`jd-fit score ${jdFit.score} < min ${mins.jdFitMin}`);
-  }
-
-  return reasons.length > 0 ? { ok: false, reasons } : { ok: true };
-}
 
 /** Safe filesystem slug from a JD path (basename without its terminal extension). */
 export function smokeArtifactSlug(jdPath: string): string {

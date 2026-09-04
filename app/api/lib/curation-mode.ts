@@ -191,21 +191,3 @@ export function applyCurationModePolicy(
   }
   return `${promptText}\n\n<curation_mode>\n${policy}\n</curation_mode>`;
 }
-
-/** Grounding-judge addendum so smoke scoring matches the requested mode. */
-export function groundingJudgeModeAddendum(mode: CurationMode): string {
-  if (mode === "strict") {
-    return `Curation mode for this run: strict.
-Category-style collapsed experience entries are NOT acceptable.
-Flag curated experience titles/employers that are not present as discrete master roles
-(unless they are verbatim master titles).`;
-  }
-
-  return `Curation mode for this run: flexible.
-Accept collapsing several master experience entries into one category-style summary role
-when the title/location/date span and bullets honestly summarize those master roles
-without inventing metrics or fake named employers.
-Strong JD-fit roles may lead; recent off-domain roles may be collapsed or omitted —
-that alone is not identity-breaking fabrication.
-Still flag invented metrics, tools, certs, and false named employers.`;
-}

@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import {
   applyCurationModePolicy,
   curationModePolicy,
-  groundingJudgeModeAddendum,
   isFlexibleWrapper,
   flexibleCoverLetter,
   CURATION_MODE_POLICY_PLACEHOLDER,
@@ -221,11 +220,6 @@ describe("curation-mode", () => {
     const out = applyCurationModePolicy("base prompt only", "strict");
     assert.match(out, /base prompt only/);
     assert.match(out, /<curation_mode>/);
-  });
-
-  it("grounding addendum matches mode", () => {
-    assert.match(groundingJudgeModeAddendum("strict"), /NOT acceptable/i);
-    assert.match(groundingJudgeModeAddendum("flexible"), /Accept collapsing/i);
   });
 
   describe("isFlexibleWrapper", () => {

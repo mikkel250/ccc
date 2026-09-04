@@ -6,8 +6,10 @@ artifact_contract: ce-unified-plan/v1
 artifact_readiness: requirements-only
 product_contract_source: ce-brainstorm
 execution: code
-status: deferred
+status: superseded
 ---
+
+> **Superseded** by [`2026-09-03-001-feat-retire-llm-judges-plan.md`](./2026-09-03-001-feat-retire-llm-judges-plan.md). LLM judges (smoke gates and on-path critique-revise) are retired from the personal-tool product. Do not implement this bakeoff.
 
 # Judge Model Bakeoff - Plan
 

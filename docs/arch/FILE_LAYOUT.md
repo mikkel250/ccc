@@ -14,12 +14,13 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │       └── lib/                  # All business logic lives here
 │           ├── llm.ts            # Multi-provider LLM client
 │           ├── curator-prompt.ts # JSON curator prompt (Langfuse cv-curator-json + fallback)
-│           ├── curation-mode.ts  # strict|flexible curation policy + judge addendum
+│           ├── curation-mode.ts  # strict|flexible curation policy
 │           ├── master-cv.ts      # MASTER_CV_JSON / MASTER_CV_PATH loader
 │           ├── cv-schema.ts      # Ajv draft-2020-12 validation + size limits
 │           ├── json-docx-builder.ts # Mechanical JSON → .docx (BUILDER_VERSION)
 │           ├── tailor-auth.ts    # Bearer shared-secret gate
-│           ├── smoke-helpers.ts  # Smoke judge gates + artifact redaction
+│           ├── smoke-helpers.ts  # Smoke artifact redaction + writes
+│           ├── smoke-runner.ts   # verifySmokePipeline — health → tailor → artifacts
 │           ├── chat-prompt.ts    # Chat assistant system prompt (legacy, no route yet)
 │           ├── jd-prompt.ts      # Job description analysis prompt (evaluation rubric inside)
 │           ├── prompts.ts        # Chat prompt builder (legacy, no route yet)
@@ -36,10 +37,9 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── redis.ts          # Shared Upstash Redis client singleton
 │           ├── rate-limit.ts     # Dual IP + secret-hash rate limiter
 │           ├── tailor-cv-validation.ts  # Request body validation
-│           ├── eval-schema.ts     # Judge prompts (incl. JSON smoke), JUDGE_MAP
+│           ├── eval-schema.ts     # Historical eval types/prompts (markdown-era)
 │           ├── eval-extract.ts    # JD metadata extraction (legacy eval helpers)
 │           ├── eval-format.ts     # 8-part format compliance checker
-│           ├── eval-judge.ts      # LLM judges (JSON smoke + legacy markdown scorers)
 │           └── eval-cv-helpers.ts # parseEvalModels / artifact payload helpers
 ├── knowledge-base/               # Legacy markdown corpus + test-jds/ for smoke defaults
 │   └── test-jds/                 # Raw recruiter JD fixtures (smoke default)
@@ -50,7 +50,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   └── formatDate.ts             # Date formatting utility
 ├── scripts/
 │   ├── create-langfuse-prompts.ts  # Upload prompts to Langfuse
-│   ├── e2e-tailor-cv.ts           # npm run smoke — live API + JSON judges
+│   ├── e2e-tailor-cv.ts           # npm run smoke — live API + artifacts
 │   ├── regen-docx.ts              # npm run regen-docx — mechanical rebuild
 │   ├── seed-eval-results.ts       # Seed historical eval-results artifacts
 │   └── verify-rate-limit.ts       # Live Upstash rate-limit check
@@ -58,7 +58,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── e2e/api.e2e.ts                     # Playwright API checks (Bearer / bypass)
 │   ├── curator-prompt.test.ts             # Curator prompt contract
 │   ├── json-docx-builder.test.ts          # Builder + regen CLI
-│   ├── smoke-helpers.test.ts              # Judge gates + redaction
+│   ├── smoke-helpers.test.ts              # Artifact redaction
 │   ├── master-cv.test.ts / cv-schema.test.ts
 │   ├── tailor-auth.test.ts
 │   ├── route.test.ts                      # Tailor route (mocked curator)

@@ -50,9 +50,7 @@ export function injectSlidingWindowMock(): void {
   );
 }
 
-export function ensureEnv(options?: {
-  critiqueReviseEnabled?: boolean;
-}): void {
+export function ensureEnv(): void {
   process.env.UPSTASH_REDIS_REST_URL =
     process.env.UPSTASH_REDIS_REST_URL || "https://test.upstash.io";
   process.env.UPSTASH_REDIS_REST_TOKEN =
@@ -60,9 +58,4 @@ export function ensureEnv(options?: {
   process.env.TAILOR_API_KEY = TEST_API_KEY;
   delete process.env.TAILOR_AUTH_INSECURE_BYPASS;
   process.env.NODE_ENV = "test";
-  if (options?.critiqueReviseEnabled === true) {
-    process.env.CRITIQUE_REVISE_ENABLED = "true";
-  } else if (options?.critiqueReviseEnabled === false) {
-    process.env.CRITIQUE_REVISE_ENABLED = "false";
-  }
 }
