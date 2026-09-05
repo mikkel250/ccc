@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Plans README roadmap</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #1a1f24;
+      --muted: #5c6770;
+      --line: #d7dde3;
+      --paper: #f7f5f0;
+      --card: #fff;
+      --accent: #0f5c4c;
+      --accent-soft: #e4f0ec;
+      --warn: #8a4b12;
+      --warn-soft: #f8eadb;
+      --cut: #6b3a44;
+      --cut-soft: #f4e8ea;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.5;
+    }
+    .wrap {
+      max-width: 52rem;
+      margin-inline: auto;
+      padding: 2rem 1.25rem 4rem;
+    }
+    header.meta {
+      border-bottom: 2px solid var(--ink);
+      padding-bottom: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+    header.meta h1 {
+      font-size: 1.75rem;
+      line-height: 1.2;
+      margin: 0 0 0.75rem;
+    }
+    .meta-list {
+      display: grid;
+      grid-template-columns: 7rem 1fr;
+      gap: 0.2rem 0.75rem;
+      font-size: 0.92rem;
+      max-width: 70ch;
+    }
+    .meta-list dt { color: var(--muted); font-weight: 500; }
+    .meta-list dd { margin: 0; }
+    nav.doc-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+      margin: 0 0 2rem;
+      font-size: 0.9rem;
+    }
+    nav.doc-nav a { color: var(--accent); }
+    section { margin-bottom: 2.5rem; }
+    h2 {
+      font-size: 1.25rem;
+      margin: 0 0 0.75rem;
+      padding-bottom: 0.35rem;
+      border-bottom: 1px solid var(--line);
+    }
+    h3 { font-size: 1.1rem; margin: 0 0 0.5rem; }
+    p, li { max-width: 70ch; }
+    .prose p { margin: 0 0 0.75rem; }
+    .axes { list-style: none; padding: 0; margin: 0; }
+    .axes li {
+      padding: 0.35rem 0;
+      border-bottom: 1px dashed var(--line);
+      max-width: none;
+    }
+    .jump {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      margin: 0 0 1.25rem;
+      padding: 0.75rem 1rem;
+      background: var(--accent-soft);
+      border-left: 3px solid var(--accent);
+    }
+    .jump a { color: var(--ink); text-decoration: none; font-weight: 500; }
+    .jump a:hover { text-decoration: underline; }
+    article.idea {
+      background: var(--card);
+      border: 1px solid var(--line);
+      padding: 1.15rem 1.2rem 1.3rem;
+      margin-bottom: 1.25rem;
+    }
+    .idea-kicker {
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+    .field { margin: 0.65rem 0 0; }
+    .field .lbl {
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.75rem; }
+    .chip {
+      font-size: 0.78rem;
+      padding: 0.15rem 0.5rem;
+      background: var(--paper);
+      border: 1px solid var(--line);
+    }
+    figure {
+      margin: 1rem 0 0.25rem;
+      overflow-x: auto;
+    }
+    figcaption {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-top: 0.35rem;
+      max-width: 70ch;
+    }
+    svg { display: block; max-width: 100%; height: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      margin-top: 0.5rem;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 0.5rem 0.6rem;
+      border-bottom: 1px solid var(--line);
+    }
+    th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); }
+    code {
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 0.86em;
+      background: var(--paper);
+      padding: 0.05em 0.3em;
+    }
+    footer.composition-signal {
+      margin-top: 3rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--line);
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="meta">
+      <h1>Ideation: Plans README roadmap</h1>
+      <dl class="meta-list">
+        <dt>Date</dt>
+        <dd><time datetime="2026-09-03">2026-09-03</time></dd>
+        <dt>Topic</dt>
+        <dd>plans-readme-roadmap</dd>
+        <dt>Focus</dt>
+        <dd>Fleshing out <code>docs/plans/README.md</code> as the north-star for finishing CCC as a personal pivot job-search tool</dd>
+        <dt>Mode</dt>
+        <dd>repo-grounded</dd>
+      </dl>
+    </header>
+
+    <nav class="doc-nav" aria-label="Document sections">
+      <a href="#grounding-context">Grounding</a>
+      <a href="#topic-axes">Axes</a>
+      <a href="#ranked-ideas">Ranked ideas</a>
+      <a href="#rejection-summary">Rejection summary</a>
+    </nav>
+
+    <section id="grounding-context">
+      <h2>Grounding Context</h2>
+      <div class="prose">
+        <p><strong>Codebase context.</strong> CCC is an API-only CV tailor. The finish line is a personal pivot job-search tool, not a frontend or multi-user product. <code>STRATEGY.md</code> owns thesis and tracks; <code>docs/plans/README.md</code> owns build order and status. One Active milestone (currently M4, smoke runner modular + live-API judges). M1–M2 are done; M3 and M4 may both be <code>in progress</code>; M5–M7 are <code>needs plan</code>. Status is manual — no git/CI sync.</p>
+        <p><strong>Past learnings.</strong> M4 should land before M6/M7 eval work. Tenure honesty (M5) is a credibility floor, not a scoreboard. Holistic “strong enough” (M6) is the pivot success signal. Parity (M7) wants a pinned matrix. Judge-model bakeoff is a parked, distinct track — not the same as M6 or M7.</p>
+        <p><strong>External context.</strong> Numbered outcome milestones plus one Active beat a vague Now/Next/Later list for a linear finish line. Stale roadmaps are worse than none. WIP=1 for human+agent teams still needs a place to name parked in-flight work.</p>
+      </div>
+    </section>
+
+    <section id="topic-axes">
+      <h2>Topic Axes</h2>
+      <ol class="axes">
+        <li><strong>remaining-milestones</strong> — how M5–M7 become real work instead of empty <code>needs plan</code> rows</li>
+        <li><strong>wip-active-focus</strong> — one Active vs dual in-progress M3+M4</li>
+        <li><strong>agent-what-next</strong> — session start and <code>/ce-work</code> vs newest-dated plan</li>
+        <li><strong>finish-line-backlog</strong> — personal-tool path vs STRATEGY tracks vs parked bakeoff</li>
+        <li><strong>maintenance-needs-plan</strong> — manual status, staleness, when to write the next plan</li>
+      </ol>
+    </section>
+
+    <section id="ranked-ideas">
+      <h2>Ranked Ideas</h2>
+      <nav class="jump" aria-label="Jump to ideas">
+        <a href="#idea-1">1. Copy-paste <code>/ce-work</code> path in Active</a>
+        <a href="#idea-2">2. Name the other in-progress row</a>
+        <a href="#idea-3">3. Seed M5–M7 from existing artifacts now</a>
+        <a href="#idea-4">4. Last-reviewed / reconciliation line</a>
+        <a href="#idea-5">5. Name the M4→M6→M7 chain in Unblocks</a>
+        <a href="#idea-6">6. Remaining-work on Active (M4 done-when)</a>
+      </nav>
+
+      <article class="idea" id="idea-1">
+        <p class="idea-kicker">1 · agent-what-next</p>
+        <h3>Copy-paste <code>/ce-work</code> path in Active</h3>
+        <p class="field"><span class="lbl">Description</span><br>
+          Put the exact plan path (or <code>/ce-work docs/plans/…</code> argv) in the Active block so a blank <code>/ce-work</code> does not glob the newest <code>implementation-ready</code> file. The roadmap plan itself is currently that newest file. AGENTS already says README Active wins; the skill still glob-selects unless given a path. Programmatic README parsing was deferred — this is the workaround that stays inside v1.</p>
+        <p class="field"><span class="lbl">Axis</span><br>agent-what-next</p>
+        <p class="field"><span class="lbl">Basis</span><br>
+          <code>direct:</code> R2 — Active is “the single milestone <code>/ce-work</code> and session start should target.” AE1 — agents must open the linked plan, not the newest date prefix. Roadmap plan defers “AGENTS.md hook telling <code>/ce-work</code> to parse README programmatically.” <code>ce-work</code> blank invocation: glob newest <code>implementation-ready</code> + <code>execution: code</code>.</p>
+        <p class="field"><span class="lbl">Rationale</span><br>
+          Session start can already read the README and still execute the wrong plan. A visible argv in Active closes that gap without inventing git status sync or a parser.</p>
+        <p class="field"><span class="lbl">Downsides</span><br>
+          Paths go stale when the linked plan changes; two plans on M4 still need an operator choice. Does not fix blank glob inside the skill itself.</p>
+        <div class="chips">
+          <span class="chip">Confidence 85%</span>
+          <span class="chip">Complexity Low</span>
+        </div>
+        <figure>
+          <svg viewBox="0 0 720 220" role="img" aria-labelledby="d1-title d1-desc">
+            <title id="d1-title">Blank ce-work vs Active path</title>
+            <desc id="d1-desc">Two flows from a session start: glob newest plan versus following the Active milestone path.</desc>
+            <rect x="8" y="8" width="704" height="204" fill="#f7f5f0" stroke="#d7dde3"/>
+            <text x="24" y="36" fill="#1a1f24" font-family="IBM Plex Sans, sans-serif" font-size="14" font-weight="600">Session start / blank /ce-work</text>
+            <rect x="24" y="56" width="200" height="48" fill="#fff" stroke="#1a1f24"/>
+            <text x="124" y="85" text-anchor="middle" fill="#1a1f24" font-family="IBM Plex Sans, sans-serif" font-size="13">Glob newest plan</text>
+            <rect x="24" y="140" width="200" height="48" fill="#e4f0ec" stroke="#0f5c4c"/>
+            <text x="124" y="169" text-anchor="middle" fill="#0f5c4c" font-family="IBM Plex Sans, sans-serif" font-size="13">Active argv path</text>
+            <path d="M224 80 H300" stroke="#8a4b12" stroke-width="2" fill="none"/>
+            <path d="M224 164 H300" stroke="#0f5c4c" stroke-width="2" fill="none"/>
+            <rect x="300" y="56" width="390" height="48" fill="#f8eadb" stroke="#8a4b12"/>
+            <text x="495" y="76" text-anchor="middle" fill="#8a4b12" font-family="IBM Plex Sans, sans-serif" font-size="13">2026-09-02 roadmap plan</text>
+            <text x="495" y="94" text-anchor="middle" fill="#8a4b12" font-family="IBM Plex Sans, sans-serif" font-size="12">newest implementation-ready</text>
+            <rect x="300" y="140" width="390" height="48" fill="#e4f0ec" stroke="#0f5c4c"/>
+            <text x="495" y="160" text-anchor="middle" fill="#0f5c4c" font-family="IBM Plex Sans, sans-serif" font-size="13">smoke extract / cover-letter plan</text>
+            <text x="495" y="178" text-anchor="middle" fill="#0f5c4c" font-family="IBM Plex Sans, sans-serif" font-size="12">what Active actually names</text>
+          </svg>
+          <figcaption>Blank glob follows date order. Active argv follows the north-star.</figcaption>
+        </figure>
+      </article>
+
+      <article class="idea" id="idea-2">
+        <p class="idea-kicker">2 · wip-active-focus</p>
+        <h3>Name the other in-progress row</h3>
+        <p class="field"><span class="lbl">Description</span><br>
+          Keep dual <code>in progress</code> (M3+M4) — that is intentional. Add one line under Active: <code>Not operating on: M3 — Flexible pivot…</code> so agents do not treat the other in-progress row as equally live. Do not invent paused/yard/timeout statuses; only “parked” already exists, and only for bakeoff in Backlog.</p>
+        <p class="field"><span class="lbl">Axis</span><br>wip-active-focus</p>
+        <p class="field"><span class="lbl">Basis</span><br>
+          <code>direct:</code> KTD2 — “M3 and M4 can both show <code>in progress</code>; Active milestone still names exactly one focus.” README table currently shows both as <code>in progress</code> with no visual distinction beyond the Active heading. R2 requires Active to answer “what should I work on next?” without inferring from the table.</p>
+        <p class="field"><span class="lbl">Rationale</span><br>
+          The table still looks like two live jobs. A single explicit non-focus line is cheaper than a new status vocabulary and still honors WIP=1 for the operator+agent pair.</p>
+        <p class="field"><span class="lbl">Downsides</span><br>
+          Another line to keep in sync when Active flips. If M3 later becomes Active, the line must move or disappear.</p>
+        <div class="chips">
+          <span class="chip">Confidence 75%</span>
+          <span class="chip">Complexity Low</span>
+        </div>
+        <figure>
+          <svg viewBox="0 0 720 180" role="img" aria-labelledby="d2-title d2-desc">
+            <title id="d2-title">One Active among two in-progress rows</title>
+            <desc id="d2-desc">M4 highlighted as Active; M3 still in progress but labeled not operating on.</desc>
+            <rect x="8" y="8" width="704" height="164" fill="#f7f5f0" stroke="#d7dde3"/>
+            <rect x="24" y="28" width="672" height="52" fill="#e4f0ec" stroke="#0f5c4c" stroke-width="2"/>
+            <text x="40" y="50" fill="#0f5c4c" font-family="IBM Plex Sans, sans-serif" font-size="14" font-weight="600">Active · M4 smoke runner</text>
+            <text x="40" y="68" fill="#0f5c4c" font-family="IBM Plex Sans, sans-serif" font-size="12">in progress — this session</text>
+            <rect x="24" y="96" width="672" height="52" fill="#fff" stroke="#d7dde3"/>
+            <text x="40" y="118" fill="#5c6770" font-family="IBM Plex Sans, sans-serif" font-size="14">Not operating on · M3 flexible posture</text>
+            <text x="40" y="136" fill="#5c6770" font-family="IBM Plex Sans, sans-serif" font-size="12">still in progress in the table — not this session’s target</text>
+          </svg>
+          <figcaption>Same statuses in the table; only Active plus a “not operating on” line pick the session.</figcaption>
+        </figure>
+      </article>
+
+      <article class="idea" id="idea-3">
+        <p class="idea-kicker">3 · remaining-milestones</p>
+        <h3>Seed M5–M7 from existing artifacts now</h3>
+        <p class="field"><span class="lbl">Description</span><br>
+          F3 only fires when <em>Active</em> shows <code>needs plan</code>. While M4 is Active, M5–M7 never get that trigger. Write short plan seeds now by harvesting what already exists: tenure rules in <code>curation-mode.ts</code> and STRATEGY, smoke judges for M6, bakeoff/parity notes for M7 — not three empty greenfield plans. Keep them as linked drafts or “needs plan” with a seed pointer until they become Active.</p>
+        <p class="field"><span class="lbl">Axis</span><br>remaining-milestones</p>
+        <p class="field"><span class="lbl">Basis</span><br>
+          <code>direct:</code> F3 trigger is “Active milestone shows <code>needs plan</code>.” M5–M7 rows already say <code>needs plan</code> while Active is M4. STRATEGY already names tenure honesty, holistic “strong enough,” and pinned parity. Prompt-level tenure “NEVER sum overlapping dates” already lives in curation-mode. This is not a claim that those files are done-when for the milestones — only that they are enough to start a plan.</p>
+        <p class="field"><span class="lbl">Rationale</span><br>
+          The remaining path is the finish line. If planning waits until each row becomes Active, the north-star stays a status table with three hollow rows.</p>
+        <p class="field"><span class="lbl">Downsides</span><br>
+          Risk of planning the wrong slice too early. Seeds can rot if M4’s smoke shape changes. Must not treat prompt snippets as shipped M5/M6/M7.</p>
+        <div class="chips">
+          <span class="chip">Confidence 70%</span>
+          <span class="chip">Complexity Medium</span>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-4">
+        <p class="idea-kicker">4 · maintenance-needs-plan</p>
+        <h3>Last-reviewed / reconciliation line</h3>
+        <p class="field"><span class="lbl">Description</span><br>
+          Add a dated “Last reviewed” (and optionally one-line “what changed”) under How to update. Operator or agent fills it when flipping Active or status. No git-derived automation. Complements the 14-day stale-<em>plan</em> signal, which does not catch a stale README.</p>
+        <p class="field"><span class="lbl">Axis</span><br>maintenance-needs-plan</p>
+        <p class="field"><span class="lbl">Basis</span><br>
+          <code>direct:</code> “Status is manual; do not invent automation that syncs from git.” How to update already lists the flip ritual but not when it last ran. Tests only assert Active heading + existing plan links — not that M4 still matches reality. External: stale roadmaps are worse than none.</p>
+        <p class="field"><span class="lbl">Rationale</span><br>
+          M4 may already be further along on <code>main</code> than the README says. A review date makes “is this north-star current?” a glance, not archaeology.</p>
+        <p class="field"><span class="lbl">Downsides</span><br>
+          Dates lie if nobody updates them. A false-fresh stamp is worse than no stamp unless How to update treats a missing/old date as a prompt to reconcile.</p>
+        <div class="chips">
+          <span class="chip">Confidence 80%</span>
+          <span class="chip">Complexity Low</span>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-5">
+        <p class="idea-kicker">5 · finish-line-backlog</p>
+        <h3>Name the M4→M6→M7 chain in Unblocks</h3>
+        <p class="field"><span class="lbl">Description</span><br>
+          Do not add a Depends-on column. Fill the fields that already exist: M4 Unblocks should name M6/M7 (and bakeoff as parked), Why-active should say the eval chain, not only “operator quality loop.” Leave bakeoff in Backlog — it is judge-model calibration, not M6 holistic success or M7 pinned parity.</p>
+        <p class="field"><span class="lbl">Axis</span><br>finish-line-backlog</p>
+        <p class="field"><span class="lbl">Basis</span><br>
+          <code>direct:</code> Why-active already says smoke “unblocks bakeoff / parity.” The table Unblocks cell for M4 only says “Operator quality loop.” M6/M7 Unblocks are outcome phrases, not predecessors. Bakeoff plan parks until smoke lands and treats holistic judge / parity as separate tracks. Finish-line paragraph already exists — this is chain visibility, not a new STRATEGY duplicate.</p>
+        <p class="field"><span class="lbl">Rationale</span><br>
+          Agents reading only the table miss why M4 is on the critical path to the finish line.</p>
+        <p class="field"><span class="lbl">Downsides</span><br>
+          Easy to over-claim M5 as optional if the chain is written as M4→M6→M7 only. Tenure honesty still sits on the finish line even if it is not in the eval pipeline.</p>
+        <div class="chips">
+          <span class="chip">Confidence 65%</span>
+          <span class="chip">Complexity Low</span>
+        </div>
+        <figure>
+          <svg viewBox="0 0 720 200" role="img" aria-labelledby="d5-title d5-desc">
+            <title id="d5-title">Finish-line chain vs parked bakeoff</title>
+            <desc id="d5-desc">Linear M4 to M6 to M7 with bakeoff parked off the critical path and M5 as a credibility floor beside the chain.</desc>
+            <rect x="8" y="8" width="704" height="184" fill="#f7f5f0" stroke="#d7dde3"/>
+            <rect x="24" y="40" width="140" height="48" fill="#e4f0ec" stroke="#0f5c4c"/>
+            <text x="94" y="69" text-anchor="middle" fill="#0f5c4c" font-family="IBM Plex Sans, sans-serif" font-size="14" font-weight="600">M4 smoke</text>
+            <rect x="220" y="40" width="140" height="48" fill="#fff" stroke="#1a1f24"/>
+            <text x="290" y="69" text-anchor="middle" fill="#1a1f24" font-family="IBM Plex Sans, sans-serif" font-size="14">M6 judge</text>
+            <rect x="416" y="40" width="140" height="48" fill="#fff" stroke="#1a1f24"/>
+            <text x="486" y="69" text-anchor="middle" fill="#1a1f24" font-family="IBM Plex Sans, sans-serif" font-size="14">M7 parity</text>
+            <path d="M164 64 H220" stroke="#1a1f24" stroke-width="2"/>
+            <path d="M360 64 H416" stroke="#1a1f24" stroke-width="2"/>
+            <rect x="220" y="120" width="140" height="48" fill="#fff" stroke="#5c6770" stroke-dasharray="4 3"/>
+            <text x="290" y="149" text-anchor="middle" fill="#5c6770" font-family="IBM Plex Sans, sans-serif" font-size="13">M5 tenure</text>
+            <rect x="560" y="40" width="132" height="48" fill="#f8eadb" stroke="#8a4b12"/>
+            <text x="626" y="69" text-anchor="middle" fill="#8a4b12" font-family="IBM Plex Sans, sans-serif" font-size="13">Bakeoff</text>
+            <text x="24" y="172" fill="#5c6770" font-family="IBM Plex Sans, sans-serif" font-size="12">Finish line uses M4–M7. Bakeoff stays backlog.</text>
+          </svg>
+          <figcaption>Eval pipeline is linear. Tenure sits beside it. Bakeoff stays parked.</figcaption>
+        </figure>
+      </article>
+
+      <article class="idea" id="idea-6">
+        <p class="idea-kicker">6 · wip-active-focus</p>
+        <h3>Remaining-work on Active (M4 done-when)</h3>
+        <p class="field"><span class="lbl">Description</span><br>
+          Add a short remaining-work / done-when list under Active so “in progress” has an exit. Do not claim smoke U3 is still open — extract may already be on <code>main</code>. The gap is that Active still names M4, links two plans, and has no checklist for what is left (modular runner, live judges, cover-letter DOCX, anything still blocked). Flip to done only when those bullets clear.</p>
+        <p class="field"><span class="lbl">Axis</span><br>wip-active-focus</p>
+        <p class="field"><span class="lbl">Basis</span><br>
+          <code>direct:</code> How to update: “When a milestone’s acceptance criteria are met, set its status to <code>done</code>.” Active currently has Outcome + Plans + Why-active, no remaining-work. Tests do not encode M4 completeness. Overrule of “U3 still open”: remaining-work is still useful after a sub-plan lands.</p>
+        <p class="field"><span class="lbl">Rationale</span><br>
+          Without an exit list, Active can freeze on M4 after the interesting extract work is merged, and the finish line stalls.</p>
+        <p class="field"><span class="lbl">Downsides</span><br>
+          Easy to turn into a second plan. Keep bullets operator-scale (3–5), not U-IDs duplicated from the linked plans.</p>
+        <div class="chips">
+          <span class="chip">Confidence 72%</span>
+          <span class="chip">Complexity Low</span>
+        </div>
+        <figure>
+          <svg viewBox="0 0 720 170" role="img" aria-labelledby="d6-title d6-desc">
+            <title id="d6-title">Active with remaining-work versus outcome-only</title>
+            <desc id="d6-desc">Left: Active names M4 and an outcome. Right: Active adds remaining-work bullets that define done.</desc>
+            <rect x="8" y="8" width="340" height="154" fill="#fff" stroke="#d7dde3"/>
+            <text x="24" y="36" fill="#5c6770" font-family="IBM Plex Sans, sans-serif" font-size="12">Today</text>
+            <text x="24" y="60" fill="#1a1f24" font-family="IBM Plex Sans, sans-serif" font-size="14" font-weight="600">M4 in progress</text>
+            <text x="24" y="84" fill="#5c6770" font-family="IBM Plex Sans, sans-serif" font-size="13">Outcome paragraph</text>
+            <text x="24" y="106" fill="#5c6770" font-family="IBM Plex Sans, sans-serif" font-size="13">Two plan links</text>
+            <text x="24" y="136" fill="#8a4b12" font-family="IBM Plex Sans, sans-serif" font-size="13">No exit condition</text>
+            <rect x="372" y="8" width="340" height="154" fill="#e4f0ec" stroke="#0f5c4c"/>
+            <text x="388" y="36" fill="#0f5c4c" font-family="IBM Plex Sans, sans-serif" font-size="12">Direction</text>
+            <text x="388" y="60" fill="#0f5c4c" font-family="IBM Plex Sans, sans-serif" font-size="14" font-weight="600">M4 in progress</text>
+            <text x="388" y="84" fill="#0f5c4c" font-family="IBM Plex Sans, sans-serif" font-size="13">Same outcome + links</text>
+            <text x="388" y="106" fill="#0f5c4c" font-family="IBM Plex Sans, sans-serif" font-size="13">Remaining: judges, DOCX, …</text>
+            <text x="388" y="136" fill="#0f5c4c" font-family="IBM Plex Sans, sans-serif" font-size="13">Done-when is visible</text>
+          </svg>
+          <figcaption>Outcome describes the destination; remaining-work says what still blocks the status flip.</figcaption>
+        </figure>
+      </article>
+    </section>
+
+    <section id="rejection-summary">
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Idea</th>
+            <th>Reason rejected</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>Absorb bakeoff into M6/M7</td>
+            <td>Bakeoff is judge-model calibration; M6/M7 are holistic success and pinned parity — distinct parked track.</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>Semantic test: Active must match an in-progress row</td>
+            <td>How to update allows Active on the next <code>not started</code> or <code>in progress</code> item.</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>Collapse M5–M7 into one finish-line DoD</td>
+            <td>KTD2 already split them into three outcome milestones.</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>ATIS-shaped labeled Active fields</td>
+            <td>No repo basis; invented taxonomy.</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>Finish-line STRATEGY checkboxes</td>
+            <td>Would duplicate STRATEGY tracks/metrics the README is forbidden to copy.</td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td>Shape Up appetite Next block</td>
+            <td>New section vs KTD1 (Active / Milestones / Backlog / How to update); overlaps idea 1.</td>
+          </tr>
+          <tr>
+            <td>7</td>
+            <td>paused / yard / timeout statuses</td>
+            <td>Invented vocabulary; only dual-WIP plus Backlog “parked” is real.</td>
+          </tr>
+          <tr>
+            <td>8</td>
+            <td>Depends-on column</td>
+            <td>Unblocks already exists; substance folded into idea 5.</td>
+          </tr>
+          <tr>
+            <td>9</td>
+            <td>Programmatic <code>/ce-work</code> README parse</td>
+            <td>Explicitly deferred out of v1; idea 1 is the in-scope workaround.</td>
+          </tr>
+          <tr>
+            <td>10</td>
+            <td>Git-derived status tests</td>
+            <td>Violates R9 (manual status, no git sync).</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer class="composition-signal">
+      Composed 2026-09-03T06:55Z by ce-ideate from focus <code>docs/plans/README.md</code> (fleshing out the personal-pivot roadmap).
+    </footer>
+  </div>
+</body>
+</html>
