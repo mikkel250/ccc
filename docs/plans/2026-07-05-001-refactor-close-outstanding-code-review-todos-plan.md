@@ -3,7 +3,10 @@ title: "refactor: Close outstanding code-review todos (tracing unification, prov
 date: 2026-07-05
 type: refactor
 origin: none — planning bootstrap from todos/ backlog
+status: shipped
 ---
+
+> **Shipped.** Claims below that `todos/012`–`014` remain pending are stale; those files are YAML-closed and filenames match. See `todos/README.md`.
 
 # refactor: Close outstanding code-review todos
 
@@ -277,8 +280,8 @@ flowchart LR
 **Dependencies:** U1–U5 complete.
 
 **Files:**
-- `todos/010-pending-p3-cache-isvalidip-regex-at-module-scope.md` — add `## Resolution` section documenting that `isValidIp` now uses `isIP()` from `node:net` (commit `ede0ad1`), no manual regex exists to hoist; update frontmatter `status: closed`.
-- `todos/012-pending-p2-tracing-unify-adapters-fix-typings.md`, `todos/013-pending-p3-extract-known-providers-leaf-module.md`, `todos/014-pending-p3-chaos-audit-minor-findings-batch.md` — add `## Work Log` entries per this plan's execution; update frontmatter `status: completed`.
+- `todos/010-closed-p3-cache-isvalidip-regex-at-module-scope.md` — add `## Resolution` section documenting that `isValidIp` now uses `isIP()` from `node:net` (commit `ede0ad1`), no manual regex exists to hoist; update frontmatter `status: closed`.
+- `todos/012-completed-p2-tracing-unify-adapters-fix-typings.md`, `todos/013-completed-p3-extract-known-providers-leaf-module.md`, `todos/014-completed-p3-chaos-audit-minor-findings-batch.md` — add `## Work Log` entries per this plan's execution; update frontmatter `status: completed`.
 
 **Approach:** Mirror the existing Work Log format used in `todos/006`–`009`, `011` (date, "By:", "Actions:", optional "Learnings:").
 

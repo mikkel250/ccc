@@ -3,6 +3,7 @@ title: "Extract Entrypoint Complexity — Route Pipeline, Smoke Library, Schema 
 type: refactor
 date: 2026-07-23
 deepened: 2026-07-30
+status: shipped
 ---
 
 # Extract Entrypoint Complexity
@@ -11,9 +12,7 @@ deepened: 2026-07-30
 
 Three independent structural refactorings to pull orchestration and configuration out of entrypoint files into reusable, testable library modules. No behavior changes. All three follow existing conventions: discriminated unions, named exports, plain object DI bag, env-var-driven configuration.
 
-**Status (2026-07-30):** U1 (schema path) and U2 (route pipeline) are complete and verified on `main`. U3 (smoke runner library) implemented on `feature/smoke-runner-extract`.
-
-**Branch:** `feature/smoke-runner-extract` (U3).
+**Status (2026-09-05):** U1, U2, and U3 are on `main` (`app/api/lib/smoke-runner.ts`, imported by `scripts/e2e-tailor-cv.ts`). Earlier note that U3 lived only on `feature/smoke-runner-extract` is stale.
 
 ## Problem Statement
 

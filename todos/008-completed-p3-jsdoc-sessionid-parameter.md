@@ -66,7 +66,7 @@ export async function checkRateLimit(
 ## Resources
 
 - **Plan:** `docs/plans/2026-06-12-feat-upstash-redis-rate-limit-plan.md` — "Flexible key" section
-- **Related P2:** `todos/004-pending-p2-dead-code-ratelimitkey-route.md`
+- **Related P2:** `todos/004-done-p2-dead-code-ratelimitkey-route.md`
 
 ## Acceptance Criteria
 

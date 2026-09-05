@@ -101,7 +101,9 @@ Document findings in the active plan file under `docs/plans/` or create a soluti
 
 **Before any non-trivial work (planning, implementation, or review):** read, in order, only what you need — do not load the whole tree by default.
 
-**Stale plan check:** plan filenames include the creation date. If the most recent plan in `docs/plans/` is more than 14 days old, treat that as a staleness *signal* and ask the user — but when `docs/plans/README.md` exists, its **Active milestone** (and linked plan) is authoritative for what to work on, even if a newer-dated plan file exists. Do not generate or guess today's date — run `date +%Y-%m-%d` if you need to verify it.
+**Stale plan check:** plan filenames include the creation date. If the most recent plan in `docs/plans/` is more than 14 days old, treat that as a staleness *signal* and ask the user — but when `docs/plans/README.md` exists, its **Active milestone** (and linked plan) is authoritative for what to work on, even if a newer-dated plan file exists. If Active says no in-progress plan, halt — do not invent work from `todos/` globs or from historical `implementation-ready` stamps. Do not generate or guess today's date — run `date +%Y-%m-%d` if you need to verify it.
+
+**Work queues:** Trust `docs/plans/README.md` for what to build next. Trust YAML `status:` in `todos/` (see `todos/README.md`) — never select work by globbing `*-pending-*`. Closed todos with unchecked acceptance boxes are not a queue. STRATEGY “Not working on” is a deny-list: do not `/ce-work` a plan whose topic is judges-in-the-loop or flexible-as-commercial-path. Living review leftovers live in `docs/residual-review-findings/` (YAML `execution: code` vs report-only).
 
 | When | Read (in order) | Purpose |
 |------|-----------------|---------|

@@ -1,3 +1,11 @@
+---
+status: open
+execution: code
+priority: p2
+plan: docs/plans/2026-09-03-001-feat-retire-llm-judges-plan.md
+github_issue: 38
+---
+
 # Residual Review Findings
 
 Branch: `feature/retire-llm-judges`
@@ -11,6 +19,8 @@ Eligible review-followup applies were skipped: remaining actionable item is dedi
 - P2 `app/api/lib/eval-parse.ts:5` — Dedicated eval-parse unit tests were deleted with eval-judge — https://github.com/mikkel250/ccc/issues/38
 
 ### Settled-conflict (report-only; do not revert)
+
+`execution: report-only` — do not treat these as pickable work.
 
 - P1 Smoke CLI no longer fails on judge gates — conflicts with KTD2 (drop smoke judge gates). Routed advisory.
 - P1 `verifySmokePipeline` signature dropped master/judge fields — conflicts with KTD2. In-repo callers updated.

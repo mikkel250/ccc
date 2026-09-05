@@ -7,7 +7,10 @@ artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
 product_contract_source: ce-brainstorm
 execution: code
+status: shipped
 ---
+
+> **Shipped** (`docs/plans/README.md` + AGENTS session-start). First-pass pivot / live-API-judge milestone table is superseded by the 2026-09-05 README reconcile against `STRATEGY.md` (no in-progress plan; judges retired).
 
 # Plans README Roadmap - Plan
 
