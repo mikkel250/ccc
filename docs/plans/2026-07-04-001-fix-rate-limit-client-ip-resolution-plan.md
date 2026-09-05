@@ -1,11 +1,13 @@
 # fix: Resolve Rate-Limit Client IP Resolution and Unknown-IP DoS Bucket
 
+> **Shipped.** `todos/000` is closed (`todos/000-completed-p1-resolve-unknown-ip-global-bucket.md`).
+
 **Created:** 2026-07-04
 **Branch:** `feature/rate-limit-unknown-ip-fastfollow`
 
 ## Summary
 
-Verifying the Upstash Redis rate limiter (`npm test`, `npm run build`, `tsc --noEmit`) surfaced two real defects, not just coverage gaps: `npm run build` currently fails (`ServiceError` doesn't accept the `cause` option `rate-limit.ts` already passes it), and `NextRequest.ip` — the property `parseClientIp` depends on — was removed in Next.js 15. The second defect means the connecting-peer IP is `undefined` for every request in production today, so the `TRUSTED_PROXIES` peer-check never executes and **all traffic collapses into the single global "unknown" Redis bucket** described in `todos/000-pending-p1-resolve-unknown-ip-global-bucket.md` — unconditionally, not just when `TRUSTED_PROXIES` is misconfigured. This plan fixes the build, redesigns client-IP resolution around what a Next.js Route Handler can actually see on Railway, closes `todos/000`, and adds a live smoke-test script the user will run with real Upstash credentials.
+Verifying the Upstash Redis rate limiter (`npm test`, `npm run build`, `tsc --noEmit`) surfaced two real defects, not just coverage gaps: `npm run build` currently fails (`ServiceError` doesn't accept the `cause` option `rate-limit.ts` already passes it), and `NextRequest.ip` — the property `parseClientIp` depends on — was removed in Next.js 15. The second defect means the connecting-peer IP is `undefined` for every request in production today, so the `TRUSTED_PROXIES` peer-check never executes and **all traffic collapses into the single global "unknown" Redis bucket** described in `todos/000-completed-p1-resolve-unknown-ip-global-bucket.md` — unconditionally, not just when `TRUSTED_PROXIES` is misconfigured. This plan fixes the build, redesigns client-IP resolution around what a Next.js Route Handler can actually see on Railway, closes `todos/000`, and adds a live smoke-test script the user will run with real Upstash credentials.
 
 ---
 
@@ -14,7 +16,7 @@ Verifying the Upstash Redis rate limiter (`npm test`, `npm run build`, `tsc --no
 - `npm run build` fails: `app/api/lib/rate-limit.ts:107` calls `new ServiceError(message, { cause: error })`, but `ServiceError`'s constructor only accepts `message`. TypeScript rejects the call; the error path's `cause`-preservation (documented as already working in `docs/solutions/upstash-redis-rate-limit-migration.md`) has never actually compiled.
 - `app/api/tailor-cv/route.ts:28` reads `request.ip`, a property Next.js 15 removed from `NextRequest` (confirmed via `tsc --noEmit` and Next.js's v15 upgrade guide). There is no hosting-provider-agnostic replacement built into the framework, and `@vercel/functions` only works on Vercel — this app deploys on Railway (`docs/arch/README.md`).
 - Consequence: `parseClientIp`'s `TRUSTED_PROXIES` peer-validation branch is unreachable dead code. Every request's `peerIp` is `"unknown"`, so `isValidIp(peerIp)` fails and the function always returns `"unknown"` — the exact global shared-bucket DoS risk `todos/000` flags, except unconditional rather than configuration-dependent.
-- `todos/000-pending-p1-resolve-unknown-ip-global-bucket.md` was explicitly deferred to a fast-follow PR after the Redis migration merged (`docs/solutions/upstash-redis-rate-limit-migration.md` cross-references it as still open).
+- `todos/000-completed-p1-resolve-unknown-ip-global-bucket.md` was explicitly deferred to a fast-follow PR after the Redis migration merged (`docs/solutions/upstash-redis-rate-limit-migration.md` cross-references it as still open).
 
 ---
 
@@ -23,7 +25,7 @@ Verifying the Upstash Redis rate limiter (`npm test`, `npm run build`, `tsc --no
 - `npm run build` and `npm test` pass with no type errors introduced by the rate-limit/error-handling code path.
 - Client IP resolution works within the constraints of a Next.js 15 Route Handler on Railway (no raw peer-socket access, no `@vercel/functions`).
 - The rate limiter no longer pools all unidentified traffic into one shared global bucket; a request whose IP truly cannot be determined is rejected outright rather than silently sharing state with every other unresolved request.
-- `todos/000-pending-p1-resolve-unknown-ip-global-bucket.md` is closed out (status + resolution recorded) once the fix lands.
+- `todos/000-completed-p1-resolve-unknown-ip-global-bucket.md` is closed out (status + resolution recorded) once the fix lands.
 - A live/manual verification path exists for exercising the real Upstash-backed limiter once credentials are configured, separate from the existing mocked unit tests.
 
 ---
@@ -71,7 +73,7 @@ Verifying the Upstash Redis rate limiter (`npm test`, `npm run build`, `tsc --no
 
 **Goal:** Make `parseClientIp` work under Next.js 15's actual API surface, stop pooling all unresolved traffic into one bucket, and close `todos/000`.
 
-**Requirements:** Client-IP-resolution and no-shared-bucket requirements above; closes `todos/000-pending-p1-resolve-unknown-ip-global-bucket.md`.
+**Requirements:** Client-IP-resolution and no-shared-bucket requirements above; closes `todos/000-completed-p1-resolve-unknown-ip-global-bucket.md`.
 
 **Dependencies:** U1 (shares the route's error-handling path; sequencing avoids touching the same file's build-breaking area twice).
 
@@ -79,7 +81,7 @@ Verifying the Upstash Redis rate limiter (`npm test`, `npm run build`, `tsc --no
 - `app/api/tailor-cv/route.ts` — modify (`parseClientIp`, `POST` handler, remove `TRUSTED_PROXIES`)
 - `.env.example` — modify (remove `TRUSTED_PROXIES` entry)
 - `tests/route.test.ts` — modify
-- `todos/000-pending-p1-resolve-unknown-ip-global-bucket.md` — modify (close out with resolution)
+- `todos/000-completed-p1-resolve-unknown-ip-global-bucket.md` — modify (close out with resolution)
 
 **Approach:**
 - Rewrite `parseClientIp(request)`: read `x-forwarded-for` only, split on `,`, trim entries, take the **last** non-empty entry, validate with the existing `isValidIp`. No match → return `"unknown"`. Drop `request.ip`, `TRUSTED_PROXIES`, and `x-real-ip` handling — all three were only meaningful under the now-impossible peer-validation design.
@@ -173,5 +175,5 @@ print summary; exit 0 if all assertions held, else exit 1
 - `tsc --noEmit` and `npm run build` output (this session) — confirmed both defects directly.
 - Next.js v15 upgrade guide and [PR #68379](https://github.com/vercel/next.js/pull/68379) ("breaking: remove `geo` and `ip` from `NextRequest`") — confirmed `.ip` removal and the lack of a framework-level, hosting-agnostic replacement.
 - `docs/solutions/upstash-redis-rate-limit-migration.md` — migration history, prior review findings, and the original (now superseded) assumption that `cause` propagation already worked.
-- `todos/000-pending-p1-resolve-unknown-ip-global-bucket.md` — the deferred fast-follow item this plan closes.
+- `todos/000-completed-p1-resolve-unknown-ip-global-bucket.md` — the deferred fast-follow item this plan closes.
 - `docs/arch/README.md` — confirmed Railway deployment (no Vercel, no Edge Functions), ruling out `@vercel/functions`.

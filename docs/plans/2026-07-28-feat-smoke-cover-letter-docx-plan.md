@@ -6,7 +6,10 @@ artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
 product_contract_source: ce-plan-bootstrap
 execution: code
+status: shipped
 ---
+
+> **Shipped** on `main` (cover-letter DOCX write + tests). Judge-gate wording in this body is obsolete.
 
 # feat: Write flexible smoke cover letter as DOCX
 

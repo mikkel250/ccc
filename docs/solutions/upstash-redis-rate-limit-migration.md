@@ -159,6 +159,6 @@ All three P3 items (type-safe mocks without `as any`, config dedup using `getRat
 
 - **`docs/solutions/api-hardening-typed-errors-and-map-cleanup.md`** — Previous hardening pass on the in-memory rate limiter (typed errors, per-IP promise chains, idle-prune timers). The Redis migration replaces the implementation hardened in that pass.
 - **`docs/plans/2026-06-12-feat-upstash-redis-rate-limit-plan.md`** — Full Tier 3 review with all findings and validation.
-- **`todos/000-pending-p1-resolve-unknown-ip-global-bucket.md`** — Deferred: global "unknown" IP bucket creates cross-user DoS risk when `TRUSTED_PROXIES` is unset.
+- **`todos/000-completed-p1-resolve-unknown-ip-global-bucket.md`** — Closed by the client-IP resolution plan; filename matches YAML `status: completed`.
 - **`docs/brainstorms/2026-06-12-upstash-redis-rate-limit-brainstorm.md`** — Design exploration that led to the plan.
 - **`docs/arch/README.md`** — Architecture decisions and stack documentation.

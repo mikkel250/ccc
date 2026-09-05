@@ -60,17 +60,6 @@
       margin: 0.35rem 0 0.75rem;
       line-height: 1.2;
     }
-    .meta-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.45rem 1.25rem;
-      margin: 0;
-      padding: 0;
-      list-style: none;
-      font-size: 0.9rem;
-      color: var(--muted);
-    }
-    .meta-list dt { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; }
     .meta-grid {
       display: grid;
       grid-template-columns: auto 1fr;
@@ -104,7 +93,7 @@
     }
     h3 { font-size: 1.08rem; margin: 1.4rem 0 0.5rem; }
     p { max-width: 70ch; }
-    code, .mono {
+    code {
       font-family: "IBM Plex Mono", ui-monospace, monospace;
       font-size: 0.86em;
     }
@@ -190,6 +179,13 @@
     strong { color: inherit; font-weight: 600; }
     .jump { font-size: 0.92rem; }
     .jump ol { margin: 0.4rem 0 0; }
+    .callout {
+      background: var(--accent-soft);
+      color: var(--accent-text);
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      max-width: 70ch;
+    }
   </style>
 </head>
 <body>
@@ -199,11 +195,11 @@
       <h1>Agent-loop backlog</h1>
       <dl class="meta-grid">
         <dt>Date</dt>
-        <dd><time datetime="2026-09-04">2026-09-04</time></dd>
+        <dd><time datetime="2026-09-04">2026-09-04</time> (rewritten <time datetime="2026-09-05">2026-09-05</time>)</dd>
         <dt>Topic</dt>
         <dd>agent-loop-backlog</dd>
         <dt>Focus</dt>
-        <dd>Tighten the roadmap, open todos, and plans so an agent can loop through outstanding items</dd>
+        <dd>Tighten the roadmap, open todos, and plans so an agent can loop through outstanding items — ranked against the post-merge board</dd>
         <dt>Mode</dt>
         <dd>repo-grounded</dd>
       </dl>
@@ -221,9 +217,9 @@
 
     <section id="grounding-context">
       <h2>Grounding Context</h2>
-      <p>CCC keeps outstanding work in four unlinked queues: <code>STRATEGY.md</code> tracks (the de facto roadmap), dated files in <code>docs/plans/</code>, CE review receipts in <code>todos/</code>, and deferrals in <code>docs/residual-review-findings/</code>. There is no <code>docs/plans/README.md</code>, no <code>todos/README.md</code>, and no BACKLOG or HANDOFF manifest. Session start in <code>AGENTS.md</code> is “most recent plan in <code>docs/plans/</code>”; the 14-day stale check applies only to that newest file.</p>
-      <p>Thirty of 33 todo filenames still contain <code>pending</code>; YAML <code>status: pending</code> matches zero files. Closed-status vocabulary is five synonyms (<code>done</code>, <code>completed</code>, <code>closed</code>, <code>complete</code>, <code>cancelled</code>). Numeric <code>issue_id</code>s 001–009 each collide. Several closed todos still carry unchecked acceptance boxes. The active plan is <code>2026-09-03-001-feat-retire-llm-judges-plan.md</code> (implementation-ready). Older July plans (JSON curator, flexible critique-loop, smoke cover letter) remain <code>artifact_readiness: implementation-ready</code> while STRATEGY lists LLM-as-judge and flexible-as-commercial-path under “Not working on.” The bakeoff plan is already stamped superseded. Residuals hold one living item (eval-parse tests, GitHub #38) plus a prose settled-conflict block with no YAML status.</p>
-      <p>STRATEGY tracks are ongoing operator goals (dial <code>strict</code> quality, one Master CV, two fronts / one API), not shaped code stories. Curator prompt craft is already named “not a unit” on the active plan. Buried product decisions remain inside completed batch todos (for example env-snapshot semantics in <code>todos/014</code>). External prior art converges on the same split: tickets as the durable graph, loops as actuators, read-point verification because ~25% of ticket premises go stale, WIP=1 because review is the bottleneck, and a stale executable roadmap being worse than none.</p>
+      <p class="callout">Post-merge (2026-09-05): PRs #40–#42 landed judge retirement, this ideation file, and <code>docs/plans/README.md</code>. Cleanup on this branch renamed closed todo files to match YAML and stamped shipped/parked plans. The README still has <strong>no in-progress implementation plan</strong>.</p>
+      <p>CCC keeps history in four queues: <code>STRATEGY.md</code> (in-field inbound thesis; not pivot-as-commercial-path; not LLM-as-judge), <code>docs/plans/</code> (CE plans + milestone README), <code>todos/</code> (review receipts), and <code>docs/residual-review-findings/</code>. Session start reads the README’s Active milestone, then linked plans — not newest-by-date.</p>
+      <p>On <code>main</code> the smoke library, cover-letter DOCX write, and single-pass tailor are shipped. Todo filenames now match YAML (all closed). Historical plans carry shipped/parked/superseded stamps. The only named leftover is eval-parse unit tests (GitHub #38). Next engineering that needs a plan: two fronts / inbox scan. Operator focus: in-field <code>strict</code> submit bar — not a plan.</p>
     </section>
 
     <section id="topic-axes">
@@ -242,149 +238,106 @@
       <nav class="jump" aria-label="Idea jump list">
         <p class="eyebrow">Jump</p>
         <ol>
-          <li><a href="#idea-1">Three work classes</a></li>
-          <li><a href="#idea-2">Compile-or-halt workset</a></li>
-          <li><a href="#idea-3">Museum plus overlay</a></li>
-          <li><a href="#idea-4">Residual YAML as the living queue</a></li>
-          <li><a href="#idea-5">Checkbox fossils are not a queue</a></li>
+          <li><a href="#idea-1">Enforce the four work classes</a></li>
+          <li><a href="#idea-2">Museum plus overlay</a></li>
+          <li><a href="#idea-3">Residual YAML on the one living item</a></li>
+          <li><a href="#idea-4">Checkbox fossils are not a queue</a></li>
+          <li><a href="#idea-5">Compile-or-halt is mostly landed</a></li>
         </ol>
       </nav>
 
       <article class="idea" id="idea-1">
         <p class="rank">1</p>
-        <h3>Three work classes</h3>
+        <h3>Enforce the four work classes</h3>
         <div class="chips">
           <span class="chip axis">Human-gate vs agent-executable split</span>
-          <span class="chip high">Conf 90%</span>
-          <span class="chip cx">Complexity Medium</span>
+          <span class="chip high">Conf 92%</span>
+          <span class="chip cx">Complexity Low</span>
         </div>
         <p class="field-label">Description</p>
-        <p>Tag every live artifact as one of four classes before any loop runs: <strong>agent-executable</strong> (shaped code with acceptance an agent can check), <strong>operator</strong> (STRATEGY tracks, submit-bar reads, prompt craft), <strong>needs-product-decision</strong> (buried calls such as env-snapshot semantics), and <strong>report-only / self</strong> (settled-conflict residuals, STRATEGY “Not working on”, superseded plans). The loop may pick only the first class. Today that set is small: dedicated eval-parse tests (GitHub #38) plus whatever the active retire-judges plan still has open. Tracks stay unshaped commander’s intent; they do not become overnight PRs.</p>
+        <p>The plans README already <em>states</em> the split. Encode it so a looping agent cannot ignore it: <strong>agent-executable</strong> (eval-parse tests #38 only), <strong>operator</strong> (in-field submit bar), <strong>needs-plan</strong> (inbox scan / M8), <strong>report-only</strong> (superseded bakeoff, retired M6, parked flexible, YAML-closed todos). AGENTS.md: never glob <code>*-pending-*</code>; never auto-select a plan the README does not name as active; empty Active is a successful halt. Do not add <code>ce-next</code> or a workset JSON — the README is the workset.</p>
         <div class="diagram" aria-hidden="true">
-          <svg viewBox="0 0 840 220" width="100%" height="220" role="img" aria-label="Four work classes feeding a loop that only accepts agent-executable items">
+          <svg viewBox="0 0 840 220" width="100%" height="220" role="img" aria-label="Four classes; only eval-parse enters the loop">
             <rect x="8" y="36" width="175" height="72" rx="8" fill="#dcfce7" stroke="#14532d"/>
             <text x="95" y="68" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600" fill="#14532d">agent-executable</text>
             <text x="95" y="88" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#14532d">eval-parse #38</text>
             <rect x="223" y="36" width="175" height="72" rx="8" fill="#dbe7f3" stroke="#1e3a5f"/>
             <text x="310" y="68" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600" fill="#1e3a5f">operator</text>
-            <text x="310" y="88" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#1e3a5f">STRATEGY tracks</text>
+            <text x="310" y="88" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#1e3a5f">strict submit bar</text>
             <rect x="438" y="36" width="175" height="72" rx="8" fill="#fef3c7" stroke="#854d0e"/>
-            <text x="525" y="68" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600" fill="#854d0e">needs-decision</text>
-            <text x="525" y="88" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#854d0e">todos/014 L1-11</text>
+            <text x="525" y="68" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600" fill="#854d0e">needs-plan</text>
+            <text x="525" y="88" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#854d0e">inbox scan M8</text>
             <rect x="653" y="36" width="175" height="72" rx="8" fill="#ece6dc" stroke="#5c564e"/>
             <text x="740" y="68" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600" fill="#1c1916">report-only</text>
-            <text x="740" y="88" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#5c564e">settled-conflict</text>
+            <text x="740" y="88" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#5c564e">todos YAML-closed</text>
             <path d="M95 108 L95 148 L420 148" fill="none" stroke="#14532d" stroke-width="2"/>
             <polygon points="420,142 434,148 420,154" fill="#14532d"/>
             <rect x="434" y="128" width="170" height="40" rx="8" fill="#9a3412"/>
             <text x="519" y="153" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600" fill="#fbf7f0">agent loop</text>
-            <text x="310" y="188" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#5c564e">Only the green class enters the loop. The other three halt or park.</text>
+            <text x="310" y="188" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#5c564e">README Active is empty. Only green is pickable. Halt is success.</text>
           </svg>
         </div>
-        <p class="diagram-cap">The loop is an actuator, not a backlog groomer. Unshaped tracks and deny-listed topics never become pickable work.</p>
+        <p class="diagram-cap">Complexity dropped from Medium to Low: the board already classifies; remaining work is AGENTS invariants plus one residual.</p>
         <p class="field-label">Basis</p>
-        <p><code>direct:</code> STRATEGY in-field track is “Dial the <code>strict</code> prompt until… submit bar”; active plan: “Curator prompt craft — Ongoing operator work, not a unit here.” Residual remaining actionable item is eval-parse unit tests; settled-conflict heading is “report-only; do not revert.” <code>todos/014</code> L1-11: “needs a product decision.” <code>AGENTS.md</code>: internal ambiguity → stop and escalate.</p>
+        <p><code>direct:</code> <code>docs/plans/README.md</code> Active = “No in-progress implementation plan”; named leftover = eval-parse tests; operator = in-field submit bar; M8 = needs plan. STRATEGY “Not working on” includes pivot commercial path and LLM-as-judge. Zero YAML <code>status: pending</code> in <code>todos/</code>.</p>
         <p class="field-label">Rationale</p>
-        <p>Filename globbing currently implies ~30 open todos. YAML says zero. A loop aimed at “all outstanding items” will either invent work from those names or chew STRATEGY tracks the repo already forbade agents to guess. Classification is the difference between an overnight agent and a false-backlog generator.</p>
+        <p>Yesterday this idea was “invent a taxonomy.” Today the taxonomy is the README. The remaining risk is an agent that still greps filenames or July <code>implementation-ready</code> stamps and manufactures a backlog.</p>
         <p class="field-label">Downsides</p>
-        <p>A new <code>execution:</code> field can itself go stale. <code>/ce-code-review</code> still writes <code>todos/</code>, so new receipts must be classified on arrival or they re-enter the glob. Operator tracks still need a human cadence; this idea does not ticketize quality work.</p>
+        <p>AGENTS.md invariants rot if the next <code>/ce-code-review</code> dump is not classified on arrival. Empty-Active-as-success feels like failure unless the halt message prints operator + needs-plan lanes.</p>
       </article>
 
       <article class="idea" id="idea-2">
         <p class="rank">2</p>
-        <h3>Compile-or-halt workset</h3>
+        <h3>Museum plus overlay</h3>
         <div class="chips">
-          <span class="chip axis">Agent-loop contract</span>
+          <span class="chip axis">Plan lifecycle and staleness</span>
           <span class="chip high">Conf 88%</span>
-          <span class="chip cx">Complexity Medium</span>
+          <span class="chip cx">Complexity Low</span>
         </div>
         <p class="field-label">Description</p>
-        <p>Before <code>/ce-work</code> writes a file, compile a pick|skip workset from YAML <code>status:</code> (not filenames), STRATEGY “Not working on” as a deny-list, and residual settled-conflict as skip. Rewrite the AGENTS session-start row: read STRATEGY, then only the pointed plan — date-sort is a fallback that must ask. An empty pick set is a successful tick: print operator tracks and halt. Never glob <code>*-pending-*</code>. Execute at most one shaped story per invocation, then Review — matching the existing Plan → Work → Review → Compound cycle rather than a while-loop over a fake queue.</p>
+        <p>Do not rename 30 <code>*-pending-*</code> files or rewrite protected plan bodies. Filenames stay immutable IDs. Add a thin overlay: liveness on July plans still stamped <code>implementation-ready</code> that contradict STRATEGY, plus a one-line notice that extract-entrypoint U3 landed on <code>main</code> (the plan body still points at <code>feature/smoke-runner-extract</code>). Bakeoff’s <code>status: superseded</code> is the pattern. Ban glob-as-queue in AGENTS.md beside “never write on <code>main</code>.”</p>
         <div class="diagram" aria-hidden="true">
-          <svg viewBox="0 0 840 168" width="100%" height="168" role="img" aria-label="Compile YAML and deny-list into pick or skip, then halt or run one story">
-            <rect x="10" y="48" width="140" height="56" rx="8" fill="#dbe7f3" stroke="#1e3a5f"/>
-            <text x="80" y="73" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12" font-weight="600" fill="#1e3a5f">YAML status</text>
-            <text x="80" y="90" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#1e3a5f">not filename</text>
-            <rect x="170" y="48" width="140" height="56" rx="8" fill="#f3e2d4" stroke="#9a3412"/>
-            <text x="240" y="73" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12" font-weight="600" fill="#7c2d12">STRATEGY deny</text>
-            <text x="240" y="90" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#7c2d12">Not working on</text>
-            <rect x="330" y="48" width="140" height="56" rx="8" fill="#ece6dc" stroke="#5c564e"/>
-            <text x="400" y="73" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12" font-weight="600" fill="#1c1916">residuals</text>
-            <text x="400" y="90" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5c564e">skip self</text>
-            <path d="M150 76 L170 76" stroke="#1c1916" stroke-width="1.5"/>
-            <path d="M310 76 L330 76" stroke="#1c1916" stroke-width="1.5"/>
-            <path d="M470 76 L500 76" stroke="#1c1916" stroke-width="1.5"/>
-            <polygon points="500,70 514,76 500,82" fill="#1c1916"/>
-            <rect x="514" y="44" width="120" height="64" rx="8" fill="#1c1916"/>
-            <text x="574" y="72" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600" fill="#fbf7f0">compile</text>
-            <text x="574" y="90" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#f4efe6">pick | skip</text>
-            <path d="M634 60 L670 36 L690 36" fill="none" stroke="#14532d" stroke-width="1.5"/>
-            <text x="762" y="40" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#14532d">one story → Review</text>
-            <path d="M634 92 L670 128 L690 128" fill="none" stroke="#9a3412" stroke-width="1.5"/>
-            <text x="762" y="132" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#9a3412">empty → halt (success)</text>
+          <svg viewBox="0 0 840 210" width="100%" height="210" role="img" aria-label="Museum, liveness, notices layers">
+            <rect x="40" y="28" width="760" height="48" rx="6" fill="#ece6dc" stroke="#5c564e"/>
+            <text x="56" y="50" font-family="IBM Plex Mono, monospace" font-size="11" fill="#5c564e">LAYER 1 museum</text>
+            <text x="56" y="68" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="#1c1916">todo paths and historical plan bodies stay put</text>
+            <rect x="40" y="86" width="760" height="48" rx="6" fill="#dbe7f3" stroke="#1e3a5f"/>
+            <text x="56" y="108" font-family="IBM Plex Mono, monospace" font-size="11" fill="#1e3a5f">LAYER 2 liveness</text>
+            <text x="56" y="126" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="#1c1916">README statuses — shipped / parked / retired / superseded</text>
+            <rect x="40" y="144" width="760" height="48" rx="6" fill="#f3e2d4" stroke="#9a3412"/>
+            <text x="56" y="166" font-family="IBM Plex Mono, monospace" font-size="11" fill="#7c2d12">LAYER 3 notices</text>
+            <text x="56" y="184" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="#7c2d12">U3 is on main; July ready-stamps are not a clearance</text>
           </svg>
         </div>
-        <p class="diagram-cap">The compiler fights the read path. Status synonyms and duplicate IDs stay as messy input encoding; the loop never sees them.</p>
+        <p class="diagram-cap">The README already overlays milestone status. The hole is plan-file stamps and filename globs that still look live.</p>
         <p class="field-label">Basis</p>
-        <p><code>direct:</code> 30 <code>*-pending-*</code> files, 0 <code>status: pending</code>; AGENTS session start = most recent plan; July 20/27/28 plans still <code>implementation-ready</code> against STRATEGY “Not working on” (LLM-as-judge, flexible commercial). <code>external:</code> Howardism control plane (tickets = graph, loops = actuators); arXiv 2604.05000 confidence halt; WIP=1 because review is the bottleneck.</p>
+        <p><code>direct:</code> retire-judges KTD5: do not rewrite completed historical plans; stamp bakeoff superseded. Extract plan still: “U3 implemented on <code>feature/smoke-runner-extract</code>.” <code>app/api/lib/smoke-runner.ts</code> is on <code>main</code> and imported by <code>scripts/e2e-tailor-cv.ts</code>. 30 pending filenames, 0 pending YAML.</p>
         <p class="field-label">Rationale</p>
-        <p>Migrating 33 filenames fights the next <code>/ce-code-review</code> dump. Compiling at read time is the durable fix. Empty-set-as-success is the honest product of this repo’s current YAML: if the loop cannot print “nothing executable,” it will manufacture a backlog.</p>
+        <p>A rename migration is still negative value. The cheapest remaining hygiene is making museum files non-actuatable without reprinting them. Rose from #3 because the board is now truthful and these files are the remaining liars.</p>
         <p class="field-label">Downsides</p>
-        <p>Deny-list matching from prose headings is fuzzy. A generated workset can drift if it is committed as a second source of truth — keep it ephemeral or stamp it from STRATEGY. One-story-then-stop feels slow if the user wanted an overnight drain; that drain is unsafe until classes exist (idea 1).</p>
+        <p>Humans still see <code>pending</code> in paths. Overlay notes can rot; the README must stay the authority so a stale notice cannot resurrect a milestone.</p>
       </article>
 
       <article class="idea" id="idea-3">
         <p class="rank">3</p>
-        <h3>Museum plus overlay</h3>
+        <h3>Residual YAML on the one living item</h3>
         <div class="chips">
-          <span class="chip axis">Plan lifecycle and staleness</span>
-          <span class="chip high">Conf 85%</span>
-          <span class="chip cx">Complexity Medium</span>
+          <span class="chip axis">Unified index / control plane</span>
+          <span class="chip high">Conf 84%</span>
+          <span class="chip cx">Complexity Low</span>
         </div>
         <p class="field-label">Description</p>
-        <p>Treat <code>todos/</code> paths and historical plan bodies as a museum: immutable IDs and protected CE artifacts (KTD5: do not rewrite completed historical implementation plans; AGENTS: never flag plans for deletion). Do not rename 30 “pending” files — cross-links still point at those paths. Split <code>artifact_readiness</code> (what ce-plan stamped at write time) from <strong>liveness</strong> (<code>shipped</code> / <code>superseded</code> / <code>parked</code>). Add a thin overlay — a Notices-to-Mariners file — that records as-of corrections (“July 05 still claims 012–014 remain pending; that is false”). Ban glob-as-queue in AGENTS.md the same way writes on <code>main</code> are banned.</p>
-        <div class="diagram" aria-hidden="true">
-          <svg viewBox="0 0 840 210" width="100%" height="210" role="img" aria-label="Three layers: museum artifacts, liveness stamps, notices overlay">
-            <rect x="40" y="28" width="760" height="48" rx="6" fill="#ece6dc" stroke="#5c564e"/>
-            <text x="56" y="50" font-family="IBM Plex Mono, monospace" font-size="11" fill="#5c564e">LAYER 1 museum</text>
-            <text x="56" y="68" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="#1c1916">todo filenames and historical plan bodies stay put</text>
-            <rect x="40" y="86" width="760" height="48" rx="6" fill="#dbe7f3" stroke="#1e3a5f"/>
-            <text x="56" y="108" font-family="IBM Plex Mono, monospace" font-size="11" fill="#1e3a5f">LAYER 2 liveness</text>
-            <text x="56" y="126" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="#1c1916">shipped / superseded / parked  —  not the same as implementation-ready</text>
-            <rect x="40" y="144" width="760" height="48" rx="6" fill="#f3e2d4" stroke="#9a3412"/>
-            <text x="56" y="166" font-family="IBM Plex Mono, monospace" font-size="11" fill="#7c2d12">LAYER 3 notices</text>
-            <text x="56" y="184" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="#7c2d12">as-of stamps agents must apply before treating a museum file as inventory</text>
-          </svg>
-        </div>
-        <p class="diagram-cap">Mariners do not reprint every chart when a buoy moves. Agents should not rewrite protected plans to stay truthful.</p>
+        <p>Do not design a residual platform. Add YAML to <code>docs/residual-review-findings/feature-retire-llm-judges.md</code>: <code>status: open</code>, <code>execution: code</code>, <code>github_issue: 38</code>, and mark the settled-conflict block <code>execution: report-only</code>. That is the only review-derived row a loop should scan. New follow-ups that survive a change land here, not in a 33-file glob.</p>
         <p class="field-label">Basis</p>
-        <p><code>direct:</code> <code>todos/001-pending-…</code> line 2 is <code>status: completed</code>; bakeoff already has <code>status: superseded</code>; July 20 still <code>implementation-ready</code> with retired judge language; retire-judges KTD5 plus “do not create <code>docs/plans/README.md</code> on this branch.” <code>external:</code> Read-Point Planning (backlog as a cache of beliefs); Shape Up circuit breaker rather than infinite re-grooming.</p>
+        <p><code>direct:</code> residual README indexes one file; remaining actionable item is dedicated eval-parse unit tests; settled-conflict is a markdown heading only. Plans README names that residual as the leftover and does not link a CE plan for it.</p>
         <p class="field-label">Rationale</p>
-        <p>A 30-file rename is a migration that breaks citations for zero open-work gain. Leaving the museum intact and overlaying liveness is the pattern the bakeoff stamp already proved, generalized.</p>
+        <p>Higher leverage than on 2026-09-04: the living review queue collapsed to one file. A full residual schema is still ceremony; frontmatter on this file is enough to make #38 pickable and settled-conflict unpickable.</p>
         <p class="field-label">Downsides</p>
-        <p>Humans still see <code>pending</code> in filenames. The overlay can rot unless the compile step (idea 2) consumes it. Liveness stamps on protected plans must be frontmatter-only so they do not fight KTD5’s “do not rewrite bodies.”</p>
+        <p><code>/ce-code-review</code> still writes <code>todos/</code>. Without a write-path rule, the next dump recreates a glob-queue. YAML on one file does not fix that — idea 1’s glob ban does.</p>
       </article>
 
       <article class="idea" id="idea-4">
         <p class="rank">4</p>
-        <h3>Residual YAML as the living queue</h3>
-        <div class="chips">
-          <span class="chip axis">Unified index / control plane</span>
-          <span class="chip high">Conf 82%</span>
-          <span class="chip cx">Complexity Low</span>
-        </div>
-        <p class="field-label">Description</p>
-        <p>Give <code>docs/residual-review-findings/*.md</code> the same frontmatter contract todos already have (<code>status</code>, <code>execution</code>, <code>plan</code>, <code>github_issue</code>, maybe <code>priority</code>). Keep STRATEGY as the human roadmap; do not add a fifth README on this branch. The small residual directory becomes the only review-derived queue an agent is allowed to scan. Eval-parse tests (#38) become an <code>execution: code</code> row; settled-conflict blocks become <code>status: settled-conflict</code> / skip. New follow-ups that survive a change land here, not back in a 33-file glob.</p>
-        <p class="field-label">Basis</p>
-        <p><code>direct:</code> residual file has no YAML status field; remaining actionable item is dedicated eval-parse unit tests; settled-conflict is a markdown heading only. Active plan names STRATEGY as the live thesis and forbids creating <code>docs/plans/README.md</code> on this branch. <code>docs/README.md</code> map never listed <code>todos/</code>.</p>
-        <p class="field-label">Rationale</p>
-        <p>Plans are a protected museum; todos are a closed ledger. Residuals were invented exactly as the deferral channel. Without status, a loop cannot tell “ship #38” from “do not restore judge gates.”</p>
-        <p class="field-label">Downsides</p>
-        <p>One file today — schema may look like ceremony until the next review dump. STRATEGY still needs a pointer (or idea 2’s compile) so the active plan is not discovered only by filename recency. Write-path discipline: <code>/ce-code-review</code> must learn to emit residuals for survivors, not only <code>todos/</code>.</p>
-      </article>
-
-      <article class="idea" id="idea-5">
-        <p class="rank">5</p>
         <h3>Checkbox fossils are not a queue</h3>
         <div class="chips">
           <span class="chip axis">Queue status hygiene</span>
@@ -392,59 +345,70 @@
           <span class="chip cx">Complexity Low</span>
         </div>
         <p class="field-label">Description</p>
-        <p>Closed todos still contain unchecked <code>- [ ]</code> acceptance criteria (timeout bounds, <code>Function</code> types, <code>as any</code> mocks). Encode in AGENTS.md: on <code>status: completed|closed|done</code>, checkboxes are fossils, not reopen signals. Only a verify-against-code pass (the July 05 close-out method) may reopen. Prefer the Resolution / Work Log block already used when target code vanished (<code>todos/010</code>).</p>
+        <p>Closed todos still contain unchecked <code>- [ ]</code> acceptance criteria. AGENTS.md: on closed YAML status, checkboxes are fossils. Only a verify-against-code pass (July 05 close-out method) may reopen. Prefer the Resolution block already used when target code vanished (<code>todos/010</code>).</p>
         <div class="diagram" aria-hidden="true">
-          <svg viewBox="0 0 840 120" width="100%" height="120" role="img" aria-label="YAML says completed while checkboxes still look open">
+          <svg viewBox="0 0 840 120" width="100%" height="120" role="img" aria-label="YAML completed vs unchecked checkbox">
             <rect x="40" y="28" width="340" height="64" rx="8" fill="#dcfce7" stroke="#14532d"/>
             <text x="210" y="56" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="#14532d">status: completed</text>
             <text x="210" y="76" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="#14532d">authoritative</text>
             <rect x="460" y="28" width="340" height="64" rx="8" fill="#fef3c7" stroke="#854d0e"/>
-            <text x="630" y="56" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="#854d0e">- [ ] timeout: 0 replaced…</text>
+            <text x="630" y="56" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="#854d0e">- [ ] leftover criterion</text>
             <text x="630" y="76" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="#854d0e">fossil — not a queue</text>
             <text x="420" y="62" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="18" fill="#9a3412">≠</text>
           </svg>
         </div>
-        <p class="diagram-cap">Two status channels in one file. Filename drift is visible; checkbox drift is the quieter false backlog.</p>
+        <p class="diagram-cap">Unchanged from 2026-09-04. Still the quieter false backlog after filenames.</p>
         <p class="field-label">Basis</p>
-        <p><code>direct:</code> <code>todos/001</code> and <code>todos/012</code> are <code>status: completed</code> with unchecked AC boxes; <code>ce-work</code> already tells agents to ignore legacy checkbox marks in plan bodies. July 05 plan: verify frontmatter + Work Log against current code before treating a todo as open.</p>
+        <p><code>direct:</code> closed todos with unchecked AC; <code>ce-work</code> already ignores checkbox fossils in plan bodies; July 05 plan: verify frontmatter + Work Log against current code.</p>
         <p class="field-label">Rationale</p>
-        <p>Even after glob-ban and liveness stamps, an agent that “finishes the unchecked boxes” will re-implement closed work. One AGENTS invariant closes that hole.</p>
+        <p>Even with README Active empty, an agent that “finishes the unchecked boxes” will re-implement closed work. One invariant closes that hole. Pairs with idea 1’s glob ban as a single AGENTS.md pass.</p>
         <p class="field-label">Downsides</p>
-        <p>Does not fix filename cosmetics (idea 3 on purpose). Easy to forget when the next review skill emits new todos with mixed boxes. Genuinely unmet criteria need the verify pass, not a blanket ignore.</p>
+        <p>Genuinely unmet criteria need the verify pass, not a blanket ignore. Easy to forget on the next review dump.</p>
+      </article>
+
+      <article class="idea" id="idea-5">
+        <p class="rank">5</p>
+        <h3>Compile-or-halt is mostly landed</h3>
+        <div class="chips">
+          <span class="chip axis">Agent-loop contract</span>
+          <span class="chip med">Conf 70%</span>
+          <span class="chip cx">Complexity Low</span>
+        </div>
+        <p class="field-label">Description</p>
+        <p>Do not build a compiler, lockfile, or <code>ce-next</code> skill. Session start already reads the README first. Active already encodes empty-set-as-success. Remaining slice: a deny-list sentence in AGENTS.md that <code>/ce-work</code> must refuse plans whose topic appears under STRATEGY “Not working on” (judges, flexible-as-commercial-path) even if the file still says <code>implementation-ready</code>. That is a guard, not a new actuator.</p>
+        <p class="field-label">Basis</p>
+        <p><code>direct:</code> AGENTS.md session start = README then linked plan. Plans README Active = none in progress. July 27 plan still describes a critique-revise loop; STRATEGY lists that under “Not working on.” Bakeoff already superseded. <code>external:</code> Howardism — loops are actuators, tickets (here: the README) are the graph.</p>
+        <p class="field-label">Rationale</p>
+        <p>Demoted from #2. Building a workset JSON now would duplicate the README we just reconciled. Keep the idea only as the leftover deny-list guard that ideas 1–2 do not fully cover.</p>
+        <p class="field-label">Downsides</p>
+        <p>Prose deny-lists are fuzzy (slug vs heading). If Active stays empty, the guard rarely fires — until someone date-sorts <code>docs/plans/</code> again.</p>
       </article>
     </section>
 
     <section id="rejection-summary">
       <h2>Rejection Summary</h2>
-      <p>Forty-seven raw candidates across five frames collapsed to twenty-three unique moves plus four cross-cuts. A fresh-context verifier scored each; the cut below is the orchestrator’s arbitration.</p>
+      <p>Original run (2026-09-04): 47 raw candidates → five survivors. 2026-09-05 rewrite: same five, re-ranked against the reconciled board. Idea 2 (compile-or-halt) demoted and shrunk; ideas 2–3 (museum, residual) rose. Remaining agent loop is idea 1 plus thin slices of 2–4.</p>
       <table>
         <thead>
-          <tr><th>#</th><th>Idea</th><th>Reason rejected</th></tr>
+          <tr><th>#</th><th>Idea</th><th>Reason rejected or demoted</th></tr>
         </thead>
         <tbody>
-          <tr><td>C1</td><td>Rename 30 pending filenames to match YAML</td><td>Refuted — zero open YAML statuses; rename breaks cross-links for no queue gain.</td></tr>
-          <tr><td>C4</td><td>Make todos/ invisible to the loop</td><td>Weak — AGENTS still maps /ce-code-review → todos/ with no migration path.</td></tr>
-          <tr><td>C6</td><td>Automate July 05 verify-close across all todos</td><td>Refuted — that close-out already ran; nothing is YAML-pending.</td></tr>
-          <tr><td>C7</td><td>Full STRATEGY execution graph of every track</td><td>Weak — STRATEGY is product intent, not an ops graph; pointer keys folded into idea 2 instead of a fifth catalog.</td></tr>
-          <tr><td>C8</td><td>Committed WORK_QUEUE.json / SOA serial file</td><td>Weak — another source of truth on top of STRATEGY, plans, and residuals.</td></tr>
-          <tr><td>C9</td><td>WIP=1 lockfile instead of subdirectory READMEs</td><td>Refuted — missing READMEs are real, but a lockfile does not fix class or liveness.</td></tr>
-          <tr><td>C11</td><td>GitHub Issues as generated projection with writeback</td><td>Refuted — one issue URL (#38) already works; sync risk without tightening markdown SoT.</td></tr>
-          <tr><td>C13</td><td>New ce-next actuator skill</td><td>Weak — overlaps ce-work stop/done heuristics; one-story cap kept inside idea 2.</td></tr>
-          <tr><td>C14</td><td>IFR ACTIVE_PLAN clearance squawk</td><td>Weak — thin UX on top of compile + STRATEGY pointer, no extra enforcement.</td></tr>
-          <tr><td>C15</td><td>WHO timeout card before every write</td><td>Refuted — human pause blocks autonomous /ce-work; compile-or-halt is the machine equivalent.</td></tr>
-          <tr><td>C17</td><td>verified_at / zero-day revalidation stamps on every artifact</td><td>Refuted — unjustified overhead; AGENTS already prefers artifacts over chat.</td></tr>
-          <tr><td>C19</td><td>Auto-linter rewriting historical plan stamps</td><td>Weak — fights KTD5 protected-artifact policy; overlay (idea 3) is the allowed move.</td></tr>
-          <tr><td>C21</td><td>Half-life decay of implementation-ready after 14 days</td><td>Weak — 14-day rule is newest-plan-only; auto-decay would park parallel legitimate tracks.</td></tr>
-          <tr><td>C22</td><td>Plan appendix amnesty pass</td><td>Weak — pattern already applied (todos/018 done; json-curator appendix already notes deletion).</td></tr>
-          <tr><td>X1</td><td>Full compile-or-halt bundle including ce-next + STRATEGY graph</td><td>Weak — core kept as idea 2; C7/C13 inflated scope.</td></tr>
-          <tr><td>X4</td><td>Receipts vs missions (todos invisible + three classes)</td><td>Weak — C23 survived as idea 1; C4 contradicts the live review write path.</td></tr>
-          <tr><td>—</td><td>Duplicate hygiene variants (Death Master File index, close-on-verify runner, contradiction linter as a product)</td><td>Duplicates of stronger survivors (ideas 2–3) or already-completed close-out work.</td></tr>
+          <tr><td>—</td><td>Workset JSON / ce-next / WIP lockfile</td><td>Post-merge: README <em>is</em> the workset. Duplicate SoT.</td></tr>
+          <tr><td>—</td><td>GitHub Issues projection with writeback</td><td>Unchanged: #38 already exists; sync risk.</td></tr>
+          <tr><td>—</td><td>Rename 30 pending filenames</td><td>Unchanged: breaks cross-links for zero open YAML work.</td></tr>
+          <tr><td>—</td><td>Make todos/ invisible to the loop</td><td>Unchanged: /ce-code-review still writes todos/.</td></tr>
+          <tr><td>—</td><td>Automate July 05 verify-close</td><td>Unchanged: close-out already ran.</td></tr>
+          <tr><td>—</td><td>STRATEGY execution graph of every track</td><td>Post-merge: README Active + STRATEGY tracks already split operator vs code.</td></tr>
+          <tr><td>—</td><td>WHO timeout / IFR squawk / zero-day verified_at stamps</td><td>Unchanged: blocks autonomy or unjustified overhead.</td></tr>
+          <tr><td>—</td><td>Auto-linter rewriting historical plan bodies</td><td>Unchanged: fights KTD5; overlay is the allowed move.</td></tr>
+          <tr><td>—</td><td>Half-life decay of implementation-ready</td><td>Unchanged: would park parallel legitimate tracks.</td></tr>
+          <tr><td>was #2</td><td>Full compile-or-halt actuator</td><td>Demoted to #5: half landed via README + AGENTS session start; remainder is a deny-list sentence.</td></tr>
         </tbody>
       </table>
     </section>
 
     <footer class="composition-signal">
-      Composed 2026-09-04T20:45Z by ce-ideate from the prompt to tighten the roadmap, open todos, and plans for an agent loop. Independent generation frames plus a fresh-context basis verifier; orchestrator arbitration produced the five survivors.
+      Composed 2026-09-04T20:45Z by ce-ideate; rewritten 2026-09-05 after PRs #40–#42 and a STRATEGY-aligned <code>docs/plans/README.md</code> (no in-progress plan). Same five survivors, new rank.
     </footer>
   </div>
 </body>
