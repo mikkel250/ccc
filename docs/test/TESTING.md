@@ -85,7 +85,7 @@ curl -s http://localhost:3000/api/tailor-cv
 ### Manual tailor (uses LLM + master JSON)
 
 Use `npm run smoke`; it authenticates the request, validates both artifacts,
-and always runs the grounding and JD-fit judges. Ad-hoc `curl` to
+and writes files for operator review. Ad-hoc `curl` to
 `POST /api/tailor-cv` is not a supported operator method (see product contract
 and README). Keep curl examples limited to health checks.
 
@@ -108,8 +108,8 @@ npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 | `tests/errors.test.ts` | Typed error classes (`RateLimitError`, `ServiceError`) |
 | `tests/eval-architecture-docs.test.ts` | Eval architecture doc cross-references |
 | `tests/e2e-tailor-cv.test.ts` | Smoke CLI: artifacts, redaction, curation mode, exit codes |
-| `tests/smoke-helpers.test.ts` | Smoke judge gates + redaction |
-| `tests/smoke-runner.test.ts` | `verifySmokePipeline` library with mocked fetch/judges |
+| `tests/smoke-helpers.test.ts` | Smoke artifact redaction |
+| `tests/smoke-runner.test.ts` | `verifySmokePipeline` library with mocked fetch |
 | `tests/json-docx-builder.test.ts` | JSON→docx builder + regen CLI |
 | `tests/curator-prompt.test.ts` | Curator prompt contract |
 | `tests/knowledge-base.test.ts` | Legacy KB helpers (not tailor hot path) |
@@ -129,7 +129,7 @@ npm run smoke -- http://localhost:3000 path/to/jd.md
 npm run smoke -- http://localhost:3000 path/to/jd.md --flexible
 ```
 
-Requires running server, `TAILOR_API_KEY`, `MASTER_CV_*`, judge model keys. Asserts dual artifacts and always runs grounding + JD-fit judges (hard fail on `parseFailed` or scores below `SMOKE_*_MIN`). A judge transport/throw failure still writes the tailored DOCX + curated JSON, then exits 1 (same as the pre-extract CLI). Default `curationMode` is `strict`; pass `--flexible` or set `SMOKE_CURATION_MODE=flexible`. Writes `tmp/smoke/<jd-slug>.docx` and `tmp/smoke/<jd-slug>.curated.json` (JD basename; does not overwrite other JDs with distinct basenames). Flexible runs also write `tmp/smoke/<jd-slug>.cover-letter.docx` when `coverLetter` is returned (missing/empty letters warn and skip). Like CV DOCX, cover-letter DOCX is written unredacted (`SMOKE_WRITE_UNREDACTED` remains specific to `curated.json`). Reusing a basename warns before overwriting its artifacts.
+Requires a running server and `TAILOR_API_KEY`. Master CV (`MASTER_CV_JSON` / `MASTER_CV_PATH`) is the server's concern — smoke exercises it end-to-end via tailor. Asserts dual artifacts (health, tailor, schema, docx). No judge model keys and no score-based exit. Default `curationMode` is `strict`; pass `--flexible` or set `SMOKE_CURATION_MODE=flexible`. Writes `tmp/smoke/<jd-slug>.docx` and `tmp/smoke/<jd-slug>.curated.json` (JD basename; does not overwrite other JDs with distinct basenames). Flexible runs also write `tmp/smoke/<jd-slug>.cover-letter.docx` when `coverLetter` is returned (missing/empty letters warn and skip). Like CV DOCX, cover-letter DOCX is written unredacted (`SMOKE_WRITE_UNREDACTED` remains specific to `curated.json`). Reusing a basename warns before overwriting its artifacts.
 
 Mechanical regen (no LLM):
 
@@ -155,7 +155,7 @@ npm run build               # 2. Production build
 npm run lint                # 3. Lint
 npm run dev                 # 4. Start server (separate terminal)
 curl http://localhost:3000/api/hello   # 5. Health
-npm run smoke -- http://localhost:3000 # 6. Live dual artifacts + judges
+npm run smoke -- http://localhost:3000 # 6. Live dual artifacts (operator review)
 npm run test:e2e            # 7. Playwright HTTP
 ```
 

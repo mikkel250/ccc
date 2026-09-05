@@ -21,7 +21,7 @@ The canonical structured career record for the seeker — one complete record sp
 Request flag on tailor (`curationMode`): **`strict`** (default) = keep discrete Master CV experience entries only — cut irrelevant roles, reorder remaining ones, and trim/rank bullets; no category-style collapse or invented merged titles. **`flexible`** = JD-fit-first posture (industry-agnostic): lead with strongest JD-fit roles; recency does not protect weak-fit roles; optional collapse of weak-fit clusters into category-style summaries when employer-level detail is low-value for the JD.
 
 ### Curated CV
-The JD-specific JSON produced by the curator LLM: same schema as the Master CV. Shaped by curation mode — strict keeps discrete master roles (subset/reorder/trim); flexible may also collapse clusters into grounded category-style summaries. No invented metrics, tools, named employers, or certifications. Durable artifact for judging, history, and regenerating Word output without re-tailoring.
+The JD-specific JSON produced by the curator LLM: same schema as the Master CV. Shaped by curation mode — strict keeps discrete master roles (subset/reorder/trim); flexible may also collapse clusters into grounded category-style summaries. No invented metrics, tools, named employers, or certifications. Durable artifact for operator review, history, and regenerating Word output without re-tailoring.
 
 ### Mechanical render
 Turning a Curated CV into a `.docx` with a deterministic builder (no LLM). The attachable file is a pure function of curated JSON plus builder version.
@@ -33,7 +33,7 @@ A single `POST /api/tailor-cv` invocation that authenticates with a shared secre
 Semver-like constant on the mechanical JSON→docx builder. Callers retaining curated JSON for regen must keep the recorded version; style-stable regen applies only when it matches the builder invoked (`npm run regen-docx`).
 
 ### Smoke
-Manual live-API operator path (`npm run smoke`): hits a running server with Bearer auth, asserts dual artifacts, always runs grounding + JD-fit judges on master + curated + JD. Not part of `npm test` / CI.
+Manual live-API operator path (`npm run smoke`): hits a running server with Bearer auth, asserts dual artifacts, and writes redact-by-default files under `tmp/smoke/`. Flexible runs also write a cover-letter DOCX only when `writeSmokeArtifacts` produces one — non-empty cover letter that passes `isValidDocxBase64`; otherwise that file may be absent. Quality is the operator reading those files. Not part of `npm test` / CI.
 
 ### Knowledge base
 *Avoid as the name for career truth after cutover — use Master CV.* Historically: on-disk markdown career corpus injected into every tailor request. Retained only as a legacy term for pre-cutover behavior and non-tailor prose / test JD fixtures under `knowledge-base/test-jds/`.

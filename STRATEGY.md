@@ -1,89 +1,58 @@
 ---
 name: CCC
-last_updated: 2026-07-28
+last_updated: 2026-09-03
 ---
 
 # CCC Strategy
 
 ## Target problem
 
-Career pivoters working from one complete, honest master CV need a curated CV that honestly foregrounds their transferable experience (e.g. management skill transferring across industries) for an unfamiliar target domain. Today's curation logic has no mechanism for that translation — it either stretches tenure/domain claims to look like a fit, or correctly scores itself as a weak fit without ever surfacing the transferable value that's actually there.
+In-demand professionals get more recruiter inbound than they can answer honestly. Each reply needs a JD-specific CV; doing that by hand steals time from the searches they actually chose. Pivot applications do not create this inbound — recruiters write to people they can already place.
 
 ## Our approach
 
-Treat linear-career and cross-industry-pivot curation as two genuinely different problems, not one framework patched to cover both. `strict` keeps the Struan in-field-specialist framework for linear-career applicants. `flexible` becomes a separate, transferable-skills-first curation path built for pivots — not a variant instruction block bolted onto Struan, and not solved by maintaining multiple per-industry master CVs.
+Win with one deep, honest Master CV and in-field (`strict`) curation: quality comes from profile depth, not from pivot translation and not from a thin ChatGPT paste. The same tailor backend serves unattended inbound drafts (scan → CV → reply + attach) and on-demand JDs (web UI, sync). One curator pass; a human reads the artifacts.
 
 ## Who it's for
 
-**Primary:** Pivot job seeker — someone with one honest, complete career history applying across an industry boundary. They're hiring CCC to produce a curated CV that honestly leads with what actually transfers (e.g. management experience), instead of stretching tenure/domain claims or bailing out to a weak, unhelpful fit score.
+**Primary:** In-demand professional (software engineers first; same pattern for anyone with heavy inbound). They're hiring CCC to auto-draft in-field recruiter replies with a tailored CV attached so they can keep attention on jobs they picked.
 
-**Secondary:** Linear-career job seeker — already served by `strict`; must not regress while `flexible` is reworked.
+**Secondary:** The same person pasting a JD (later: a link) in a web UI for a CV right now — sync, same profile, same backend.
 
 ## Key metrics
 
-For the `flexible` / pivot path, success is **not** a checklist of scored sub-dimensions. The primary signal is a judge verdict: **is this curated CV strong enough for this JD?** — honest about tenure/domain, and clear about what actually transfers. If a hiring-aware reader (or LLM judge standing in for one) would say “yes, submit this,” the posture worked.
-
-Supporting signals (honesty floor, not optimization targets):
-
-- **Grounding** — no invented facts/metrics/employers (`scoreJsonGrounding`; existing smoke gate stays as a floor)
-- **Tenure honesty** — no summed-overlapping-span or off-domain-rebranded tenure claims (most-cited recurring failure)
-- **Transferable skills surfaced** — the CV names/foregrounds what transfers; not merely a same-domain cull that then scores itself as a weak fit
-- **JD-fit score** — tracked for `strict` and for regression visibility; for `flexible`, must not override the “strong enough” verdict above
-
-`strict` keeps today’s smoke hard-fail gates (`SMOKE_GROUNDING_MIN` / `SMOKE_JD_FIT_MIN`). Pivot evaluation uses `--flexible` and judges the holistic bar, not a weighted composite of the bullets above.
+- **Submit bar** — on a pinned in-field JD sample, would you send this CV to that recruiter? Operator read of smoke `.docx` / JSON until the product exists.
+- **Grounding** — no invented facts, metrics, employers, or tools on that same read. Can get worse; that is a fail.
+- **Rewrite rate** — share of inbound drafts sent without a manual CV rewrite. Product analytics later; smoke is the stand-in now.
+- **Inference cost** — same submit bar at lower `TAILOR_REASONING_EFFORT` or a smaller model. Measured from smoke config + the eyeball, not a dashboard.
 
 ## Tracks
 
-### Pivot curation posture
+### In-field curator quality
 
-Build the new thesis-first `flexible` prompt/path that does the actual transferable-skills translation work.
+Dial the `strict` prompt until in-field smoke CVs clear the submit bar, then cheapen the call (less thinking, smaller models) without losing it.
 
-_Why it serves the approach:_ this track is the approach itself — the direct execution of giving `flexible` a separate, transferable-skills-first path instead of a patched Struan.
+_Why it serves the approach:_ the backend is only worth sharing across inbox and UI if `strict` is actually good.
 
-### Tenure honesty
+### Master profile
 
-Guardrails (prompt- and/or code-level) that stop overlapping-span summing and off-domain-years rebranding, in either curation mode.
+Keep one complete Master CV as the quality source — granular, honest, not duplicated per industry.
 
-_Why it serves the approach:_ a transferable-skills posture is worthless if it also overclaims tenure — this is the credibility floor the approach depends on.
+_Why it serves the approach:_ that depth is the bet against “paste a JD into ChatGPT.”
 
-### Judge coverage
+### Two fronts, one API
 
-Add a smoke-path judge that answers the primary question — **strong enough for this JD?** — with tenure honesty and transferable-skills visibility as inputs to that verdict, not separate scoreboards to game.
+Scheduled inbox scan (default ~5am, extra windows if they want faster replies) and on-demand sync tailor call the same curation. Do not fork prompts per surface.
 
-_Why it serves the approach:_ without that feedback loop, “did the new posture actually work” stays a guess.
-
-### Cross-model parity
-
-Verify the new `flexible` posture holds up across providers with a **pinned** matrix — not provider defaults, and not tuned to whichever model authored the prompt.
-
-**Matrix (identical for every cell):**
-
-| Knob | Pinned value |
-|------|----------------|
-| Prompt revision | Same curator/flexible prompt git SHA (and Langfuse prompt version if used) for all cells |
-| `AI_TEMPERATURE` | `0.3` (`.env.example` default) |
-| `AI_MAX_TOKENS` | `8192` (`.env.example` default) |
-| `TAILOR_REASONING_EFFORT` | `medium` on every cell that supports it |
-| Curation mode | `flexible` |
-| Smoke sample | Shared JD set across all cells |
-
-**Models under test** (namespaced IDs; pin exact strings, no floating aliases):
-
-| Family | Model ID |
-|--------|----------|
-| Gemini | `openrouter/google/gemini-3.1-pro-preview` |
-| Sonnet | `anthropic/sonnet` |
-| GPT | `openrouter/openai/gpt-5.4` |
-| DeepSeek | `deepseek/deepseek-v4-pro` |
-
-**Reasoning-control fallback:** OpenRouter cells send `reasoning.effort`; DeepSeek direct maps via `thinking` + `reasoning_effort` (see `.env.example`). If a provider lacks an equivalent control (today: direct Anthropic/`callAnthropic` ignores `TAILOR_REASONING_EFFORT`), keep the env pin set for the whole matrix, document that cell as **control unsupported**, and still compare on identical prompt / temperature / max tokens — do **not** unset the pin on other providers to “match” that default. Before claiming parity, confirm each model accepts the pinned request shape (no silent drop of settings).
-
-**Pass:** on the shared sample, each model clears the holistic “strong enough” bar (and the grounding honesty floor). Parity fails if one provider systematically cannot produce a submit-worthy pivot CV under the same pinned settings.
-
-_Why it serves the approach:_ production stays cross-model by project constraint — a posture that only works on one provider isn't shippable.
+_Why it serves the approach:_ inbound is the paid job; the UI is the same engine when they are sitting there.
 
 ## Not working on
 
-- Multiple per-industry master CVs (one master stays canonical; curation, not duplication, does the work)
-- Heavy mechanical allowlists for grounding (prefer LLM judges; add allowlists only if manual failures justify it)
-- Page-count as a hard requirement (prefer shorter where possible, but content quality and honest fit win over length)
+- Pivot / `flexible` as the commercial path (the flag may stay; do not invest until in-field is excellent)
+- Matching the old Anthropic project’s quality on out-of-field JDs
+- LLM-as-judge in the tailor loop or as a smoke gate
+- Heavy mechanical grounding allowlists (add only if manual failures justify it)
+- Page-count as a hard requirement
+- Native batch APIs inside Next.js (later worker; not required for inbox scan + sync UI)
+- BYOK (we meter usage on our keys)
+- Crawling JD URLs (later)

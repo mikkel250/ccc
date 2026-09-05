@@ -136,6 +136,7 @@ function main(): void {
         metadata: {
           jdSlug: slug,
           model,
+          // Historical scores.json fields — no live judge consumes these values.
           judgeModel: "anthropic/sonnet",
           extractionJudgeModel: "deepseek/deepseek-v4-pro",
         },

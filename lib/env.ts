@@ -50,7 +50,6 @@ export function getEnvString(key: string, defaultValue?: string): string | undef
 import {
   DEFAULT_EVAL_EXTRACTION_MIN_SCORE,
   DEFAULT_EVAL_EXTRACTION_MODEL,
-  DEFAULT_EVAL_JUDGE_MODEL,
   DEFAULT_EVAL_MODELS_CSV,
 } from '../app/api/lib/eval-defaults';
 import { KNOWN_PROVIDERS, type Provider } from './providers';
@@ -151,12 +150,6 @@ export function getTailorReasoningEffort(): ReasoningEffort | undefined {
     );
   }
   return normalized;
-}
-
-export function getEvalJudgeModel(): string {
-  return validateDefaultModel(
-    getEnvString('EVAL_JUDGE_MODEL', DEFAULT_EVAL_JUDGE_MODEL)!
-  );
 }
 
 export function getEvalModels(): string {

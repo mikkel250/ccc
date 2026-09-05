@@ -4,7 +4,7 @@
  *
  * Production: `preloadMasterCv()` runs at server startup (async fs). Request path
  * `requireMasterCv()` serves the preloaded cache only — no sync disk I/O.
- * Smoke CLI / tests may call `loadMasterCv()` which can resolve + cache synchronously.
+ * Tests may call `loadMasterCv()` which can resolve + cache synchronously.
  *
  * Cache lives on `globalThis` so Next.js instrumentation and the route bundle
  * share one instance (each webpack graph would otherwise get its own module scope).
