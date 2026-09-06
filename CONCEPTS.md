@@ -37,3 +37,17 @@ Manual live-API operator path (`npm run smoke`): hits a running server with Bear
 
 ### Knowledge base
 *Avoid as the name for career truth after cutover — use Master CV.* Historically: on-disk markdown career corpus injected into every tailor request. Retained only as a legacy term for pre-cutover behavior and non-tailor prose / test JD fixtures under `knowledge-base/test-jds/`.
+
+## Agent workflow
+
+### LFG lane
+A label on a `docs/plans/README.md` row that says whether drain may run `/lfg` on it: **`lfg`** (agent-executable), **`operator`** (human quality work such as the in-field submit bar), **`parked`** (STRATEGY not-working-on or deferred bets), **`awaiting-merge`** (CodeRabbit-clean PR, operator has not merged yet).
+
+### Drain
+Operator-started iteration over `lfg` rows until none remain. Procedure lives only in `AGENTS.md` (**Drain**). Halt with an empty `lfg` set is success. Not a background daemon.
+
+### Composite pick
+Next Drain job: README `lfg` rows in board order, minus rows that already have an open drain PR identified by the `Drain-row:` join key.
+
+### Babysit-clean
+Drain's CodeRabbit-clean bar: babysit pipeline success (CI clean, merge state CLEAN, no actionable babysit backlog). `/lfg` DONE is not sufficient.
