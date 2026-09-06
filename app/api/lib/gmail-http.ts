@@ -2,6 +2,7 @@
  * Gmail REST JSON helper (injected fetch). No SDK.
  */
 import type { FetchLike } from "./gmail-oauth";
+import { getGmailHttpTimeoutMs } from "./gmail-config";
 
 export type GmailHttpResult =
   | { ok: true; body: unknown }
@@ -26,6 +27,7 @@ export async function gmailFetchJson(params: {
     response = await params.fetchImpl(params.url, {
       method,
       headers,
+      signal: AbortSignal.timeout(getGmailHttpTimeoutMs()),
       ...(params.jsonBody !== undefined
         ? { body: JSON.stringify(params.jsonBody) }
         : {}),

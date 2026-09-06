@@ -4,6 +4,7 @@ import {
   completeGmailAuth,
   formatGmailRefreshTokenLine,
   gmailAuthRedirectUri,
+  runGmailAuthCli,
 } from "../scripts/gmail-auth";
 import { formatListedMessageLine, runGmailListCli } from "../scripts/gmail-list";
 
@@ -53,6 +54,34 @@ describe("gmail-auth CLI helpers", () => {
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.equal(result.refreshToken, "r");
+    }
+  });
+
+  it("fails closed when the auth listener wait exceeds GMAIL_AUTH_TIMEOUT_MS", async () => {
+    const previousTimeout = process.env.GMAIL_AUTH_TIMEOUT_MS;
+    const previousBind = process.env.GMAIL_AUTH_BIND_HOST;
+    process.env.GMAIL_CLIENT_ID = "client-id";
+    process.env.GMAIL_CLIENT_SECRET = "client-secret";
+    process.env.GMAIL_OAUTH_TOKEN_URL = "https://oauth.example.test/token";
+    process.env.GMAIL_AUTH_TIMEOUT_MS = "20";
+    process.env.GMAIL_AUTH_BIND_HOST = "127.0.0.1";
+    try {
+      const result = await runGmailAuthCli({
+        listen: async () => ({
+          port: 9,
+          close: async () => undefined,
+          wait: () => new Promise<URL>(() => undefined),
+        }),
+      });
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.match(result.error, /timed out/i);
+      }
+    } finally {
+      if (previousTimeout === undefined) delete process.env.GMAIL_AUTH_TIMEOUT_MS;
+      else process.env.GMAIL_AUTH_TIMEOUT_MS = previousTimeout;
+      if (previousBind === undefined) delete process.env.GMAIL_AUTH_BIND_HOST;
+      else process.env.GMAIL_AUTH_BIND_HOST = previousBind;
     }
   });
 });
