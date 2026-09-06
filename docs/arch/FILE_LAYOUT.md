@@ -35,7 +35,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── markdown-docx.ts  # Legacy markdown → .docx (not tailor hot path)
 │           ├── cv-prompt.ts      # Legacy markdown tailor prompt (not hot path)
 │           ├── redis.ts          # Shared Upstash Redis client singleton
-│           ├── inbox-config.ts   # Inbox Redis prefix / claim+processed TTLs
+│           ├── inbox-config.ts   # Inbox Redis prefix / claim TTL (processed marks never expire)
 │           ├── inbox-processed-store.ts # SET NX claim vs terminal processed mark
 │           ├── inbox-tailor.ts   # tailorLabeledMessage — claim+extract then runTailorCore
 │           ├── inbox-scan.ts     # list → tailor → draft → processed (inbox:scan job)

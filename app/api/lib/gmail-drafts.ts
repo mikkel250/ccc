@@ -95,7 +95,10 @@ export async function gmailThreadHasDraft(params: {
   threadId: string;
   fetchImpl?: FetchLike;
   accessToken?: string;
-}): Promise<{ ok: true; hasDraft: boolean } | { ok: false; error: string }> {
+}): Promise<
+  | { ok: true; hasDraft: boolean; accessToken: string }
+  | { ok: false; error: string }
+> {
   const fetchImpl = params.fetchImpl ?? fetch;
   const token = await resolveGmailAccessToken({
     fetchImpl,
@@ -113,7 +116,11 @@ export async function gmailThreadHasDraft(params: {
   if (!threadRes.ok) {
     return { ok: false, error: threadRes.error };
   }
-  return { ok: true, hasDraft: threadContainsDraft(threadRes.body) };
+  return {
+    ok: true,
+    hasDraft: threadContainsDraft(threadRes.body),
+    accessToken: token.data.accessToken,
+  };
 }
 
 export async function ensureReplyDraft(params: {
@@ -122,7 +129,10 @@ export async function ensureReplyDraft(params: {
   docxBase64: string;
   fetchImpl?: FetchLike;
   boundary?: string;
+  /** Prefetched token; skips refresh when set. With hasDraft, also skips thread GET. */
   accessToken?: string;
+  /** Prefetched draft presence from gmailThreadHasDraft; skips the thread GET when set with accessToken. */
+  hasDraft?: boolean;
 }): Promise<EnsureReplyDraftResult> {
   const replyText = params.replyText.trim();
   if (replyText === "") {
@@ -133,24 +143,37 @@ export async function ensureReplyDraft(params: {
     return headers;
   }
   const fetchImpl = params.fetchImpl ?? fetch;
-  const token = await resolveGmailAccessToken({
-    fetchImpl,
-    accessToken: params.accessToken,
-  });
-  if (!token.ok) {
-    return { ok: false, error: token.error };
+  const prefetchedHasDraft = params.hasDraft;
+  const reuseThreadState =
+    params.accessToken !== undefined && prefetchedHasDraft !== undefined;
+
+  let accessToken: string;
+  let hasDraft: boolean;
+  if (reuseThreadState) {
+    accessToken = params.accessToken;
+    hasDraft = prefetchedHasDraft;
+  } else {
+    const token = await resolveGmailAccessToken({
+      fetchImpl,
+      accessToken: params.accessToken,
+    });
+    if (!token.ok) {
+      return { ok: false, error: token.error };
+    }
+    accessToken = token.data.accessToken;
+    const base = getGmailApiBaseUrl();
+    const threadUrl = `${base}/users/me/threads/${encodeURIComponent(headers.headers.threadId)}`;
+    const threadRes = await gmailFetchJson({
+      url: threadUrl,
+      accessToken,
+      fetchImpl,
+    });
+    if (!threadRes.ok) {
+      return { ok: false, error: threadRes.error };
+    }
+    hasDraft = threadContainsDraft(threadRes.body);
   }
-  const base = getGmailApiBaseUrl();
-  const threadUrl = `${base}/users/me/threads/${encodeURIComponent(headers.headers.threadId)}`;
-  const threadRes = await gmailFetchJson({
-    url: threadUrl,
-    accessToken: token.data.accessToken,
-    fetchImpl,
-  });
-  if (!threadRes.ok) {
-    return { ok: false, error: threadRes.error };
-  }
-  if (threadContainsDraft(threadRes.body)) {
+  if (hasDraft) {
     return { ok: true, status: "reused" };
   }
   let attachmentFilename: string;
@@ -170,9 +193,10 @@ export async function ensureReplyDraft(params: {
     boundary,
     inReplyTo: headers.headers.inReplyTo,
   });
+  const base = getGmailApiBaseUrl();
   const createRes = await gmailFetchJson({
     url: `${base}/users/me/drafts`,
-    accessToken: token.data.accessToken,
+    accessToken,
     fetchImpl,
     method: "POST",
     jsonBody: {

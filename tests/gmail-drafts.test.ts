@@ -205,6 +205,37 @@ describe("ensureReplyDraft", () => {
     assert.equal(tokenPosts, 0);
   });
 
+  it("reuses a caller-supplied access token and draft state without token/thread GETs", async () => {
+    const urls: string[] = [];
+    const result = await ensureReplyDraft({
+      sourceMessage: sourceMessage(),
+      replyText: "Thanks for reaching out.",
+      docxBase64: "QQ==",
+      boundary: "ccc-test",
+      accessToken: "prefetched-access",
+      hasDraft: false,
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        urls.push(url);
+        if (url.includes("/token") || url.includes("/threads/")) {
+          throw new Error(`must not refetch ${url}`);
+        }
+        if (url.endsWith("/users/me/drafts") && init?.method === "POST") {
+          const auth = init.headers && Reflect.get(init.headers, "Authorization");
+          assert.equal(auth, "Bearer prefetched-access");
+          return jsonResponse({ id: "draft1" });
+        }
+        throw new Error(`unexpected ${url}`);
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.status, "created");
+    }
+    assert.equal(urls.some((u) => u.includes("/token")), false);
+    assert.equal(urls.some((u) => u.includes("/threads/")), false);
+  });
+
   it("does not create a stub draft when reply text is blank", async () => {
     const result = await ensureReplyDraft({
       sourceMessage: sourceMessage(),

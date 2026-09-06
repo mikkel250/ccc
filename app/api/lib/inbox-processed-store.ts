@@ -5,7 +5,6 @@
 import {
   getInboxClaimTtlSeconds,
   getInboxMessageIdMaxChars,
-  getInboxProcessedTtlSeconds,
   getInboxRedisPrefix,
   getInboxRedisTimeoutMs,
 } from "./inbox-config";
@@ -157,9 +156,8 @@ export async function markInboxProcessed(
   if (!parsed.ok) {
     return parsed;
   }
-  const ttl = getInboxProcessedTtlSeconds();
-  const opts = ttl > 0 ? { ex: ttl } : undefined;
-  const set = await kv().set(inboxProcessedKey(parsed.messageId), "1", opts);
+  // Processed is terminal for idempotency — never EX (ignore positive TTL env).
+  const set = await kv().set(inboxProcessedKey(parsed.messageId), "1");
   if (set !== "OK") {
     return { ok: false, error: "Failed to persist processed messageId" };
   }

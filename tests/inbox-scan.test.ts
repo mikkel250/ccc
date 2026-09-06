@@ -153,10 +153,10 @@ describe("scanInbox", () => {
     memory = createMemoryKv();
     __injectInboxKvForTest(memory);
     mockPipelineSuccess();
-    process.env.INBOX_SCAN_BACKOFF_MS = "0";
     for (const key of GMAIL_KEYS) {
       saved[key] = process.env[key];
     }
+    process.env.INBOX_SCAN_BACKOFF_MS = "0";
     process.env.GMAIL_CLIENT_ID = "client-id";
     process.env.GMAIL_CLIENT_SECRET = "client-secret";
     process.env.GMAIL_REFRESH_TOKEN = "refresh-token";

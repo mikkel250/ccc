@@ -96,6 +96,35 @@ describe("inbox processed store", () => {
     }
   });
 
+  it("marks processed without Redis expiry even when TTL env is positive", async () => {
+    const prev = process.env.INBOX_PROCESSED_TTL_SECONDS;
+    process.env.INBOX_PROCESSED_TTL_SECONDS = "3600";
+    const setCalls: Array<{ key: string; opts?: { ex?: number; nx?: boolean } }> =
+      [];
+    const trackingKv: InboxKv = {
+      get: async (key) => memory.get(key),
+      set: async (key, value, opts) => {
+        setCalls.push({ key, opts });
+        return memory.set(key, value, opts);
+      },
+      del: async (key) => memory.del(key),
+    };
+    __injectInboxKvForTest(trackingKv);
+    try {
+      const marked = await markInboxProcessed(ID);
+      assert.equal(marked.ok, true);
+      const processedCalls = setCalls.filter(
+        (c) => c.key === inboxProcessedKey(ID)
+      );
+      assert.equal(processedCalls.length, 1);
+      assert.equal(processedCalls[0]?.opts?.ex, undefined);
+    } finally {
+      if (prev === undefined) delete process.env.INBOX_PROCESSED_TTL_SECONDS;
+      else process.env.INBOX_PROCESSED_TTL_SECONDS = prev;
+      __injectInboxKvForTest(memory);
+    }
+  });
+
   it("extracts after a claim that never became processed (crash recovery)", async () => {
     const first = await extractUnprocessedInboxMessage(
       ID,

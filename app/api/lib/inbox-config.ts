@@ -5,7 +5,6 @@ import { getEnvNumber, getEnvString } from "../../../lib/env";
 
 const DEFAULT_PREFIX = "inbox";
 const DEFAULT_CLAIM_TTL_SECONDS = 900;
-const DEFAULT_PROCESSED_TTL_SECONDS = 0;
 const DEFAULT_MESSAGE_ID_MAX_CHARS = 128;
 const DEFAULT_SCAN_BACKOFF_MS = 1000;
 const DEFAULT_REDIS_TIMEOUT_MS = 2000;
@@ -16,11 +15,6 @@ export function getInboxRedisPrefix(): string {
 
 export function getInboxClaimTtlSeconds(): number {
   return Math.max(1, getEnvNumber("INBOX_CLAIM_TTL_SECONDS", DEFAULT_CLAIM_TTL_SECONDS));
-}
-
-/** 0 = persist with no expiry (terminal processed mark). */
-export function getInboxProcessedTtlSeconds(): number {
-  return Math.max(0, getEnvNumber("INBOX_PROCESSED_TTL_SECONDS", DEFAULT_PROCESSED_TTL_SECONDS));
 }
 
 export function getInboxMessageIdMaxChars(): number {

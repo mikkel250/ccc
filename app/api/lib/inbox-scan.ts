@@ -116,6 +116,7 @@ async function scanOneMessage(params: {
       docxBase64: tailored.body.cv,
       fetchImpl,
       accessToken,
+      hasDraft: existing.hasDraft,
     });
     if (!drafted.ok) {
       await releaseInboxClaim(messageId);
