@@ -6,7 +6,7 @@ Start-to-finish guide to how the CV Tailoring API works. For stack decisions and
 
 ## What this app does
 
-A **Next.js API-only backend** (no UI) that accepts a job description, curates structured CV JSON from a master JSON, mechanically renders Word, and returns both artifacts. CCC POSTs the JD with a Bearer secret, attaches the `.docx`, and may retain curated JSON for regen.
+A **Next.js backend** (no product UI) that accepts a job description, curates structured CV JSON from a master JSON, mechanically renders Word, and returns both artifacts. The inbox worker in this process (planned) uses the same pipeline, attaches the `.docx` to a Gmail reply draft, and may retain curated JSON for regen.
 
 **Production entry point:** `POST /api/tailor-cv` → `app/api/tailor-cv/route.ts :: POST`
 
@@ -15,7 +15,7 @@ A **Next.js API-only backend** (no UI) that accepts a job description, curates s
 ## High-level architecture
 
 ```text
-Client (CCC / smoke CLI)
+Client (smoke CLI)
     │
     ▼ POST { jobDescription } + Authorization: Bearer
 app/api/tailor-cv/route.ts
@@ -34,6 +34,8 @@ app/api/tailor-cv/route.ts
     │
     ▼ 200 { cv, curatedJson, builderVersion, model, usage, remaining, resetTime }
 ```
+
+The planned inbox worker is not this HTTP client. It calls an in-process tailor core (same curator + mechanical `.docx`; no Bearer, no public rate-limit buckets). Today's `buildTailorResponse` is the HTTP adapter (`NextRequest`, IP, auth, `checkRateLimit`); M8.4 extracts or wraps the shared core.
 
 ---
 
@@ -185,4 +187,4 @@ Prompt files cloned from the portfolio chat bot remain for a hypothetical future
 
 ## Planned but not implemented
 
-See [PIPELINE_ENHANCEMENTS](./PIPELINE_ENHANCEMENTS.md) (two-pass, critic) and [LEARNING_SYSTEM](./LEARNING_SYSTEM.md) (SQLite feedback). Also deferred: recruiter reply draft, selective RAG.
+See [PIPELINE_ENHANCEMENTS](./PIPELINE_ENHANCEMENTS.md) (two-pass, critic) and [LEARNING_SYSTEM](./LEARNING_SYSTEM.md) (SQLite feedback). Recruiter reply text + Gmail drafts: [inbox worker product contract](../plans/2026-09-05-002-feat-inbox-worker-plan.md). Still deferred: selective RAG.

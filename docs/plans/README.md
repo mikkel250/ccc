@@ -16,7 +16,7 @@ Named leftover (not a plan): [eval-parse unit tests](../residual-review-findings
 
 Operator focus (STRATEGY, not `/ce-work`): in-field `strict` submit bar. Lane: operator
 
-Next engineering that needs a plan: two fronts / scheduled inbox scan (STRATEGY “Two fronts, one API”) — milestone M8.
+Drain order (composite pick): GitHub #38, then M7, then M8.1. Inbox product contract: [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md).
 
 ## Milestones (build order)
 
@@ -29,13 +29,18 @@ Next engineering that needs a plan: two fronts / scheduled inbox scan (STRATEGY 
 | M5 | Retire LLM judges from tailor and smoke | done | [retire LLM judges](./2026-09-03-001-feat-retire-llm-judges-plan.md) | Single-pass tailor; human quality loop | |
 | M6 | Plans README as session-start north-star | done | [plans README roadmap](./2026-09-02-001-feat-plans-readme-roadmap-plan.md) | Agents read active milestone, not newest-dated plan | |
 | M7 | Cross-model parity matrix | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) (production confidence across providers) | Production confidence across providers | lfg |
-| M8 | Two fronts / scheduled inbox scan | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) “Two fronts, one API” | Unattended inbound drafts on the same API | lfg |
+| M8.1 | Strict reply text on `POST /api/tailor-cv` | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) “Two fronts, one API”; [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) | Smoke yields a sendable recruiter reply plus CV artifacts | lfg |
+| M8.2 | Gmail auth + list labeled mail | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) “Two fronts, one API”; [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) | Local list of recruiter-labeled messages without creating drafts | lfg |
+| M8.3 | Body extract + processed-ID store | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) “Two fronts, one API”; [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) | Second extract of the same message is a no-op after the first mark | lfg |
+| M8.4 | Tailor from a labeled message | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) “Two fronts, one API”; [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) | In-process strict tailor returns `.docx` and reply text without public rate-limit buckets | lfg |
+| M8.5 | Thread draft + attach + body | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) “Two fronts, one API”; [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) | Local scan creates a Gmail reply draft with body and CV `.docx` | lfg |
+| M8.6 | Railway schedule for the same scan job | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) “Two fronts, one API”; [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) | Deploy scans while the laptop is closed; reruns skip processed ids | lfg |
 
 M5–M6 numbering here is the *current* board. Historical “M5 tenure honesty” / “M6 holistic smoke judge” from the first README pass are retired or parked below — do not treat those old labels as live work.
 
 ## Backlog (not active)
 
-- **Drain-board LFG autopilot** — [implementation-ready plan](./2026-09-05-001-feat-drain-board-lfg-plan.md). Lanes + drain iterator; in flight on this branch. Lane: operator
+- **Drain-board LFG autopilot** — shipped on `main` (PR #43); procedure in `AGENTS.md`. Plan: [drain board LFG](./2026-09-05-001-feat-drain-board-lfg-plan.md). Retired as a board item.
 - **Tenure honesty guardrails** — was a pivot-path milestone; no plan. Do not start while STRATEGY parks pivot/`flexible` commercial investment. Lane: parked
 - **Holistic “strong enough” smoke judge** — retired. See [retire LLM judges](./2026-09-03-001-feat-retire-llm-judges-plan.md).
 - **Judge model bakeoff** — [superseded](./2026-07-30-001-feat-judge-model-bakeoff-plan.md); do not implement. Lane: parked
