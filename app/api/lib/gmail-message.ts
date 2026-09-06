@@ -2,7 +2,7 @@
  * Gmail users.messages.get + reply-header parse (R10).
  */
 import { getGmailApiBaseUrl } from "./gmail-config";
-import { gmailFetchJson } from "./gmail-http";
+import { gmailFetchJson, gmailJsonObject, sanitizeMimeHeaderValue } from "./gmail-http";
 import {
   refreshGmailAccessToken,
   type FetchLike,
@@ -23,13 +23,6 @@ export type GmailMessageResult =
 export type GmailReplyHeadersResult =
   | { ok: true; headers: GmailReplyHeaders }
   | { ok: false; error: string };
-
-function jsonObject(raw: unknown): object | undefined {
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-    return undefined;
-  }
-  return raw;
-}
 
 function headerValue(headers: unknown, name: string): string | undefined {
   if (!Array.isArray(headers)) {
@@ -52,12 +45,18 @@ function headerValue(headers: unknown, name: string): string | undefined {
   return undefined;
 }
 
-function sanitizeMimeHeaderValue(value: string): string {
-  return value.split(/[\r\n]/)[0]!.trim();
+function formatReplySubject(subjectRaw: string | undefined): string {
+  if (subjectRaw === undefined) {
+    return "Re:";
+  }
+  if (/^re:\s*/i.test(subjectRaw)) {
+    return subjectRaw;
+  }
+  return `Re: ${subjectRaw}`;
 }
 
 export function parseGmailReplyHeaders(message: unknown): GmailReplyHeadersResult {
-  const root = jsonObject(message);
+  const root = gmailJsonObject(message);
   if (root === undefined) {
     return { ok: false, error: "Gmail message was not an object" };
   }
@@ -66,7 +65,7 @@ export function parseGmailReplyHeaders(message: unknown): GmailReplyHeadersResul
     return { ok: false, error: "Gmail message missing threadId" };
   }
   const payload = Reflect.get(root, "payload");
-  const payloadObj = jsonObject(payload);
+  const payloadObj = gmailJsonObject(payload);
   const headers =
     payloadObj === undefined ? undefined : Reflect.get(payloadObj, "headers");
   const from = headerValue(headers, "From");
@@ -75,13 +74,7 @@ export function parseGmailReplyHeaders(message: unknown): GmailReplyHeadersResul
   if (to === undefined) {
     return { ok: false, error: "Gmail message missing From header" };
   }
-  const subjectRaw = headerValue(headers, "Subject");
-  const subject =
-    subjectRaw === undefined
-      ? "Re:"
-      : /^re:\s*/i.test(subjectRaw)
-        ? subjectRaw
-        : `Re: ${subjectRaw}`;
+  const subject = formatReplySubject(headerValue(headers, "Subject"));
   const messageId = headerValue(headers, "Message-ID") ?? headerValue(headers, "Message-Id");
   return {
     ok: true,
@@ -107,7 +100,7 @@ export async function getGmailMessage(params: {
   if (!token.ok) {
     return { ok: false, error: token.error };
   }
-  const base = getGmailApiBaseUrl().replace(/\/+$/, "");
+  const base = getGmailApiBaseUrl();
   const url = new URL(
     `${base}/users/me/messages/${encodeURIComponent(parsed.messageId)}`
   );

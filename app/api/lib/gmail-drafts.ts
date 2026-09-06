@@ -6,7 +6,7 @@ import {
   getGmailApiBaseUrl,
   getGmailCvAttachmentFilename,
 } from "./gmail-config";
-import { gmailFetchJson } from "./gmail-http";
+import { gmailFetchJson, gmailJsonObject, sanitizeMimeHeaderValue } from "./gmail-http";
 import {
   parseGmailReplyHeaders,
 } from "./gmail-message";
@@ -23,13 +23,6 @@ const MIME_LINE_LENGTH = 76;
 const DOCX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
-function jsonObject(raw: unknown): object | undefined {
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-    return undefined;
-  }
-  return raw;
-}
-
 export function wrapMimeBase64(value: string): string {
   const compact = value.replace(/\s+/g, "");
   const lines: string[] = [];
@@ -39,12 +32,8 @@ export function wrapMimeBase64(value: string): string {
   return lines.join("\r\n");
 }
 
-function sanitizeMimeHeaderValue(value: string): string {
-  return value.split(/[\r\n]/)[0]!.trim();
-}
-
 export function threadContainsDraft(raw: unknown): boolean {
-  const root = jsonObject(raw);
+  const root = gmailJsonObject(raw);
   if (root === undefined) {
     return false;
   }
@@ -111,7 +100,7 @@ export async function gmailThreadHasDraft(params: {
   if (!token.ok) {
     return { ok: false, error: token.error };
   }
-  const base = getGmailApiBaseUrl().replace(/\/+$/, "");
+  const base = getGmailApiBaseUrl();
   const threadRes = await gmailFetchJson({
     url: `${base}/users/me/threads/${encodeURIComponent(params.threadId)}`,
     accessToken: token.data.accessToken,
@@ -143,7 +132,7 @@ export async function ensureReplyDraft(params: {
   if (!token.ok) {
     return { ok: false, error: token.error };
   }
-  const base = getGmailApiBaseUrl().replace(/\/+$/, "");
+  const base = getGmailApiBaseUrl();
   const threadUrl = `${base}/users/me/threads/${encodeURIComponent(headers.headers.threadId)}`;
   const threadRes = await gmailFetchJson({
     url: threadUrl,

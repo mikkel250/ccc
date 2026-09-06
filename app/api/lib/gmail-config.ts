@@ -50,7 +50,10 @@ export function getGmailOauthTokenUrl(): string {
 }
 
 export function getGmailApiBaseUrl(): string {
-  return getEnvString("GMAIL_API_BASE_URL", DEFAULT_GMAIL_API_BASE_URL)!;
+  return getEnvString("GMAIL_API_BASE_URL", DEFAULT_GMAIL_API_BASE_URL)!.replace(
+    /\/+$/,
+    ""
+  );
 }
 
 export function getGmailOauthScope(): string {

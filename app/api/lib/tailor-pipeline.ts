@@ -398,16 +398,8 @@ export async function runTailorCore(
       }
     );
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
     if (error instanceof ServiceError) {
       return { ok: false, error: error.message, status: 503 };
-    }
-    if (deps.isLlmServiceError(message)) {
-      return {
-        ok: false,
-        error: "AI service error. Please try again.",
-        status: 503,
-      };
     }
     return {
       ok: false,
