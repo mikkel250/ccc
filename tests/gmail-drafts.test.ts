@@ -54,6 +54,22 @@ describe("gmail draft MIME and reuse", () => {
     assert.match(rfc, /QQ==/);
   });
 
+  it("strips CR/LF from MIME header values", () => {
+    const rfc = buildReplyRfc822({
+      to: "recruiter@example.com\r\nBcc: evil@x.com",
+      subject: "Re: Role\nX-Injected: 1",
+      body: "Thanks",
+      attachmentFilename: "CV.docx",
+      docxBase64: "QQ==",
+      boundary: "ccc-test",
+      inReplyTo: "<m@mail>\r\nCc: evil@x.com",
+    });
+    const headerBlock = rfc.split("\r\n\r\n")[0] ?? rfc;
+    assert.doesNotMatch(headerBlock, /Bcc: evil/);
+    assert.doesNotMatch(headerBlock, /X-Injected/);
+    assert.doesNotMatch(headerBlock, /Cc: evil/);
+  });
+
   it("detects a DRAFT-labeled thread message", () => {
     assert.equal(
       threadContainsDraft({
@@ -167,5 +183,30 @@ describe("ensureReplyDraft", () => {
       },
     });
     assert.equal(result.ok, false);
+  });
+
+  it("returns ok false when the CV attachment filename is invalid", async () => {
+    process.env.GMAIL_CV_ATTACHMENT_FILENAME = "../secret.docx";
+    const result = await ensureReplyDraft({
+      sourceMessage: sourceMessage(),
+      replyText: "Thanks for reaching out.",
+      docxBase64: "QQ==",
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.includes("/token")) {
+          return jsonResponse({ access_token: "access" });
+        }
+        if (url.includes("/threads/t1")) {
+          return jsonResponse({
+            messages: [{ id: "m1", labelIds: ["INBOX"] }],
+          });
+        }
+        throw new Error("drafts.create must not run for invalid filename");
+      },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /filename/i);
+    }
   });
 });

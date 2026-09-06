@@ -51,4 +51,41 @@ describe("parseGmailReplyHeaders", () => {
     });
     assert.equal(result.ok, false);
   });
+
+  it("prefers Reply-To over From", () => {
+    const result = parseGmailReplyHeaders({
+      threadId: "t1",
+      payload: {
+        headers: [
+          { name: "From", value: "via@mailer.example" },
+          { name: "Reply-To", value: "recruiter@example.com" },
+          { name: "Subject", value: "GM role" },
+        ],
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.headers.to, "recruiter@example.com");
+    }
+  });
+
+  it("strips CR/LF from header values used as MIME fields", () => {
+    const result = parseGmailReplyHeaders({
+      threadId: "t1",
+      payload: {
+        headers: [
+          { name: "From", value: "recruiter@example.com\r\nBcc: evil@x.com" },
+          { name: "Subject", value: "GM\nrole" },
+          { name: "Message-ID", value: "<id@mail>\r\nX-Injected: 1" },
+        ],
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.headers.to.includes("\n"), false);
+      assert.equal(result.headers.to.includes("\r"), false);
+      assert.equal(result.headers.subject.includes("\n"), false);
+      assert.equal(result.headers.inReplyTo?.includes("\r"), false);
+    }
+  });
 });

@@ -8,6 +8,7 @@ import {
   inboxProcessedKey,
   markInboxProcessed,
   parseInboxMessageId,
+  releaseInboxClaim,
   type InboxKv,
 } from "../app/api/lib/inbox-processed-store";
 
@@ -36,6 +37,9 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
       }
       store.set(key, value);
       return "OK";
+    },
+    del: async (key) => {
+      store.delete(key);
     },
   };
 }
@@ -120,5 +124,14 @@ describe("inbox processed store", () => {
     const result = await extractUnprocessedInboxMessage("bad:id", plainMessage("JD"));
     assert.equal(result.ok, false);
     assert.equal(memory.store.size, 0);
+  });
+
+  it("releaseInboxClaim deletes the NX claim key", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    assert.equal(memory.store.has(inboxClaimKey(ID)), true);
+    const released = await releaseInboxClaim(ID);
+    assert.equal(released.ok, true);
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
   });
 });

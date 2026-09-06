@@ -19,6 +19,7 @@ export type InboxKv = {
     value: string,
     opts?: { nx?: boolean; ex?: number }
   ) => Promise<"OK" | null>;
+  del: (key: string) => Promise<void>;
 };
 
 export type InboxClaimOutcome = "won" | "lost" | "processed";
@@ -70,6 +71,9 @@ function kv(): InboxKv {
         result = await withTimeout(client.set(key, value), timeoutMs);
       }
       return result === "OK" ? "OK" : null;
+    },
+    del: async (key) => {
+      await withTimeout(client.del(key), timeoutMs);
     },
   };
 }
@@ -158,6 +162,21 @@ export async function markInboxProcessed(
   const set = await kv().set(inboxProcessedKey(parsed.messageId), "1", opts);
   if (set !== "OK") {
     return { ok: false, error: "Failed to persist processed messageId" };
+  }
+  return { ok: true };
+}
+
+export async function releaseInboxClaim(
+  messageId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = parseInboxMessageId(messageId);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  try {
+    await kv().del(inboxClaimKey(parsed.messageId));
+  } catch {
+    return { ok: false, error: "Failed to release inbox claim" };
   }
   return { ok: true };
 }
