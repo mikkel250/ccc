@@ -27,7 +27,7 @@ The JD-specific JSON produced by the curator LLM: same schema as the Master CV. 
 Turning a Curated CV into a `.docx` with a deterministic builder (no LLM). The attachable file is a pure function of curated JSON plus builder version.
 
 ### Tailor request
-A single `POST /api/tailor-cv` invocation that authenticates with a shared secret, validates a job description, loads the Master CV, runs the curator model, mechanically renders `.docx`, and returns the document, the Curated CV, and `builderVersion`. On the `strict` path the product also includes recruiter **reply text** (M8.1; live HTTP omits it until that row ships). Stateless per request; dual rate-limited by client IP and shared-secret hash. The inbox worker calls this pipeline in-process and must not share those HTTP rate-limit buckets.
+A single `POST /api/tailor-cv` invocation that authenticates with a shared secret, validates a job description, loads the Master CV, runs the curator model, mechanically renders `.docx`, and returns the document, the Curated CV, and `builderVersion`. On the `strict` path the product also includes recruiter **reply text** (`replyText` from curator `reply_text`). Stateless per request; dual rate-limited by client IP and shared-secret hash. The inbox worker calls this pipeline in-process and must not share those HTTP rate-limit buckets.
 
 ### Builder version
 Semver-like constant on the mechanical JSON→docx builder. Callers retaining curated JSON for regen must keep the recorded version; style-stable regen applies only when it matches the builder invoked (`npm run regen-docx`).

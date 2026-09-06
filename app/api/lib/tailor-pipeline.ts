@@ -25,7 +25,12 @@ import {
   getTailorResponseMaxBytes,
 } from "./cv-schema";
 import { CURATOR_LANGFUSE_PROMPT_NAME } from "./curator-prompt";
-import { isFlexibleWrapper, flexibleCoverLetter } from "./curation-mode";
+import {
+  isCuratedCvWrapper,
+  isFlexibleWrapper,
+  flexibleCoverLetter,
+  usableReplyText,
+} from "./curation-mode";
 import type { CurationMode } from "./curation-mode";
 
 // ---------------------------------------------------------------------------
@@ -47,6 +52,8 @@ export interface TailorResponseBody {
   resetTime: number;
   /** Present only for flexible mode — cover letter as markdown. */
   coverLetter?: string;
+  /** Present only for strict mode — recruiter reply email body. */
+  replyText?: string;
 }
 
 export type TailorPipelineResult =
@@ -348,6 +355,7 @@ export async function buildTailorResponse(
   // 8. Extract + schema validate + size check
   let curatedRaw: unknown;
   let coverLetter: string | undefined;
+  let replyText: string | undefined;
   try {
     const parsed = deps.extractStructuredJson(curatorResponse.content);
     if (curationMode === "flexible") {
@@ -362,7 +370,25 @@ export async function buildTailorResponse(
       curatedRaw = parsed.curated_cv;
       coverLetter = flexibleCoverLetter(parsed);
     } else {
-      curatedRaw = parsed;
+      if (!isCuratedCvWrapper(parsed)) {
+        console.error("Curator output missing curated_cv in strict wrapper");
+        return {
+          ok: false,
+          error: "Curator output missing curated_cv in strict wrapper",
+          status: 422,
+        };
+      }
+      const reply = usableReplyText(Reflect.get(parsed, "reply_text"));
+      if (reply === undefined) {
+        console.error("Curator output missing reply_text");
+        return {
+          ok: false,
+          error: "Curator output missing reply_text",
+          status: 422,
+        };
+      }
+      curatedRaw = parsed.curated_cv;
+      replyText = reply;
     }
   } catch {
     console.error("Curator output was not valid JSON");
@@ -409,6 +435,7 @@ export async function buildTailorResponse(
     remaining: rateLimit.remaining,
     resetTime: rateLimit.resetTime,
     ...(coverLetter !== undefined ? { coverLetter } : {}),
+    ...(replyText !== undefined ? { replyText } : {}),
   };
 
   const responseBytes = Buffer.byteLength(

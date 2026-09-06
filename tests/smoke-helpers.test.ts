@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   redactCuratedForArtifact,
   shouldWriteCoverLetterDocx,
+  shouldWriteReplyText,
   smokeArtifactPaths,
 } from "../app/api/lib/smoke-helpers";
 
@@ -74,6 +75,20 @@ describe("shouldWriteCoverLetterDocx", () => {
   });
 });
 
+describe("shouldWriteReplyText", () => {
+  it("returns true for strict mode with non-empty string", () => {
+    assert.equal(shouldWriteReplyText("strict", "Thanks for reaching out."), true);
+  });
+
+  it("returns false for strict mode with whitespace-only string", () => {
+    assert.equal(shouldWriteReplyText("strict", "   "), false);
+  });
+
+  it("returns false for flexible mode even with non-empty string", () => {
+    assert.equal(shouldWriteReplyText("flexible", "Thanks for reaching out."), false);
+  });
+});
+
 describe("smokeArtifactPaths", () => {
   it("names docx and curated json from the JD basename", () => {
     const paths = smokeArtifactPaths(
@@ -87,6 +102,7 @@ describe("smokeArtifactPaths", () => {
       paths.coverLetterPath,
       "/tmp/smoke/wayfare-mgr.cover-letter.docx"
     );
+    assert.equal(paths.replyPath, "/tmp/smoke/wayfare-mgr.reply.txt");
   });
 
   it("strips the terminal extension and sanitizes unsafe characters", () => {

@@ -17,6 +17,8 @@ describe("curator-prompt", () => {
   it("fallback omits page-count and visual QA / docx operator steps", () => {
     const text = getCuratorPromptFallbackText();
     assert.match(text, /curated JSON only/i);
+    assert.match(text, /"reply_text"/);
+    assert.match(text, /"curated_cv"/);
     assert.doesNotMatch(text, /present_files/);
     assert.doesNotMatch(text, /resume_builder\.js/);
     assert.doesNotMatch(text, /render to JPEG|PDF→JPEG/i);

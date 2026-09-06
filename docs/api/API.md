@@ -81,6 +81,7 @@ Request body size capped by `TAILOR_REQUEST_MAX_BYTES` (default 65536).
   "cv": "<base64-encoded .docx>",
   "curatedJson": { "name": "…", "contact": {}, "summary": [], "…": "…" },
   "coverLetter": "…markdown cover letter (flexible mode only)…",
+  "replyText": "…recruiter reply email body (strict mode only)…",
   "builderVersion": "1.0.0",
   "curationMode": "flexible",
   "model": "anthropic/sonnet",
@@ -98,6 +99,7 @@ Request body size capped by `TAILOR_REQUEST_MAX_BYTES` (default 65536).
 |-------|-------------|
 | `cv` | Base64 `.docx` |
 | `coverLetter` | Markdown cover letter (flexible mode only; absent for strict mode) |
+| `replyText` | Recruiter-thread email body (strict mode only; absent for flexible). Trimmed non-empty string; missing/blank curator `reply_text` is HTTP 422. |
 | `curatedJson` | Schema-valid curated CV (caller-owned for history/regen) |
 | `builderVersion` | Mechanical builder semver; keep with JSON for style-stable regen |
 | `curationMode` | Echo of the mode used for this tailor (`strict` or `flexible`) |

@@ -8,6 +8,7 @@ import { resetRedisClientForTest } from "../app/api/lib/redis";
 import { createFailingMock } from "../tests/helpers/rate-limit-mock";
 import { BUILDER_VERSION } from "../app/api/lib/json-docx-builder";
 import { getTailorJdMaxChars } from "../app/api/lib/cv-schema";
+import { strictCuratorJson } from "../tests/helpers/strict-curator";
 import {
   getRateLimitConfig,
   hashTailorApiKeyForRateLimit,
@@ -55,7 +56,7 @@ function mockPipelineSuccess(
     (jd: string) => `JD:\n${jd}`
   );
   mock.method(tailorCvDeps, "chat", async () => ({
-    content: JSON.stringify(curated),
+    content: strictCuratorJson(curated),
     usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
     model: "anthropic/sonnet",
     finishReason: "stop",
@@ -389,7 +390,7 @@ describe("buildTailorResponse — pipeline orchestration", () => {
   it("returns error when curator JSON fails schema validation", async () => {
     mockPipelineSuccess();
     mock.method(tailorCvDeps, "chat", async () => ({
-      content: JSON.stringify({ name: "Only Name" }),
+      content: strictCuratorJson({ name: "Only Name" }),
       usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
       model: "anthropic/sonnet",
       finishReason: "stop",
@@ -525,7 +526,7 @@ describe("buildTailorResponse — pipeline orchestration", () => {
       mock.method(tailorCvDeps, "chat", async () => {
         callOrder.push("chat");
         return {
-          content: JSON.stringify(FIXTURE_CURATED),
+          content: strictCuratorJson(FIXTURE_CURATED),
           usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
           model: "anthropic/sonnet",
           finishReason: "stop",
