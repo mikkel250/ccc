@@ -122,6 +122,7 @@ npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 | `tests/gmail-message.test.ts` | Reply headers from a Gmail message resource |
 | `tests/gmail-drafts.test.ts` | MIME + draft create vs thread reuse |
 | `tests/inbox-scan.test.ts` | Scan job: draft, reuse, 422 skip, processed skip |
+| `tests/inbox-scan-railway.test.ts` | Railway cron toml vs always-on API toml |
 | `tests/route.test.ts` | Auth, curator cutover, dual response |
 | `tests/tailor-cv-validation.test.ts` | Request body + JD size validation |
 
@@ -148,6 +149,8 @@ npm run gmail:auth   # loopback consent; prints GMAIL_REFRESH_TOKEN=
 npm run gmail:list   # lists { id, threadId } for GMAIL_RECRUITER_LABEL
 npm run inbox:scan   # tailor labeled mail in-process; create or reuse a Gmail reply draft
 ```
+
+Railway (M8.6): add a **second service** from this repo, set its config-as-code path to `railway.inbox-scan.toml`, and copy the same secrets (`GMAIL_*`, `MASTER_CV_*`, LLM keys, Upstash). That service runs `npm run inbox:scan` at 05:00 UTC and must exit. Do not put `cronSchedule` on the always-on API `railway.toml`.
 
 Mechanical regen (no LLM):
 

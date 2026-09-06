@@ -80,6 +80,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── tailor-pipeline.test.ts            # HTTP adapter + runTailorCore
 │   ├── inbox-tailor.test.ts               # Labeled-message in-process entry
 │   ├── inbox-scan.test.ts                 # Scan: draft/reuse/processed/skip
+│   ├── inbox-scan-railway.test.ts         # API toml is not a cron; scan toml is
 │   ├── gmail-drafts.test.ts               # MIME + draft create vs reuse
 │   ├── route.test.ts                      # Tailor route (mocked curator)
 │   ├── cv-prompt*.test.ts                 # Legacy markdown prompt tests
@@ -95,7 +96,8 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 ├── instrumentation.ts           # Next.js register (nodejs-only gate)
 ├── instrumentation.node.ts      # ensureSecureStartup (R5d) + preloadMasterCv
 ├── next.config.mjs              # Next.js config (OTEL external packages)
-├── railway.toml                 # Railway deployment config
+├── railway.toml                 # Railway API service (always-on npm start)
+├── railway.inbox-scan.toml      # Railway cron service: npm run inbox:scan at 05:00 UTC
 ├── .coderabbit.yaml             # CodeRabbit review config
 ├── .env.example                 # Environment variable template
 ├── package.json                 # Dependencies
