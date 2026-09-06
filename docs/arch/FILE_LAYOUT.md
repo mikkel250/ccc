@@ -35,6 +35,9 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── markdown-docx.ts  # Legacy markdown → .docx (not tailor hot path)
 │           ├── cv-prompt.ts      # Legacy markdown tailor prompt (not hot path)
 │           ├── redis.ts          # Shared Upstash Redis client singleton
+│           ├── inbox-config.ts   # Inbox Redis prefix / claim+processed TTLs
+│           ├── inbox-processed-store.ts # SET NX claim vs terminal processed mark
+│           ├── gmail-body.ts     # Gmail payload → JD (text/plain else html-to-text)
 │           ├── rate-limit.ts     # Dual IP + secret-hash rate limiter
 │           ├── tailor-cv-validation.ts  # Request body validation
 │           ├── eval-schema.ts     # Historical eval types/prompts (markdown-era)

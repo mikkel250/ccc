@@ -8,7 +8,7 @@ Lanes (`lfg` / `operator` / `parked` / `awaiting-merge`) mark whether drain may 
 
 ## Active milestone
 
-**M8.1 — Strict reply text on `POST /api/tailor-cv`** — [plan](./2026-09-06-003-feat-strict-reply-text-plan.md). Lane: awaiting-merge
+**M8.4 — Tailor from a labeled message** — [plan](./2026-09-06-006-feat-in-process-tailor-plan.md). Lane: lfg
 
 Shipped on `main`: JSON curator API, auth/rate-limit, smoke library, flexible cover-letter DOCX, LLM-judge retirement, this README.
 
@@ -29,10 +29,10 @@ Drain order (composite pick): GitHub #38, then M7, then M8.1. Inbox product cont
 | M5 | Retire LLM judges from tailor and smoke | done | [retire LLM judges](./2026-09-03-001-feat-retire-llm-judges-plan.md) | Single-pass tailor; human quality loop | |
 | M6 | Plans README as session-start north-star | done | [plans README roadmap](./2026-09-02-001-feat-plans-readme-roadmap-plan.md) | Agents read active milestone, not newest-dated plan | |
 | M7 | Cross-model parity matrix | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) (production confidence across providers) | Production confidence across providers | lfg |
-| M8.1 | Strict reply text on `POST /api/tailor-cv` | in progress | [strict reply text](./2026-09-06-003-feat-strict-reply-text-plan.md) — product contract [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) R1–R5 | Smoke yields a sendable recruiter reply plus CV artifacts | awaiting-merge |
+| M8.1 | Strict reply text on `POST /api/tailor-cv` | in progress | [strict reply text](./2026-09-06-003-feat-strict-reply-text-plan.md) — product contract [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) R1–R5 | Smoke yields a sendable recruiter reply plus CV artifacts | lfg |
 | M8.2 | Gmail auth + list labeled mail | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) “Two fronts, one API”; [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) | Local list of recruiter-labeled messages without creating drafts | lfg |
-| M8.3 | Body extract + processed-ID store | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) “Two fronts, one API”; [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) | Second extract of the same message is a no-op after the first mark | lfg |
-| M8.4 | Tailor from a labeled message | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) “Two fronts, one API”; [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) | In-process strict tailor returns `.docx` and reply text without public rate-limit buckets | lfg |
+| M8.3 | Body extract + processed-ID store | in progress | [inbox extract + store](./2026-09-06-005-feat-inbox-extract-store-plan.md) — product contract [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) R7, R10, R12 | Second extract of the same message is a no-op after the first mark | lfg |
+| M8.4 | Tailor from a labeled message | in progress | [in-process tailor](./2026-09-06-006-feat-in-process-tailor-plan.md) — product contract [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) R8 | In-process strict tailor returns `.docx` and reply text without public rate-limit buckets | lfg |
 | M8.5 | Thread draft + attach + body | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) “Two fronts, one API”; [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) | Local scan creates a Gmail reply draft with body and CV `.docx` | lfg |
 | M8.6 | Railway schedule for the same scan job | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) “Two fronts, one API”; [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) | Deploy scans while the laptop is closed; reruns skip processed ids | lfg |
 
