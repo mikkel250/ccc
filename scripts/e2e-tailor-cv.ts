@@ -3,13 +3,16 @@
  * Not wired into `npm test` / CI.
  *
  * Usage:
- *   npm run smoke -- [baseUrl] [jdPath] [--flexible]
- *   npx tsx scripts/e2e-tailor-cv.ts [baseUrl] [jdPath] [--flexible]
+ *   npm run smoke -- [baseUrl] [jdPath] [--flexible] [--parity]
+ *   npx tsx scripts/e2e-tailor-cv.ts [baseUrl] [jdPath] [--flexible] [--parity]
  *
  * Requires: running server, TAILOR_API_KEY.
  * Server-side MASTER_CV_* is the running server's concern, not this client's.
  * Optional: SMOKE_WRITE_UNREDACTED=1 to write full curated JSON locally (default redacts).
  * Optional: SMOKE_CURATION_MODE=strict|flexible (default strict); --flexible forces flexible.
+ * Optional: --parity nests artifacts under tmp/smoke/<provider>/<model>/ and writes
+ *   parity-status.json. One live TAILOR_MODEL per process; remaining catalog cells
+ *   need a server restart. Catalog: SMOKE_PARITY_MODELS.
  */
 
 import { config as loadDotenv } from "dotenv";
@@ -21,7 +24,7 @@ import {
   readdirSync,
   realpathSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   DEFAULT_CURATION_MODE,
@@ -29,6 +32,10 @@ import {
   type CurationMode,
 } from "../app/api/lib/curation-mode";
 import {
+  mergeParityStatus,
+  parseParityStatusJson,
+  parseSmokeParityModels,
+  pendingParityModels,
   redactCuratedForArtifact,
   shouldWriteCoverLetterDocx,
   smokeArtifactPaths,
@@ -88,6 +95,7 @@ export type WriteSmokeArtifactsInput = {
   curationMode: CurationMode;
   coverLetter: unknown;
   artifactDir?: string;
+  model?: string;
 };
 
 export async function writeSmokeArtifacts(
@@ -100,8 +108,8 @@ export async function writeSmokeArtifacts(
 }> {
   const dir =
     input.artifactDir ?? join(process.cwd(), "tmp", "smoke");
-  mkdirSync(dir, { recursive: true });
-  const paths = smokeArtifactPaths(input.jdPath, dir);
+  const paths = smokeArtifactPaths(input.jdPath, dir, input.model);
+  mkdirSync(dirname(paths.curatedPath), { recursive: true });
   if (
     existsSync(paths.curatedPath) ||
     existsSync(paths.docxPath) ||
@@ -158,6 +166,7 @@ export type RunSmokeCliOptions = {
   jdPath?: string;
   wantFlexible: boolean;
   artifactDir?: string;
+  parity?: boolean;
   deps?: SmokePipelineDeps;
 };
 
@@ -172,6 +181,17 @@ export async function runSmokeCli(options: RunSmokeCliOptions): Promise<void> {
   if (!apiKey) {
     console.error("TAILOR_API_KEY is required for smoke");
     process.exit(1);
+  }
+
+  const smokeRoot = options.artifactDir ?? join(process.cwd(), "tmp", "smoke");
+  let catalog: string[] = [];
+  if (options.parity) {
+    try {
+      catalog = parseSmokeParityModels();
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
   }
 
   const result = await verifySmokePipeline(jd.text, {
@@ -190,6 +210,11 @@ export async function runSmokeCli(options: RunSmokeCliOptions): Promise<void> {
     `PASS tailor model=${result.model} builder=${result.builderVersion}`
   );
 
+  if (options.parity && !result.model.trim()) {
+    console.error("parity mode requires a non-empty response model");
+    process.exit(1);
+  }
+
   await writeSmokeArtifacts({
     jdPath: jd.path,
     curated: result.curatedJson,
@@ -197,8 +222,36 @@ export async function runSmokeCli(options: RunSmokeCliOptions): Promise<void> {
     cvBase64: result.docxBase64,
     curationMode,
     coverLetter: result.coverLetter,
-    artifactDir: options.artifactDir,
+    artifactDir: smokeRoot,
+    model: options.parity ? result.model : undefined,
   });
+
+  if (options.parity) {
+    const statusPath = join(smokeRoot, "parity-status.json");
+    let existing = null;
+    if (existsSync(statusPath)) {
+      try {
+        const parsed: unknown = JSON.parse(readFileSync(statusPath, "utf8"));
+        existing = parseParityStatusJson(parsed);
+      } catch {
+        console.error("Invalid parity-status.json");
+        process.exit(1);
+      }
+    }
+    const next = mergeParityStatus(existing, catalog, result.model, true);
+    const pending = pendingParityModels(catalog, next);
+    writeFileSync(
+      statusPath,
+      JSON.stringify({ ...next, pending }, null, 2)
+    );
+    if (pending.length > 0) {
+      console.log(
+        `Parity pending — restart npm run dev with TAILOR_MODEL=<model> and re-run smoke:parity: ${pending.join(", ")}`
+      );
+    } else {
+      console.log("Parity catalog complete");
+    }
+  }
 
   console.log("PASS smoke");
   process.exit(0);
@@ -208,7 +261,10 @@ async function main(): Promise<void> {
   loadDotenv();
   const argv = process.argv.slice(2);
   const wantFlexible = argv.includes("--flexible");
-  const positional = argv.filter((a) => a !== "--flexible");
+  const parity = argv.includes("--parity");
+  const positional = argv.filter(
+    (a) => a !== "--flexible" && a !== "--parity"
+  );
   const baseUrl =
     positional[0] || process.env.E2E_BASE_URL || "http://localhost:3000";
   const jdPath = positional[1];
@@ -217,6 +273,7 @@ async function main(): Promise<void> {
     baseUrl,
     jdPath,
     wantFlexible,
+    parity,
   });
 }
 
