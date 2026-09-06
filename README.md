@@ -1,12 +1,12 @@
 # CV Tailoring API
 
-API-only Next.js 15 backend: `POST /api/tailor-cv` curates a JD-specific CV JSON from a private master JSON, mechanically renders `.docx`, and returns both artifacts.
+Next.js 15 backend: `POST /api/tailor-cv` curates a JD-specific CV JSON from a private master JSON, mechanically renders `.docx`, and returns both artifacts. An inbox worker in this process (Gmail label → draft + attach) is specified in [docs/plans/2026-09-05-002-feat-inbox-worker-plan.md](docs/plans/2026-09-05-002-feat-inbox-worker-plan.md); no product UI in v1.
 
 ## Overview
 
-- **What it does:** Master JSON → curator LLM → schema validate → mechanical `.docx`; returns base64 Word + curated JSON + builder version.
-- **Who calls it:** CCC backend (Bearer secret, server-side) and the smoke CLI. Seekers never hold the key.
-- **No frontend, no database** (stateless). Auth = shared secret (`TAILOR_API_KEY`).
+- **What it does:** Master JSON → curator LLM → schema validate → mechanical `.docx`; returns base64 Word + curated JSON + builder version. Strict-path reply text and Gmail drafts are the inbox worker (M8.1–M8.6), not shipped yet.
+- **Who calls it:** Smoke CLI and the inbox worker in this repo (Bearer secret, server-side). Seekers never hold the key.
+- **No product UI, no database** (stateless tailor). Auth = shared secret (`TAILOR_API_KEY`).
 
 ---
 

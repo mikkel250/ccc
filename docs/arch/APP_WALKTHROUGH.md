@@ -6,7 +6,7 @@ Start-to-finish guide to how the CV Tailoring API works. For stack decisions and
 
 ## What this app does
 
-A **Next.js API-only backend** (no UI) that accepts a job description, curates structured CV JSON from a master JSON, mechanically renders Word, and returns both artifacts. CCC POSTs the JD with a Bearer secret, attaches the `.docx`, and may retain curated JSON for regen.
+A **Next.js backend** (no product UI) that accepts a job description, curates structured CV JSON from a master JSON, mechanically renders Word, and returns both artifacts. The inbox worker in this process (planned) uses the same pipeline, attaches the `.docx` to a Gmail reply draft, and may retain curated JSON for regen.
 
 **Production entry point:** `POST /api/tailor-cv` → `app/api/tailor-cv/route.ts :: POST`
 
@@ -15,7 +15,7 @@ A **Next.js API-only backend** (no UI) that accepts a job description, curates s
 ## High-level architecture
 
 ```text
-Client (CCC / smoke CLI)
+Client (inbox worker / smoke CLI)
     │
     ▼ POST { jobDescription } + Authorization: Bearer
 app/api/tailor-cv/route.ts

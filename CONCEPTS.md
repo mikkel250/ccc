@@ -27,16 +27,27 @@ The JD-specific JSON produced by the curator LLM: same schema as the Master CV. 
 Turning a Curated CV into a `.docx` with a deterministic builder (no LLM). The attachable file is a pure function of curated JSON plus builder version.
 
 ### Tailor request
-A single `POST /api/tailor-cv` invocation that authenticates with a shared secret, validates a job description, loads the Master CV, runs the curator model, mechanically renders `.docx`, and returns both the document and the Curated CV (plus `builderVersion`). Stateless per request; dual rate-limited by client IP and shared-secret hash.
+A single `POST /api/tailor-cv` invocation that authenticates with a shared secret, validates a job description, loads the Master CV, runs the curator model, mechanically renders `.docx`, and returns the document, the Curated CV, and `builderVersion`. On the `strict` path the product also includes recruiter **reply text** (M8.1; live HTTP omits it until that row ships). Stateless per request; dual rate-limited by client IP and shared-secret hash. The inbox worker calls this pipeline in-process and must not share those HTTP rate-limit buckets.
 
 ### Builder version
 Semver-like constant on the mechanical JSON→docx builder. Callers retaining curated JSON for regen must keep the recorded version; style-stable regen applies only when it matches the builder invoked (`npm run regen-docx`).
 
 ### Smoke
-Manual live-API operator path (`npm run smoke`): hits a running server with Bearer auth, asserts dual artifacts, and writes redact-by-default files under `tmp/smoke/`. Flexible runs also write a cover-letter DOCX only when `writeSmokeArtifacts` produces one — non-empty cover letter that passes `isValidDocxBase64`; otherwise that file may be absent. Quality is the operator reading those files. Not part of `npm test` / CI.
+Manual live-API operator path (`npm run smoke`): hits a running server with Bearer auth, asserts dual artifacts, and writes redact-by-default files under `tmp/smoke/`. Strict smoke also writes recruiter reply text when the API returns it. Flexible runs also write a cover-letter DOCX only when `writeSmokeArtifacts` produces one — non-empty cover letter that passes `isValidDocxBase64`; otherwise that file may be absent. Quality is the operator reading those files. Not part of `npm test` / CI.
 
 ### Knowledge base
 *Avoid as the name for career truth after cutover — use Master CV.* Historically: on-disk markdown career corpus injected into every tailor request. Retained only as a legacy term for pre-cutover behavior and non-tailor prose / test JD fixtures under `knowledge-base/test-jds/`.
+
+## Inbox
+
+### Reply text
+The recruiter-facing email body returned on a successful `strict` tailor. Grounded in the Master CV with the same no-invention rules as the Curated CV. The inbox worker copies it into the Gmail draft body. Distinct from flexible-mode `coverLetter`.
+
+### Inbox scan
+On-demand or scheduled job in this process: list Gmail messages with the recruiter label, skip processed ids, strict-tailor the body, create a thread reply draft with reply text and the CV `.docx`. Local `npm run inbox:scan` and Railway cron invoke the same job.
+
+### Processed message
+A Gmail `messageId` recorded after a successful draft create so a later scan does not tailor or draft again. Stored in Upstash Redis.
 
 ## Agent workflow
 

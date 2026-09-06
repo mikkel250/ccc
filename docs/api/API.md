@@ -11,7 +11,7 @@ Required: `Authorization: Bearer <TAILOR_API_KEY>`.
 | Presenter | Notes |
 |-----------|--------|
 | Smoke CLI (`npm run smoke`) | Operator / manual live-API path |
-| CCC backend | Product traffic (server-side only; never browser/mobile) |
+| Inbox worker (this repo, server-side) | Product traffic for labeled Gmail; never browser/mobile |
 
 Missing/invalid Bearer → **401**. Unset/`TAILOR_API_KEY` misconfiguration, production bypass hard-block, or other auth-gate unavailability → **503** (fail closed; not all auth failures are 401). Deployed environments fail closed when `TAILOR_API_KEY` is unset. Local insecure bypass (`TAILOR_AUTH_INSECURE_BYPASS=1`) is hard-blocked when production markers are set.
 
