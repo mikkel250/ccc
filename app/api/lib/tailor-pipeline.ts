@@ -1,8 +1,8 @@
 /**
- * CV tailoring pipeline — orchestrates all 10 steps from auth through DOCX generation.
+ * CV tailoring pipeline — HTTP adapter plus shared curator/DOCX core.
  *
- * Returns a discriminated union: the route handler maps to HTTP status codes.
- * Extracted from route.ts so the pipeline can be unit-tested without HTTP mocking.
+ * `buildTailorResponse` maps NextRequest (IP, rate-limit, Bearer, body) onto
+ * `runTailorCore`. The route handler maps the result to HTTP status codes.
  */
 import { isIP } from "node:net";
 import type { NextRequest } from "next/server";
@@ -55,6 +55,15 @@ export interface TailorResponseBody {
   /** Present only for strict mode — recruiter reply email body. */
   replyText?: string;
 }
+
+export type TailorCoreSuccess = Omit<
+  TailorResponseBody,
+  "remaining" | "resetTime"
+>;
+
+export type TailorCoreResult =
+  | { ok: true; body: TailorCoreSuccess }
+  | { ok: false; error: string; status: 422 | 503 };
 
 export type TailorPipelineResult =
   | { ok: true; body: TailorResponseBody }
@@ -321,6 +330,41 @@ export async function buildTailorResponse(
 
   const { jobDescription, curationMode } = validated;
 
+  const core = await runTailorCore(deps, { jobDescription, curationMode });
+  if (!core.ok) {
+    return core;
+  }
+
+  const responseBody: TailorResponseBody = {
+    ...core.body,
+    remaining: rateLimit.remaining,
+    resetTime: rateLimit.resetTime,
+  };
+
+  const responseBytes = Buffer.byteLength(
+    JSON.stringify(responseBody),
+    "utf8"
+  );
+  if (responseBytes > getTailorResponseMaxBytes()) {
+    return {
+      ok: false,
+      error: "Tailor response exceeds configured size limit",
+      status: 422,
+    };
+  }
+
+  return { ok: true, body: responseBody };
+}
+
+/**
+ * Shared curator + DOCX path. No Bearer, no RATE_LIMIT_* buckets (R8).
+ */
+export async function runTailorCore(
+  deps: TailorPipelineDeps,
+  input: { jobDescription: string; curationMode: CurationMode }
+): Promise<TailorCoreResult> {
+  const { jobDescription, curationMode } = input;
+
   // 6. Prompt construction
   const masterCv = deps.requireMasterCv();
   const { systemPrompt: promptText, langfusePrompt } =
@@ -424,31 +468,16 @@ export async function buildTailorResponse(
     };
   }
 
-  // 10. Build response body
-  const responseBody: TailorResponseBody = {
+  const body: TailorCoreSuccess = {
     cv: built.base64,
     curatedJson: sanitized,
     builderVersion: built.builderVersion,
     curationMode,
     model: curatorResponse.model,
     usage: curatorResponse.usage,
-    remaining: rateLimit.remaining,
-    resetTime: rateLimit.resetTime,
     ...(coverLetter !== undefined ? { coverLetter } : {}),
     ...(replyText !== undefined ? { replyText } : {}),
   };
 
-  const responseBytes = Buffer.byteLength(
-    JSON.stringify(responseBody),
-    "utf8"
-  );
-  if (responseBytes > getTailorResponseMaxBytes()) {
-    return {
-      ok: false,
-      error: "Tailor response exceeds configured size limit",
-      status: 422,
-    };
-  }
-
-  return { ok: true, body: responseBody };
+  return { ok: true, body };
 }

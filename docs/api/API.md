@@ -12,7 +12,7 @@ Required: `Authorization: Bearer <TAILOR_API_KEY>`.
 |-----------|--------|
 | Smoke CLI (`npm run smoke`) | Operator / manual live-API path |
 
-The planned inbox worker is **not** an HTTP presenter: it tailors in-process (no Bearer, no `RATE_LIMIT_*` buckets). Product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`. Seekers and browsers never hold the key.
+The inbox worker is **not** an HTTP presenter: `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a labeled payload then calls `runTailorCore` (strict `cv` + `replyText`, no Bearer, no `RATE_LIMIT_*` buckets, no `remaining`/`resetTime`). Product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`. Seekers and browsers never hold the key.
 
 Missing/invalid Bearer → **401**. Unset/`TAILOR_API_KEY` misconfiguration, production bypass hard-block, or other auth-gate unavailability → **503** (fail closed; not all auth failures are 401). Deployed environments fail closed when `TAILOR_API_KEY` is unset. Local insecure bypass (`TAILOR_AUTH_INSECURE_BYPASS=1`) is hard-blocked when production markers are set.
 

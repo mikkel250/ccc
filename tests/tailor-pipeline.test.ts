@@ -17,7 +17,10 @@ import {
   hashTailorApiKeyForRateLimit,
   __injectRatelimitForTest,
 } from "../app/api/lib/rate-limit";
-import { buildTailorResponse } from "../app/api/lib/tailor-pipeline";
+import {
+  buildTailorResponse,
+  runTailorCore,
+} from "../app/api/lib/tailor-pipeline";
 import {
   authHeaders,
   buildPostRequest,
@@ -564,5 +567,87 @@ describe("buildTailorResponse — pipeline orchestration", () => {
       );
       assert.equal(chatSpy.mock.callCount(), 0);
     });
+
+    it("HTTP adapter still invokes checkRateLimit on success", async () => {
+      const orig = tailorCvDeps.checkRateLimit;
+      const spy = mock.method(
+        tailorCvDeps,
+        "checkRateLimit",
+        async (
+          phase: string,
+          ipAddress: string,
+          secretBucketKey: string
+        ) => orig.call(tailorCvDeps, phase, ipAddress, secretBucketKey)
+      );
+      const result = await buildTailorResponse(
+        tailorCvDeps,
+        buildPostRequest(VALID_BODY, XFF)
+      );
+      assert.equal(result.ok, true);
+      assert.ok(spy.mock.callCount() >= 1);
+    });
+  });
+});
+
+describe("runTailorCore — in-process curator path", () => {
+  beforeEach(() => {
+    ensureEnv();
+    resetRedisClientForTest();
+    mockPipelineSuccess();
+  });
+
+  afterEach(() => {
+    mock.restoreAll();
+    resetRedisClientForTest();
+  });
+
+  it("returns strict artifacts without remaining/resetTime and without checkRateLimit", async () => {
+    const rateSpy = mock.method(tailorCvDeps, "checkRateLimit", async () => {
+      throw new Error("checkRateLimit must not be called from runTailorCore");
+    });
+    const authSpy = mock.method(tailorCvDeps, "authenticateTailorRequest", () => {
+      throw new Error("authenticateTailorRequest must not be called from runTailorCore");
+    });
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription:
+        "We need a senior engineer with React and Node.js experience.",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(rateSpy.mock.callCount(), 0);
+    assert.equal(authSpy.mock.callCount(), 0);
+    if (result.ok) {
+      assert.equal(typeof result.body.cv, "string");
+      assert.ok(result.body.cv.length > 0);
+      assert.ok(result.body.curatedJson);
+      assert.equal(result.body.builderVersion, BUILDER_VERSION);
+      assert.equal(result.body.curationMode, "strict");
+      assert.equal(result.body.replyText, DEFAULT_STRICT_REPLY);
+      assert.equal(result.body.coverLetter, undefined);
+      assert.equal("remaining" in result.body, false);
+      assert.equal("resetTime" in result.body, false);
+    }
+  });
+
+  it("returns 422 without cv when strict reply_text is blank", async () => {
+    mock.method(tailorCvDeps, "chat", async () => ({
+      content: strictCuratorJson(FIXTURE_CURATED, "   "),
+      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+      model: "anthropic/sonnet",
+      finishReason: "stop",
+    }));
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 422);
+      assert.match(result.error, /reply_text/);
+    }
   });
 });
