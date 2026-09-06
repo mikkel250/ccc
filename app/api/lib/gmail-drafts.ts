@@ -39,6 +39,10 @@ export function wrapMimeBase64(value: string): string {
   return lines.join("\r\n");
 }
 
+function sanitizeMimeHeaderValue(value: string): string {
+  return value.split(/[\r\n]/)[0]!.trim();
+}
+
 export function threadContainsDraft(raw: unknown): boolean {
   const root = jsonObject(raw);
   if (root === undefined) {
@@ -69,14 +73,15 @@ export function buildReplyRfc822(input: {
   inReplyTo?: string;
 }): string {
   const lines = [
-    `To: ${input.to}`,
-    `Subject: ${input.subject}`,
+    `To: ${sanitizeMimeHeaderValue(input.to)}`,
+    `Subject: ${sanitizeMimeHeaderValue(input.subject)}`,
     "MIME-Version: 1.0",
     `Content-Type: multipart/mixed; boundary="${input.boundary}"`,
   ];
   if (input.inReplyTo !== undefined) {
-    lines.push(`In-Reply-To: ${input.inReplyTo}`);
-    lines.push(`References: ${input.inReplyTo}`);
+    const inReplyTo = sanitizeMimeHeaderValue(input.inReplyTo);
+    lines.push(`In-Reply-To: ${inReplyTo}`);
+    lines.push(`References: ${inReplyTo}`);
   }
   lines.push(
     "",
@@ -86,9 +91,9 @@ export function buildReplyRfc822(input: {
     "",
     input.body,
     `--${input.boundary}`,
-    `Content-Type: ${DOCX_CONTENT_TYPE}; name="${input.attachmentFilename}"`,
+    `Content-Type: ${DOCX_CONTENT_TYPE}; name="${sanitizeMimeHeaderValue(input.attachmentFilename)}"`,
     "Content-Transfer-Encoding: base64",
-    `Content-Disposition: attachment; filename="${input.attachmentFilename}"`,
+    `Content-Disposition: attachment; filename="${sanitizeMimeHeaderValue(input.attachmentFilename)}"`,
     "",
     wrapMimeBase64(input.docxBase64),
     `--${input.boundary}--`,
@@ -151,13 +156,19 @@ export async function ensureReplyDraft(params: {
   if (threadContainsDraft(threadRes.body)) {
     return { ok: true, status: "reused" };
   }
+  let attachmentFilename: string;
+  try {
+    attachmentFilename = getGmailCvAttachmentFilename();
+  } catch {
+    return { ok: false, error: "GMAIL_CV_ATTACHMENT_FILENAME is not a valid filename" };
+  }
   const boundary =
     params.boundary ?? `ccc-${randomBytes(12).toString("hex")}`;
   const rfc822 = buildReplyRfc822({
     to: headers.headers.to,
     subject: headers.headers.subject,
     body: replyText,
-    attachmentFilename: getGmailCvAttachmentFilename(),
+    attachmentFilename,
     docxBase64: params.docxBase64,
     boundary,
     inReplyTo: headers.headers.inReplyTo,

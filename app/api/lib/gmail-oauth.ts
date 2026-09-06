@@ -4,6 +4,7 @@
 import {
   getGmailClientId,
   getGmailClientSecret,
+  getGmailHttpTimeoutMs,
   getGmailOauthTokenUrl,
   getGmailRefreshToken,
 } from "./gmail-config";
@@ -109,6 +110,7 @@ async function postTokenRequest(
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
+      signal: AbortSignal.timeout(getGmailHttpTimeoutMs()),
     });
   } catch {
     return { ok: false, error: "Gmail token request failed" };

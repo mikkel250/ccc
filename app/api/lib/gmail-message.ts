@@ -44,12 +44,16 @@ function headerValue(headers: unknown, name: string): string | undefined {
       continue;
     }
     if (headerName.toLowerCase() !== wanted) continue;
-    const trimmed = headerValueRaw.trim();
+    const trimmed = sanitizeMimeHeaderValue(headerValueRaw);
     if (trimmed !== "") {
       return trimmed;
     }
   }
   return undefined;
+}
+
+function sanitizeMimeHeaderValue(value: string): string {
+  return value.split(/[\r\n]/)[0]!.trim();
 }
 
 export function parseGmailReplyHeaders(message: unknown): GmailReplyHeadersResult {
@@ -66,7 +70,9 @@ export function parseGmailReplyHeaders(message: unknown): GmailReplyHeadersResul
   const headers =
     payloadObj === undefined ? undefined : Reflect.get(payloadObj, "headers");
   const from = headerValue(headers, "From");
-  if (from === undefined) {
+  const replyTo = headerValue(headers, "Reply-To");
+  const to = replyTo ?? from;
+  if (to === undefined) {
     return { ok: false, error: "Gmail message missing From header" };
   }
   const subjectRaw = headerValue(headers, "Subject");
@@ -80,7 +86,7 @@ export function parseGmailReplyHeaders(message: unknown): GmailReplyHeadersResul
   return {
     ok: true,
     headers: {
-      to: from,
+      to,
       subject,
       threadId: threadIdRaw.trim(),
       ...(messageId !== undefined ? { inReplyTo: messageId } : {}),

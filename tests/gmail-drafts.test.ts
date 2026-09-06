@@ -54,6 +54,22 @@ describe("gmail draft MIME and reuse", () => {
     assert.match(rfc, /QQ==/);
   });
 
+  it("strips CR/LF from MIME header values", () => {
+    const rfc = buildReplyRfc822({
+      to: "recruiter@example.com\r\nBcc: evil@x.com",
+      subject: "Re: Role\nX-Injected: 1",
+      body: "Thanks",
+      attachmentFilename: "CV.docx",
+      docxBase64: "QQ==",
+      boundary: "ccc-test",
+      inReplyTo: "<m@mail>\r\nCc: evil@x.com",
+    });
+    const headerBlock = rfc.split("\r\n\r\n")[0] ?? rfc;
+    assert.doesNotMatch(headerBlock, /Bcc: evil/);
+    assert.doesNotMatch(headerBlock, /X-Injected/);
+    assert.doesNotMatch(headerBlock, /Cc: evil/);
+  });
+
   it("detects a DRAFT-labeled thread message", () => {
     assert.equal(
       threadContainsDraft({

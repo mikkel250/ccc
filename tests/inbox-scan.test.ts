@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tailorCvDeps } from "../app/api/lib/tailor-cv-deps";
 import {
   __injectInboxKvForTest,
+  inboxClaimKey,
   inboxProcessedKey,
   markInboxProcessed,
   type InboxKv,
@@ -73,6 +74,9 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
       }
       store.set(key, value);
       return "OK";
+    },
+    del: async (key) => {
+      store.delete(key);
     },
   };
 }
@@ -264,5 +268,116 @@ describe("scanInbox", () => {
     }
     assert.equal(gets, 0);
     assert.equal(chatSpy.mock.callCount(), 0);
+  });
+
+  it("releases the claim when drafts.create fails so a later scan can retry", async () => {
+    let draftPosts = 0;
+    const failingFetch = gmailFetch({
+      onDraftCreate: () => {
+        draftPosts += 1;
+        throw new Error("stop");
+      },
+    });
+    const firstFetch: typeof failingFetch = async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/users/me/drafts") && init?.method === "POST") {
+        draftPosts += 1;
+        return jsonResponse({ error: "boom" }, 500);
+      }
+      return failingFetch(input, init);
+    };
+    const first = await scanInbox({
+      fetchImpl: firstFetch,
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+    assert.equal(first.ok, true);
+    if (first.ok) {
+      assert.equal(first.items[0]?.status, "draft-failed");
+    }
+    assert.equal(memory.store.has(inboxProcessedKey("m1")), false);
+    assert.equal(memory.store.has(inboxClaimKey("m1")), false);
+
+    let created = 0;
+    const second = await scanInbox({
+      fetchImpl: gmailFetch({
+        onDraftCreate: () => {
+          created += 1;
+        },
+      }),
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+    assert.equal(second.ok, true);
+    if (second.ok) {
+      assert.equal(second.items[0]?.status, "drafted");
+    }
+    assert.equal(created, 1);
+    assert.equal(draftPosts, 1);
+    assert.equal(memory.store.has(inboxProcessedKey("m1")), true);
+  });
+
+  it("continues the scan when one message throws", async () => {
+    let listed = 0;
+    const fetchImpl = async (input: string | URL, init?: RequestInit) => {
+      const url = String(input);
+      const parsed = new URL(url);
+      if (url.includes("/token")) {
+        return jsonResponse({ access_token: "access" });
+      }
+      if (parsed.pathname.endsWith("/users/me/labels")) {
+        return jsonResponse({
+          labels: [{ id: "Label_1", name: "Recruiter" }],
+        });
+      }
+      if (parsed.pathname.endsWith("/users/me/messages")) {
+        return jsonResponse({
+          messages: [
+            { id: "m1", threadId: "t1" },
+            { id: "m2", threadId: "t2" },
+          ],
+        });
+      }
+      if (parsed.pathname.endsWith("/users/me/drafts") && init?.method === "POST") {
+        return jsonResponse({ id: "draft1" });
+      }
+      if (parsed.pathname.includes("/users/me/threads/")) {
+        return jsonResponse({
+          messages: [{ id: "m", labelIds: ["INBOX"] }],
+        });
+      }
+      if (/\/users\/me\/messages\/m1$/.test(parsed.pathname)) {
+        throw new Error("transient get failure");
+      }
+      if (/\/users\/me\/messages\/m2$/.test(parsed.pathname)) {
+        listed += 1;
+        return jsonResponse({
+          id: "m2",
+          threadId: "t2",
+          payload: {
+            mimeType: "text/plain",
+            body: { data: b64("We need a general manager with P&L ownership.") },
+            headers: [
+              { name: "From", value: "recruiter@example.com" },
+              { name: "Subject", value: "GM role" },
+              { name: "Message-ID", value: "<m2@mail>" },
+            ],
+          },
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    };
+    const result = await scanInbox({
+      fetchImpl,
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.items.length, 2);
+      assert.equal(result.items[0]?.status, "draft-failed");
+      assert.equal(result.items[1]?.status, "drafted");
+    }
+    assert.equal(listed, 1);
   });
 });

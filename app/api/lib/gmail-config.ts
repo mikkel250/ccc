@@ -14,6 +14,8 @@ const DEFAULT_LIST_MAX_RESULTS_LIMIT = 500;
 const DEFAULT_AUTH_BIND_HOST = "127.0.0.1";
 const DEFAULT_CV_ATTACHMENT_FILENAME = "CV.docx";
 const CV_ATTACHMENT_FILENAME_RE = /^[A-Za-z0-9._-]+$/;
+const DEFAULT_HTTP_TIMEOUT_MS = 15_000;
+const DEFAULT_AUTH_TIMEOUT_MS = 300_000;
 
 function requireEnv(key: string): string {
   const value = getEnvString(key);
@@ -88,4 +90,14 @@ export function getGmailCvAttachmentFilename(): string {
     throw new ServiceError("GMAIL_CV_ATTACHMENT_FILENAME is not a valid filename");
   }
   return raw;
+}
+
+/** Abort hung Gmail REST and token POSTs (default 15s). */
+export function getGmailHttpTimeoutMs(): number {
+  return Math.max(1, getEnvNumber("GMAIL_HTTP_TIMEOUT_MS", DEFAULT_HTTP_TIMEOUT_MS));
+}
+
+/** Max wait for the gmail:auth loopback callback (default 5 minutes). */
+export function getGmailAuthTimeoutMs(): number {
+  return Math.max(1, getEnvNumber("GMAIL_AUTH_TIMEOUT_MS", DEFAULT_AUTH_TIMEOUT_MS));
 }
