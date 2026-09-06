@@ -210,4 +210,28 @@ describe("tailorLabeledMessage", () => {
     }
     assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
   });
+
+  it("rejects a JD longer than TAILOR_JD_MAX_CHARS without calling chat", async () => {
+    const previous = process.env.TAILOR_JD_MAX_CHARS;
+    process.env.TAILOR_JD_MAX_CHARS = "8";
+    const chatSpy = mock.method(tailorCvDeps, "chat", async () => {
+      throw new Error("chat must not run for oversize JD");
+    });
+    try {
+      const result = await tailorLabeledMessage(tailorCvDeps, {
+        messageId: ID,
+        message: plainMessage("We need a general manager with P&L ownership."),
+      });
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.equal(result.status, 422);
+        assert.match(result.error, /size limit/i);
+      }
+      assert.equal(chatSpy.mock.callCount(), 0);
+      assert.equal(memory.store.has(inboxClaimKey(ID)), true);
+    } finally {
+      if (previous === undefined) delete process.env.TAILOR_JD_MAX_CHARS;
+      else process.env.TAILOR_JD_MAX_CHARS = previous;
+    }
+  });
 });

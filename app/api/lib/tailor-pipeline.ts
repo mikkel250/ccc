@@ -381,20 +381,40 @@ export async function runTailorCore(
   );
 
   // 7. Curator LLM call
-  const curatorResponse = await deps.chat(
-    [{ role: "user" as const, content: userContent }],
-    systemPrompt,
-    {
-      model: getTailorModel(),
-      reasoningEffort: getTailorReasoningEffort(),
-      langfusePrompt: langfusePrompt ?? {
-        name: CURATOR_LANGFUSE_PROMPT_NAME,
-        version: 0,
-        isFallback: true,
-      },
-      source: "tailor-cv-curator",
+  let curatorResponse: Awaited<ReturnType<typeof deps.chat>>;
+  try {
+    curatorResponse = await deps.chat(
+      [{ role: "user" as const, content: userContent }],
+      systemPrompt,
+      {
+        model: getTailorModel(),
+        reasoningEffort: getTailorReasoningEffort(),
+        langfusePrompt: langfusePrompt ?? {
+          name: CURATOR_LANGFUSE_PROMPT_NAME,
+          version: 0,
+          isFallback: true,
+        },
+        source: "tailor-cv-curator",
+      }
+    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof ServiceError) {
+      return { ok: false, error: error.message, status: 503 };
     }
-  );
+    if (deps.isLlmServiceError(message)) {
+      return {
+        ok: false,
+        error: "AI service error. Please try again.",
+        status: 503,
+      };
+    }
+    return {
+      ok: false,
+      error: "AI service error. Please try again.",
+      status: 503,
+    };
+  }
 
   // 8. Extract + schema validate + size check
   let curatedRaw: unknown;
@@ -473,7 +493,7 @@ export async function runTailorCore(
     curatedJson: sanitized,
     builderVersion: built.builderVersion,
     curationMode,
-    model: curatorResponse.model,
+    model: getTailorModel(),
     usage: curatorResponse.usage,
     ...(coverLetter !== undefined ? { coverLetter } : {}),
     ...(replyText !== undefined ? { replyText } : {}),

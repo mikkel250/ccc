@@ -3,6 +3,7 @@
  * Claim + extract, then runTailorCore. Does not mark processed (R10 / M8.5).
  */
 import { extractUnprocessedInboxMessage } from "./inbox-processed-store";
+import { getTailorJdMaxChars } from "./cv-schema";
 import {
   runTailorCore,
   type TailorCoreSuccess,
@@ -28,6 +29,14 @@ export async function tailorLabeledMessage(
   }
   if (extracted.status !== "extracted") {
     return { ok: true, status: extracted.status };
+  }
+
+  if (extracted.jobDescription.length > getTailorJdMaxChars()) {
+    return {
+      ok: false,
+      error: "jobDescription exceeds configured size limit.",
+      status: 422,
+    };
   }
 
   const core = await runTailorCore(deps, {
