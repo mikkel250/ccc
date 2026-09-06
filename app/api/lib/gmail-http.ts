@@ -4,6 +4,19 @@
 import type { FetchLike } from "./gmail-oauth";
 import { getGmailHttpTimeoutMs } from "./gmail-config";
 
+/** Non-array object from unknown JSON. Shared by list/message/draft parsers. */
+export function gmailJsonObject(raw: unknown): object | undefined {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return undefined;
+  }
+  return raw;
+}
+
+/** First header line only — strips CR/LF injection. */
+export function sanitizeMimeHeaderValue(value: string): string {
+  return value.split(/[\r\n]/)[0]!.trim();
+}
+
 export type GmailHttpResult =
   | { ok: true; body: unknown }
   | { ok: false; error: string };

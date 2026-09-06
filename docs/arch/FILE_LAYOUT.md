@@ -43,7 +43,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── gmail-config.ts   # Gmail OAuth/API env getters
 │           ├── gmail-oauth.ts    # Authorize URL, callback, token exchange/refresh
 │           ├── gmail-list.ts     # Recruiter-label resolve + messages.list
-│           ├── gmail-http.ts     # Injected-fetch Gmail JSON GET/POST
+│           ├── gmail-http.ts     # Injected-fetch Gmail JSON GET/POST + shared JSON/MIME helpers
 │           ├── gmail-message.ts  # messages.get + reply headers
 │           ├── gmail-drafts.ts   # RFC2822 MIME + drafts.create / thread reuse
 │           ├── tailor-pipeline.ts # HTTP adapter + shared runTailorCore (no Bearer/rate-limit)

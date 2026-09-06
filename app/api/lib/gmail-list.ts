@@ -6,7 +6,7 @@ import {
   getGmailListMaxResults,
   getGmailRecruiterLabel,
 } from "./gmail-config";
-import { gmailFetchJson } from "./gmail-http";
+import { gmailFetchJson, gmailJsonObject } from "./gmail-http";
 import {
   refreshGmailAccessToken,
   type FetchLike,
@@ -21,13 +21,6 @@ export type GmailListResult =
   | { ok: true; messages: GmailListedMessage[] }
   | { ok: false; error: string };
 
-function jsonObject(raw: unknown): object | undefined {
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-    return undefined;
-  }
-  return raw;
-}
-
 export type GmailLabelMatch =
   | { ok: true; labelId: string }
   | { ok: false; error: string };
@@ -36,7 +29,7 @@ export function matchGmailLabelId(
   labelsRaw: unknown,
   wantedName: string
 ): GmailLabelMatch {
-  const root = jsonObject(labelsRaw);
+  const root = gmailJsonObject(labelsRaw);
   const labels = root === undefined ? undefined : Reflect.get(root, "labels");
   if (!Array.isArray(labels)) {
     return { ok: false, error: "Gmail labels response was not an object" };
@@ -68,7 +61,7 @@ export function matchGmailLabelId(
 export function parseGmailMessageList(
   raw: unknown
 ): GmailListResult {
-  const root = jsonObject(raw);
+  const root = gmailJsonObject(raw);
   if (root === undefined) {
     return { ok: false, error: "Gmail messages response was not an object" };
   }

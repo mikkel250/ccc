@@ -116,7 +116,7 @@ npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 | `tests/rate-limit.test.ts` | Dual IP + secret rate limits |
 | `tests/gmail-body.test.ts` | Gmail payload → JD (`text/plain` else html-to-text) |
 | `tests/inbox-processed-store.test.ts` | Claim SET NX vs processed skip / crash recovery |
-| `tests/gmail-oauth.test.ts` | Gmail OAuth URL, callback, token exchange/refresh |
+| `tests/gmail-http.test.ts` | Gmail JSON fetch timeout + shared JSON/MIME helpers |
 | `tests/gmail-list.test.ts` | Recruiter-label resolve + `messages.list` |
 | `tests/gmail-auth.test.ts` | `gmail:auth` / `gmail:list` CLI helpers |
 | `tests/gmail-message.test.ts` | Reply headers from a Gmail message resource |

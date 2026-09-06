@@ -2,7 +2,7 @@
  * Gmail users.messages.get + reply-header parse (R10).
  */
 import { getGmailApiBaseUrl } from "./gmail-config";
-import { gmailFetchJson } from "./gmail-http";
+import { gmailFetchJson, gmailJsonObject, sanitizeMimeHeaderValue } from "./gmail-http";
 import {
   refreshGmailAccessToken,
   type FetchLike,
@@ -23,13 +23,6 @@ export type GmailMessageResult =
 export type GmailReplyHeadersResult =
   | { ok: true; headers: GmailReplyHeaders }
   | { ok: false; error: string };
-
-function jsonObject(raw: unknown): object | undefined {
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-    return undefined;
-  }
-  return raw;
-}
 
 function headerValue(headers: unknown, name: string): string | undefined {
   if (!Array.isArray(headers)) {
@@ -52,12 +45,8 @@ function headerValue(headers: unknown, name: string): string | undefined {
   return undefined;
 }
 
-function sanitizeMimeHeaderValue(value: string): string {
-  return value.split(/[\r\n]/)[0]!.trim();
-}
-
 export function parseGmailReplyHeaders(message: unknown): GmailReplyHeadersResult {
-  const root = jsonObject(message);
+  const root = gmailJsonObject(message);
   if (root === undefined) {
     return { ok: false, error: "Gmail message was not an object" };
   }
@@ -66,7 +55,7 @@ export function parseGmailReplyHeaders(message: unknown): GmailReplyHeadersResul
     return { ok: false, error: "Gmail message missing threadId" };
   }
   const payload = Reflect.get(root, "payload");
-  const payloadObj = jsonObject(payload);
+  const payloadObj = gmailJsonObject(payload);
   const headers =
     payloadObj === undefined ? undefined : Reflect.get(payloadObj, "headers");
   const from = headerValue(headers, "From");
