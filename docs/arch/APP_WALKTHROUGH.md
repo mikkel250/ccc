@@ -15,7 +15,7 @@ A **Next.js backend** (no product UI) that accepts a job description, curates st
 ## High-level architecture
 
 ```text
-Client (inbox worker / smoke CLI)
+Client (smoke CLI)
     │
     ▼ POST { jobDescription } + Authorization: Bearer
 app/api/tailor-cv/route.ts
@@ -34,6 +34,8 @@ app/api/tailor-cv/route.ts
     │
     ▼ 200 { cv, curatedJson, builderVersion, model, usage, remaining, resetTime }
 ```
+
+The planned inbox worker is not this HTTP client. It calls an in-process tailor core (same curator + mechanical `.docx`; no Bearer, no public rate-limit buckets). Today's `buildTailorResponse` is the HTTP adapter (`NextRequest`, IP, auth, `checkRateLimit`); M8.4 extracts or wraps the shared core.
 
 ---
 
@@ -185,4 +187,4 @@ Prompt files cloned from the portfolio chat bot remain for a hypothetical future
 
 ## Planned but not implemented
 
-See [PIPELINE_ENHANCEMENTS](./PIPELINE_ENHANCEMENTS.md) (two-pass, critic) and [LEARNING_SYSTEM](./LEARNING_SYSTEM.md) (SQLite feedback). Also deferred: recruiter reply draft, selective RAG.
+See [PIPELINE_ENHANCEMENTS](./PIPELINE_ENHANCEMENTS.md) (two-pass, critic) and [LEARNING_SYSTEM](./LEARNING_SYSTEM.md) (SQLite feedback). Recruiter reply text + Gmail drafts: [inbox worker product contract](../plans/2026-09-05-002-feat-inbox-worker-plan.md). Still deferred: selective RAG.

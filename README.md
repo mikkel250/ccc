@@ -4,8 +4,8 @@ Next.js 15 backend: `POST /api/tailor-cv` curates a JD-specific CV JSON from a p
 
 ## Overview
 
-- **What it does:** Master JSON → curator LLM → schema validate → mechanical `.docx`; returns base64 Word + curated JSON + builder version. Strict-path reply text and Gmail drafts are the inbox worker (M8.1–M8.6), not shipped yet.
-- **Who calls it:** Smoke CLI and the inbox worker in this repo (Bearer secret, server-side). Seekers never hold the key.
+- **What it does:** Master JSON → curator LLM → schema validate → mechanical `.docx`; returns base64 Word + curated JSON + builder version. Strict-path reply text (M8.1, HTTP) and Gmail drafts (M8.2–M8.6, in-process worker) are specified, not shipped yet.
+- **Who calls it:** Smoke CLI is the current HTTP caller (`POST /api/tailor-cv` + Bearer). The planned inbox worker invokes the tailor pipeline in-process and is not an HTTP API presenter. Seekers never hold the key.
 - **No product UI, no database** (stateless tailor). Auth = shared secret (`TAILOR_API_KEY`).
 
 ---

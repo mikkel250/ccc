@@ -41,13 +41,13 @@ Manual live-API operator path (`npm run smoke`): hits a running server with Bear
 ## Inbox
 
 ### Reply text
-The recruiter-facing email body returned on a successful `strict` tailor. Grounded in the Master CV with the same no-invention rules as the Curated CV. The inbox worker copies it into the Gmail draft body. Distinct from flexible-mode `coverLetter`.
+The recruiter-facing email body returned on a successful `strict` tailor. Curator JSON key `reply_text`; HTTP and in-process result field `replyText`. Grounded in the Master CV with the same no-invention rules as the Curated CV. The inbox worker copies it into the Gmail draft body. Distinct from flexible-mode `coverLetter`.
 
 ### Inbox scan
-On-demand or scheduled job in this process: list Gmail messages with the recruiter label, skip processed ids, strict-tailor the body, create a thread reply draft with reply text and the CV `.docx`. Local `npm run inbox:scan` and Railway cron invoke the same job.
+On-demand or scheduled job in this process: list Gmail messages with the recruiter label, skip claimed or processed ids, strict-tailor the body in-process, create a thread reply draft with reply text and the CV `.docx`. Local `npm run inbox:scan` and Railway cron invoke the same job.
 
 ### Processed message
-A Gmail `messageId` recorded after a successful draft create so a later scan does not tailor or draft again. Stored in Upstash Redis.
+A Gmail `messageId` in its terminal Redis state: a sendable reply draft already exists, so a later scan (local or Railway) does not tailor or create another draft. The worker claims the id before drafting and writes this mark only after draft success. Overlap and crash recovery live in the inbox-worker product contract (R10, R12, F3).
 
 ## Agent workflow
 

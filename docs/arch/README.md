@@ -12,7 +12,7 @@ Architecture decisions, code conventions, module boundaries, and infrastructure 
 
 ## Stack context (for agents)
 
-This project is the **CV Tailoring API plus inbox worker** — a Next.js 15 backend deployed on Railway. `POST /api/tailor-cv` accepts a job description and returns a tailored CV as a base64-encoded `.docx` (plus curated JSON). The default `strict` path will also return recruiter reply email text (M8.1). Bearer auth (`TAILOR_API_KEY`); master CV is JSON via `MASTER_CV_JSON` / `MASTER_CV_PATH`; the LLM returns schema-validated curated JSON; the server mechanically builds `.docx`. No product UI. The inbox worker in this process scans a Gmail label and creates thread drafts (product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`). A learning system with local SQLite storage is planned post-MVP.
+This project is the **CV Tailoring API plus inbox worker** — a Next.js 15 backend deployed on Railway. `POST /api/tailor-cv` accepts a job description and returns a tailored CV as a base64-encoded `.docx` (plus curated JSON). The default `strict` path will also return recruiter reply email text (M8.1). Bearer auth (`TAILOR_API_KEY`); master CV is JSON via `MASTER_CV_JSON` / `MASTER_CV_PATH`; the LLM returns schema-validated curated JSON; the server mechanically builds `.docx`. No product UI. The inbox worker in this process tailors in-process (not HTTP) and creates Gmail thread drafts (product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`). A learning system with local SQLite storage is planned post-MVP.
 
 The project was cloned from `portfolio-react-ts` and stripped of all portfolio pages, components, and styles. Only the API layer and knowledge base were retained.
 

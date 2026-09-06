@@ -11,7 +11,8 @@ Required: `Authorization: Bearer <TAILOR_API_KEY>`.
 | Presenter | Notes |
 |-----------|--------|
 | Smoke CLI (`npm run smoke`) | Operator / manual live-API path |
-| Inbox worker (this repo, server-side) | Product traffic for labeled Gmail; never browser/mobile |
+
+The planned inbox worker is **not** an HTTP presenter: it tailors in-process (no Bearer, no `RATE_LIMIT_*` buckets). Product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`. Seekers and browsers never hold the key.
 
 Missing/invalid Bearer → **401**. Unset/`TAILOR_API_KEY` misconfiguration, production bypass hard-block, or other auth-gate unavailability → **503** (fail closed; not all auth failures are 401). Deployed environments fail closed when `TAILOR_API_KEY` is unset. Local insecure bypass (`TAILOR_AUTH_INSECURE_BYPASS=1`) is hard-blocked when production markers are set.
 
