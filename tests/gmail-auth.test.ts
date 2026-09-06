@@ -117,6 +117,19 @@ describe("gmail-list CLI", () => {
     );
   });
 
+  it("returns ok:false when a required Gmail env var is missing", async () => {
+    delete process.env.GMAIL_CLIENT_ID;
+    const result = await runGmailListCli({
+      fetchImpl: async () => {
+        throw new Error("fetch must not run when Gmail env is missing");
+      },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /GMAIL_CLIENT_ID is not set/);
+    }
+  });
+
   it("returns list lines from the library", async () => {
     const result = await runGmailListCli({
       fetchImpl: async (input) => {
