@@ -247,7 +247,7 @@ export async function runSmokeCli(options: RunSmokeCliOptions): Promise<void> {
         process.exit(1);
       }
     }
-    const next = mergeParityStatus(existing, catalog, result.model, true);
+    const next = mergeParityStatus(existing, result.model, true);
     const pending = pendingParityModels(catalog, next);
     writeFileSync(
       statusPath,

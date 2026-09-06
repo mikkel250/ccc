@@ -6,10 +6,6 @@ import { getSmokeParityModelsCsv } from "../../../lib/env";
 import { parseNamespacedProvider } from "../../../lib/providers";
 import type { CurationMode } from "./curation-mode";
 
-function assertNamespacedModel(model: string): void {
-  parseNamespacedProvider(model);
-}
-
 /** Safe filesystem slug from a JD path (basename without its terminal extension). */
 export function smokeArtifactSlug(jdPath: string): string {
   const base = basename(jdPath).replace(/\.[^.]+$/i, "");
@@ -22,7 +18,7 @@ export function smokeArtifactSlug(jdPath: string): string {
 
 /** Nest smoke artifacts under `<root>/<provider>/<model>/…` (eval-results shape). */
 export function smokeParityArtifactDir(root: string, model: string): string {
-  assertNamespacedModel(model);
+  parseNamespacedProvider(model);
   return join(root, ...model.split("/"));
 }
 
@@ -40,7 +36,7 @@ export function parseSmokeParityModels(csv?: string): string[] {
     throw new Error("SMOKE_PARITY_MODELS is empty");
   }
   for (const model of parts) {
-    assertNamespacedModel(model);
+    parseNamespacedProvider(model);
   }
   return parts;
 }
@@ -51,14 +47,12 @@ export type ParityStatus = {
   cells: Record<string, ParityCellStatus>;
 };
 
-/** Last-write-wins per model key. Catalog is unused here; callers compute pending separately. */
+/** Last-write-wins per model key. Callers compute pending from catalog + cells. */
 export function mergeParityStatus(
   existing: ParityStatus | null | undefined,
-  catalog: readonly string[],
   model: string,
   ok: boolean
 ): ParityStatus {
-  void catalog;
   return {
     cells: {
       ...(existing?.cells ?? {}),

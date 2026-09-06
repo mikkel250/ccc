@@ -184,7 +184,7 @@ describe("smokeParityArtifactDir", () => {
 describe("mergeParityStatus", () => {
   it("fills one cell and leaves other catalog models pending", () => {
     const catalog = ["anthropic/sonnet", "deepseek/deepseek-v4-pro"];
-    const status = mergeParityStatus(null, catalog, "anthropic/sonnet", true);
+    const status = mergeParityStatus(null, "anthropic/sonnet", true);
     assert.equal(status.cells["anthropic/sonnet"]?.ok, true);
     assert.deepEqual(pendingParityModels(catalog, status), [
       "deepseek/deepseek-v4-pro",

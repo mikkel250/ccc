@@ -27,19 +27,22 @@ export function parseNamespacedProvider(model: string): Provider {
       `Invalid model string "${model}": must be namespaced as provider/model`
     );
   }
-  const slash = model.indexOf("/");
-  if (slash <= 0 || slash === model.length - 1) {
+  const segments = model.split("/");
+  if (
+    segments.length < 2 ||
+    segments[0] === "" ||
+    segments[segments.length - 1] === ""
+  ) {
     throw new Error(
       `Invalid model string "${model}": must be namespaced as provider/model`
     );
   }
-  const providerSegment = model.slice(0, slash);
+  const providerSegment = segments[0]!;
   if (!KNOWN_PROVIDERS.has(providerSegment as Provider)) {
     throw new Error(
       `Unknown provider "${providerSegment}" in model "${model}"`
     );
   }
-  const segments = model.split("/");
   if (segments.some((part) => part === "" || part === "." || part === "..")) {
     throw new Error(
       `Invalid model string "${model}": must be namespaced as provider/model`
