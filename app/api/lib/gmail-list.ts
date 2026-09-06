@@ -3,6 +3,7 @@
  */
 import {
   getGmailApiBaseUrl,
+  getGmailHttpTimeoutMs,
   getGmailListMaxResults,
   getGmailRecruiterLabel,
 } from "./gmail-config";
@@ -36,6 +37,7 @@ async function gmailGetJson(
   try {
     response = await fetchImpl(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(getGmailHttpTimeoutMs()),
     });
   } catch {
     return { ok: false, error: "Gmail API request failed" };
