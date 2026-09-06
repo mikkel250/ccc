@@ -650,4 +650,47 @@ describe("runTailorCore — in-process curator path", () => {
       assert.match(result.error, /reply_text/);
     }
   });
+
+  it("maps a chat throw to 503 without leaking the provider message", async () => {
+    mock.method(tailorCvDeps, "chat", async () => {
+      throw new Error("OPENROUTER_API_KEY is not configured");
+    });
+    mock.method(tailorCvDeps, "isLlmServiceError", () => true);
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.doesNotMatch(result.error, /OPENROUTER_API_KEY/);
+    }
+  });
+
+  it("echoes namespaced TAILOR_MODEL instead of the provider model id", async () => {
+    const previous = process.env.TAILOR_MODEL;
+    process.env.TAILOR_MODEL = "anthropic/sonnet";
+    mock.method(tailorCvDeps, "chat", async () => ({
+      content: strictCuratorJson(FIXTURE_CURATED),
+      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+      model: "claude-sonnet-4-6",
+      finishReason: "stop",
+    }));
+
+    try {
+      const result = await runTailorCore(tailorCvDeps, {
+        jobDescription: "React role",
+        curationMode: "strict",
+      });
+      assert.equal(result.ok, true);
+      if (result.ok) {
+        assert.equal(result.body.model, "anthropic/sonnet");
+      }
+    } finally {
+      if (previous === undefined) delete process.env.TAILOR_MODEL;
+      else process.env.TAILOR_MODEL = previous;
+    }
+  });
 });
