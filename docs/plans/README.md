@@ -8,7 +8,7 @@ Lanes (`lfg` / `operator` / `parked` / `awaiting-merge`) mark whether drain may 
 
 ## Active milestone
 
-**M8.5 — Thread draft + attach + body** — needs plan. Lane: lfg
+**M8.5 — Thread draft + attach + body** — [plan](./2026-09-06-007-feat-gmail-thread-draft-plan.md). Lane: lfg
 
 Shipped on `main`: JSON curator API, auth/rate-limit, smoke library, flexible cover-letter DOCX, LLM-judge retirement, this README.
 
@@ -33,7 +33,7 @@ Drain order (composite pick): GitHub #38, then M7, then M8.1. Inbox product cont
 | M8.2 | Gmail auth + list labeled mail | in progress | [gmail auth + list](./2026-09-06-004-feat-gmail-auth-list-plan.md) — product contract [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) R6, R13, R15, R16 | Local list of recruiter-labeled messages without creating drafts | lfg |
 | M8.3 | Body extract + processed-ID store | in progress | [inbox extract + store](./2026-09-06-005-feat-inbox-extract-store-plan.md) — product contract [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) R7, R10, R12 | Second extract of the same message is a no-op after the first mark | lfg |
 | M8.4 | Tailor from a labeled message | in progress | [in-process tailor](./2026-09-06-006-feat-in-process-tailor-plan.md) — product contract [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) R8 | In-process strict tailor returns `.docx` and reply text without public rate-limit buckets | lfg |
-| M8.5 | Thread draft + attach + body | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) “Two fronts, one API”; [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) | Local scan creates a Gmail reply draft with body and CV `.docx` | lfg |
+| M8.5 | Thread draft + attach + body | in progress | [gmail thread draft](./2026-09-06-007-feat-gmail-thread-draft-plan.md) — product contract [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) R10, R11, R13 | Local scan creates a Gmail reply draft with body and CV `.docx` | lfg |
 | M8.6 | Railway schedule for the same scan job | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) “Two fronts, one API”; [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) | Deploy scans while the laptop is closed; reruns skip processed ids | lfg |
 
 M5–M6 numbering here is the *current* board. Historical “M5 tenure honesty” / “M6 holistic smoke judge” from the first README pass are retired or parked below — do not treat those old labels as live work.

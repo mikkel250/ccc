@@ -18,7 +18,8 @@
     "regen-docx": "tsx scripts/regen-docx.ts",
     "smoke": "tsx scripts/e2e-tailor-cv.ts",
     "gmail:auth": "tsx scripts/gmail-auth.ts",
-    "gmail:list": "tsx scripts/gmail-list.ts"
+    "gmail:list": "tsx scripts/gmail-list.ts",
+    "inbox:scan": "tsx scripts/inbox-scan.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.67.1",

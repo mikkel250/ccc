@@ -12,6 +12,8 @@ const DEFAULT_OAUTH_SCOPE =
 const DEFAULT_LIST_MAX_RESULTS = 50;
 const DEFAULT_LIST_MAX_RESULTS_LIMIT = 500;
 const DEFAULT_AUTH_BIND_HOST = "127.0.0.1";
+const DEFAULT_CV_ATTACHMENT_FILENAME = "CV.docx";
+const CV_ATTACHMENT_FILENAME_RE = /^[A-Za-z0-9._-]+$/;
 
 function requireEnv(key: string): string {
   const value = getEnvString(key);
@@ -72,6 +74,18 @@ export function getGmailAuthBindHost(): string {
     throw new ServiceError(
       "GMAIL_AUTH_BIND_HOST must be 127.0.0.1 or ::1"
     );
+  }
+  return raw;
+}
+
+/** Attachment filename for inbox reply drafts. Path separators rejected. */
+export function getGmailCvAttachmentFilename(): string {
+  const raw = getEnvString(
+    "GMAIL_CV_ATTACHMENT_FILENAME",
+    DEFAULT_CV_ATTACHMENT_FILENAME
+  )!;
+  if (raw.includes("..") || !CV_ATTACHMENT_FILENAME_RE.test(raw)) {
+    throw new ServiceError("GMAIL_CV_ATTACHMENT_FILENAME is not a valid filename");
   }
   return raw;
 }

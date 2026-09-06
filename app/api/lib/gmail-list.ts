@@ -6,6 +6,7 @@ import {
   getGmailListMaxResults,
   getGmailRecruiterLabel,
 } from "./gmail-config";
+import { gmailFetchJson } from "./gmail-http";
 import {
   refreshGmailAccessToken,
   type FetchLike,
@@ -25,29 +26,6 @@ function jsonObject(raw: unknown): object | undefined {
     return undefined;
   }
   return raw;
-}
-
-async function gmailGetJson(
-  url: string,
-  accessToken: string,
-  fetchImpl: FetchLike
-): Promise<GmailListResult & { body?: unknown }> {
-  let response: Response;
-  try {
-    response = await fetchImpl(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-  } catch {
-    return { ok: false, error: "Gmail API request failed" };
-  }
-  if (!response.ok) {
-    return { ok: false, error: `Gmail API HTTP ${response.status}` };
-  }
-  try {
-    return { ok: true, messages: [], body: await response.json() };
-  } catch {
-    return { ok: false, error: "Gmail API response was not valid JSON" };
-  }
 }
 
 export type GmailLabelMatch =
@@ -128,11 +106,11 @@ export async function listLabeledRecruiterMail(params?: {
     return { ok: false, error: token.error };
   }
   const base = getGmailApiBaseUrl().replace(/\/+$/, "");
-  const labelsRes = await gmailGetJson(
-    `${base}/users/me/labels`,
-    token.data.accessToken,
-    fetchImpl
-  );
+  const labelsRes = await gmailFetchJson({
+    url: `${base}/users/me/labels`,
+    accessToken: token.data.accessToken,
+    fetchImpl,
+  });
   if (!labelsRes.ok) {
     return { ok: false, error: labelsRes.error };
   }
@@ -144,11 +122,11 @@ export async function listLabeledRecruiterMail(params?: {
   const listUrl = new URL(`${base}/users/me/messages`);
   listUrl.searchParams.set("labelIds", matched.labelId);
   listUrl.searchParams.set("maxResults", String(maxResults));
-  const listRes = await gmailGetJson(
-    listUrl.toString(),
-    token.data.accessToken,
-    fetchImpl
-  );
+  const listRes = await gmailFetchJson({
+    url: listUrl.toString(),
+    accessToken: token.data.accessToken,
+    fetchImpl,
+  });
   if (!listRes.ok) {
     return { ok: false, error: listRes.error };
   }

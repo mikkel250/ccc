@@ -119,6 +119,9 @@ npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 | `tests/gmail-oauth.test.ts` | Gmail OAuth URL, callback, token exchange/refresh |
 | `tests/gmail-list.test.ts` | Recruiter-label resolve + `messages.list` |
 | `tests/gmail-auth.test.ts` | `gmail:auth` / `gmail:list` CLI helpers |
+| `tests/gmail-message.test.ts` | Reply headers from a Gmail message resource |
+| `tests/gmail-drafts.test.ts` | MIME + draft create vs thread reuse |
+| `tests/inbox-scan.test.ts` | Scan job: draft, reuse, 422 skip, processed skip |
 | `tests/route.test.ts` | Auth, curator cutover, dual response |
 | `tests/tailor-cv-validation.test.ts` | Request body + JD size validation |
 
@@ -143,6 +146,7 @@ Requires a Google Cloud Desktop OAuth client with the Gmail API enabled. Tokens 
 ```bash
 npm run gmail:auth   # loopback consent; prints GMAIL_REFRESH_TOKEN=
 npm run gmail:list   # lists { id, threadId } for GMAIL_RECRUITER_LABEL
+npm run inbox:scan   # tailor labeled mail in-process; create or reuse a Gmail reply draft
 ```
 
 Mechanical regen (no LLM):
