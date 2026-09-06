@@ -172,6 +172,13 @@ describe("smokeParityArtifactDir", () => {
       /Invalid model/
     );
   });
+
+  it("rejects Windows path separators in model segments", () => {
+    assert.throws(
+      () => smokeParityArtifactDir("/tmp/smoke", "anthropic/..\\..\\outside"),
+      /Invalid model/
+    );
+  });
 });
 
 describe("mergeParityStatus", () => {

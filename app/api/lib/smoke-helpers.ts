@@ -24,7 +24,7 @@ function assertNamespacedModel(model: string): void {
     );
   }
   const segments = model.split("/");
-  if (segments.some((part) => part === "" || part === "." || part === "..")) {
+  if (segments.some((part) => part === "" || part === "." || part === ".." || part.includes("\\"))) {
     throw new Error(
       `Invalid model string "${model}": must be namespaced as provider/model`
     );
