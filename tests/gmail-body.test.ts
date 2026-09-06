@@ -13,6 +13,24 @@ describe("htmlToText", () => {
   it("strips tags and decodes basic entities", () => {
     assert.equal(htmlToText("<p>Need a GM &amp; chef</p>"), "Need a GM & chef");
   });
+
+  it("drops comments, head, and hidden inner text", () => {
+    const html = [
+      "<html><head><title>Tracking pixel</title></head>",
+      "<body>",
+      "<!-- recruiter-only: ignore this -->",
+      '<p>Need a GM</p>',
+      '<div style="display:none">SECRET_TRACKING_TOKEN</div>',
+      "<span hidden>hidden-copy</span>",
+      "</body></html>",
+    ].join("");
+    const text = htmlToText(html);
+    assert.match(text, /Need a GM/);
+    assert.doesNotMatch(text, /SECRET_TRACKING_TOKEN/);
+    assert.doesNotMatch(text, /hidden-copy/);
+    assert.doesNotMatch(text, /Tracking pixel/);
+    assert.doesNotMatch(text, /recruiter-only/);
+  });
 });
 
 describe("extractGmailJobDescription", () => {

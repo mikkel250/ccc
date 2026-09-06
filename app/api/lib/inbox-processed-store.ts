@@ -7,6 +7,7 @@ import {
   getInboxMessageIdMaxChars,
   getInboxProcessedTtlSeconds,
   getInboxRedisPrefix,
+  getInboxRedisTimeoutMs,
 } from "./inbox-config";
 import { extractGmailJobDescription } from "./gmail-body";
 import { getRedisClient } from "./redis";
@@ -44,26 +45,49 @@ function kv(): InboxKv {
     return injectedKv;
   }
   const client = getRedisClient();
+  const timeoutMs = getInboxRedisTimeoutMs();
   return {
     get: async (key) => {
-      const value = await client.get(key);
+      const value = await withTimeout(client.get(key), timeoutMs);
       return typeof value === "string" ? value : value == null ? null : String(value);
     },
     set: async (key, value, opts) => {
       let result: unknown;
       if (opts?.nx === true) {
-        result = await client.set(key, value, {
-          nx: true,
-          ex: opts.ex ?? getInboxClaimTtlSeconds(),
-        });
+        result = await withTimeout(
+          client.set(key, value, {
+            nx: true,
+            ex: opts.ex ?? getInboxClaimTtlSeconds(),
+          }),
+          timeoutMs
+        );
       } else if (opts?.ex !== undefined) {
-        result = await client.set(key, value, { ex: opts.ex });
+        result = await withTimeout(
+          client.set(key, value, { ex: opts.ex }),
+          timeoutMs
+        );
       } else {
-        result = await client.set(key, value);
+        result = await withTimeout(client.set(key, value), timeoutMs);
       }
       return result === "OK" ? "OK" : null;
     },
   };
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error("Inbox Redis timed out"));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 export function inboxClaimKey(messageId: string): string {
