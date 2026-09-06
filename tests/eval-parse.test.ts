@@ -26,7 +26,7 @@ describe("extractStructuredJson", () => {
   });
 
   it("throws on empty response", () => {
-    assert.throws(() => extractStructuredJson(""), /empty|json|parse/i);
+    assert.throws(() => extractStructuredJson(""), /empty/i);
   });
 
   it("throws on non-JSON response", () => {
