@@ -9,6 +9,7 @@ import { randomBytes } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import {
   getGmailAuthBindHost,
+  getGmailAuthTimeoutMs,
   getGmailClientId,
   getGmailOauthAuthUrl,
   getGmailOauthScope,
@@ -118,7 +119,26 @@ export async function runGmailAuthCli(params?: {
   console.log(authorizeUrl);
   params?.openUrl?.(authorizeUrl);
 
-  const callbackUrl = await listener.wait();
+  let callbackUrl: URL;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    callbackUrl = await Promise.race([
+      listener.wait(),
+      new Promise<URL>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error("Gmail auth timed out waiting for the OAuth callback"));
+        }, getGmailAuthTimeoutMs());
+      }),
+    ]);
+  } catch (error: unknown) {
+    await listener.close().catch(() => undefined);
+    const message =
+      error instanceof Error ? error.message : "Gmail auth timed out";
+    console.error(message);
+    return { ok: false, error: message };
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
   const result = await completeGmailAuth({
     callbackUrl,
     expectedState: state,

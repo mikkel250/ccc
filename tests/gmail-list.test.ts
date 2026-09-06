@@ -14,6 +14,7 @@ const KEYS = [
   "GMAIL_OAUTH_TOKEN_URL",
   "GMAIL_API_BASE_URL",
   "GMAIL_LIST_MAX_RESULTS",
+  "GMAIL_HTTP_TIMEOUT_MS",
 ] as const;
 
 const saved: Record<string, string | undefined> = {};
@@ -147,6 +148,33 @@ describe("listLabeledRecruiterMail", () => {
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.match(result.error, /label not found/);
+    }
+  });
+
+  it("fails closed when a Gmail list GET is aborted by the HTTP timeout", async () => {
+    process.env.GMAIL_HTTP_TIMEOUT_MS = "20";
+    const result = await listLabeledRecruiterMail({
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        if (url.includes("/token")) {
+          return jsonResponse({ access_token: "access" });
+        }
+        const signal = init?.signal;
+        await new Promise<void>((_resolve, reject) => {
+          if (signal?.aborted) {
+            reject(new DOMException("Aborted", "AbortError"));
+            return;
+          }
+          signal?.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        });
+        return jsonResponse({});
+      },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /Gmail API request failed|token request failed/);
     }
   });
 });

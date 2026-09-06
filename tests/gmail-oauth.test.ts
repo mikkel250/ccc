@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { ServiceError } from "../app/api/lib/errors";
 import {
   getGmailAuthBindHost,
+  getGmailAuthTimeoutMs,
   getGmailClientId,
+  getGmailHttpTimeoutMs,
   getGmailListMaxResults,
   getGmailOauthScope,
   getGmailRefreshToken,
@@ -25,6 +27,8 @@ const KEYS = [
   "GMAIL_LIST_MAX_RESULTS",
   "GMAIL_LIST_MAX_RESULTS_LIMIT",
   "GMAIL_OAUTH_TOKEN_URL",
+  "GMAIL_HTTP_TIMEOUT_MS",
+  "GMAIL_AUTH_TIMEOUT_MS",
 ] as const;
 
 const saved: Record<string, string | undefined> = {};
@@ -79,6 +83,13 @@ describe("gmail-config", () => {
     process.env.GMAIL_LIST_MAX_RESULTS = "9999";
     process.env.GMAIL_LIST_MAX_RESULTS_LIMIT = "100";
     assert.equal(getGmailListMaxResults(), 100);
+  });
+
+  it("reads GMAIL_HTTP_TIMEOUT_MS and GMAIL_AUTH_TIMEOUT_MS from env", () => {
+    process.env.GMAIL_HTTP_TIMEOUT_MS = "1234";
+    process.env.GMAIL_AUTH_TIMEOUT_MS = "5678";
+    assert.equal(getGmailHttpTimeoutMs(), 1234);
+    assert.equal(getGmailAuthTimeoutMs(), 5678);
   });
 });
 
@@ -207,6 +218,31 @@ describe("gmail-oauth", () => {
     if (!result.ok) {
       assert.match(result.error, /HTTP 401/);
       assert.doesNotMatch(result.error, /secret-leak/);
+    }
+  });
+
+  it("fails closed when the token POST is aborted by the HTTP timeout", async () => {
+    process.env.GMAIL_HTTP_TIMEOUT_MS = "20";
+    const result = await refreshGmailAccessToken({
+      fetchImpl: async (_input, init) => {
+        const signal = init?.signal;
+        await new Promise<void>((_resolve, reject) => {
+          if (signal?.aborted) {
+            reject(new DOMException("Aborted", "AbortError"));
+            return;
+          }
+          signal?.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        });
+        return new Response(JSON.stringify({ access_token: "new-access" }), {
+          status: 200,
+        });
+      },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /token request failed/);
     }
   });
 });
