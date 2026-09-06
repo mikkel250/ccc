@@ -116,6 +116,9 @@ npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 | `tests/rate-limit.test.ts` | Dual IP + secret rate limits |
 | `tests/gmail-body.test.ts` | Gmail payload → JD (`text/plain` else html-to-text) |
 | `tests/inbox-processed-store.test.ts` | Claim SET NX vs processed skip / crash recovery |
+| `tests/gmail-oauth.test.ts` | Gmail OAuth URL, callback, token exchange/refresh |
+| `tests/gmail-list.test.ts` | Recruiter-label resolve + `messages.list` |
+| `tests/gmail-auth.test.ts` | `gmail:auth` / `gmail:list` CLI helpers |
 | `tests/route.test.ts` | Auth, curator cutover, dual response |
 | `tests/tailor-cv-validation.test.ts` | Request body + JD size validation |
 
@@ -132,6 +135,15 @@ npm run smoke -- http://localhost:3000 path/to/jd.md --flexible
 ```
 
 Requires a running server and `TAILOR_API_KEY`. Master CV (`MASTER_CV_JSON` / `MASTER_CV_PATH`) is the server's concern — smoke exercises it end-to-end via tailor. Asserts dual artifacts (health, tailor, schema, docx). No judge model keys and no score-based exit. Default `curationMode` is `strict`; pass `--flexible` or set `SMOKE_CURATION_MODE=flexible`. Writes `tmp/smoke/<jd-slug>.docx` and `tmp/smoke/<jd-slug>.curated.json` (JD basename; does not overwrite other JDs with distinct basenames). Strict runs also write `tmp/smoke/<jd-slug>.reply.txt` from `replyText`. Flexible runs also write `tmp/smoke/<jd-slug>.cover-letter.docx` when `coverLetter` is returned (missing/empty letters warn and skip). Like CV DOCX, cover-letter DOCX is written unredacted (`SMOKE_WRITE_UNREDACTED` remains specific to `curated.json`). Reusing a basename warns before overwriting its artifacts.
+
+## Gmail operator scripts (live Gmail — not in `npm test` / CI)
+
+Requires a Google Cloud Desktop OAuth client with the Gmail API enabled. Tokens stay in env; do not commit them.
+
+```bash
+npm run gmail:auth   # loopback consent; prints GMAIL_REFRESH_TOKEN=
+npm run gmail:list   # lists { id, threadId } for GMAIL_RECRUITER_LABEL
+```
 
 Mechanical regen (no LLM):
 
