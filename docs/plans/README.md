@@ -12,7 +12,7 @@ Lanes (`lfg` / `operator` / `parked` / `awaiting-merge`) mark whether drain may 
 
 Shipped on `main`: JSON curator API, auth/rate-limit, smoke library, flexible cover-letter DOCX, LLM-judge retirement, this README.
 
-Named leftover (not a plan): [eval-parse unit tests](../residual-review-findings/feature-retire-llm-judges.md) from the retire-judges review (GitHub #38). Lane: lfg
+Named leftover: [eval-parse unit tests](./2026-09-06-001-test-restore-eval-parse-unit-tests-plan.md) from the retire-judges review (GitHub #38). Lane: awaiting-merge
 
 Operator focus (STRATEGY, not `/ce-work`): in-field `strict` submit bar. Lane: operator
 
