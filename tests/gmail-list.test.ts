@@ -33,7 +33,9 @@ describe("gmail-list parsers", () => {
       "Recruiter"
     );
     assert.equal(result.ok, true);
-    assert.equal(result.labelId, "Label_1");
+    if (result.ok) {
+      assert.equal(result.labelId, "Label_1");
+    }
   });
 
   it("falls back to case-insensitive label match", () => {
@@ -42,7 +44,9 @@ describe("gmail-list parsers", () => {
       "Recruiter"
     );
     assert.equal(result.ok, true);
-    assert.equal(result.labelId, "Label_2");
+    if (result.ok) {
+      assert.equal(result.labelId, "Label_2");
+    }
   });
 
   it("fails when the recruiter label is missing", () => {

@@ -5,6 +5,7 @@
  */
 import { config as loadDotenv } from "dotenv";
 import { pathToFileURL } from "node:url";
+import { ServiceError } from "../app/api/lib/errors";
 import { listLabeledRecruiterMail } from "../app/api/lib/gmail-list";
 import type { FetchLike } from "../app/api/lib/gmail-oauth";
 
@@ -20,14 +21,21 @@ export function formatListedMessageLine(message: {
 export async function runGmailListCli(params?: {
   fetchImpl?: FetchLike;
 }): Promise<{ ok: true; lines: string[] } | { ok: false; error: string }> {
-  const result = await listLabeledRecruiterMail({
-    fetchImpl: params?.fetchImpl,
-  });
-  if (!result.ok) {
-    return { ok: false, error: result.error };
+  try {
+    const result = await listLabeledRecruiterMail({
+      fetchImpl: params?.fetchImpl,
+    });
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+    const lines = result.messages.map(formatListedMessageLine);
+    return { ok: true, lines };
+  } catch (error: unknown) {
+    if (error instanceof ServiceError) {
+      return { ok: false, error: error.message };
+    }
+    throw error;
   }
-  const lines = result.messages.map(formatListedMessageLine);
-  return { ok: true, lines };
 }
 
 async function main(): Promise<void> {
