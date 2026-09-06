@@ -284,6 +284,6 @@ export function buildCuratorUserMessage(
     "",
     curationMode === "flexible"
       ? "Respond with a JSON object containing curated_cv (the curated CV per the master schema) and cover_letter (a markdown cover letter)."
-      : "Respond with curated CV JSON only (same schema as master). The response must start with { and end with } — no prose, audit notes, or markdown fences.",
+      : "Respond with a JSON object { curated_cv, reply_text } — curated_cv matches the master schema; reply_text is the recruiter-thread email body. The response must start with { and end with } — no prose, audit notes, or markdown fences.",
   ].join("\n");
 }
