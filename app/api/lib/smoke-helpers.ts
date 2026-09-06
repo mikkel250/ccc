@@ -2,7 +2,7 @@
  * Smoke helpers: redact-by-default artifacts.
  */
 import { basename, join } from "node:path";
-import type { CurationMode } from "./curation-mode";
+import { usableReplyText, type CurationMode } from "./curation-mode";
 
 /** Safe filesystem slug from a JD path (basename without its terminal extension). */
 export function smokeArtifactSlug(jdPath: string): string {
@@ -58,11 +58,7 @@ export function shouldWriteReplyText(
   curationMode: CurationMode,
   replyText: unknown
 ): replyText is string {
-  return (
-    curationMode === "strict" &&
-    typeof replyText === "string" &&
-    replyText.trim().length > 0
-  );
+  return curationMode === "strict" && usableReplyText(replyText) !== undefined;
 }
 
 /** Strip contact + free-text bullets for default local artifact writes. */
