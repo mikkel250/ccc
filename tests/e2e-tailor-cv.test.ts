@@ -522,4 +522,44 @@ describe("runSmokeCli exit codes", () => {
     );
     assert.deepEqual(exits, [1]);
   });
+
+  it("parity rejects a response model outside the catalog before writing artifacts or status", async () => {
+    writeFileSync(join(dir, "jd.md"), "Need a solutions engineer");
+    process.env.SMOKE_PARITY_MODELS = "anthropic/sonnet";
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const exits: number[] = [];
+    mock.method(process, "exit", ((code?: number) => {
+      exits.push(code ?? 0);
+      throw new Error(`process.exit(${code ?? 0})`);
+    }) as typeof process.exit);
+
+    await assert.rejects(
+      () =>
+        runSmokeCli({
+          baseUrl: "http://localhost:3000",
+          jdPath: join(dir, "jd.md"),
+          wantFlexible: false,
+          artifactDir: dir,
+          parity: true,
+          deps: {
+            fetchFn: async (input: RequestInfo | URL) => {
+              const url = String(input);
+              if (url.endsWith("/api/hello")) {
+                return jsonResponse({ status: "ok" });
+              }
+              return jsonResponse({
+                cv: docx,
+                curatedJson: CURATED,
+                builderVersion: "v1",
+                model: "deepseek/deepseek-v4-pro",
+              });
+            },
+          },
+        }),
+      /process\.exit\(1\)/
+    );
+    assert.deepEqual(exits, [1]);
+    assert.equal(existsSync(join(dir, "deepseek")), false);
+    assert.equal(existsSync(join(dir, "parity-status.json")), false);
+  });
 });

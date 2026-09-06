@@ -217,6 +217,11 @@ export async function runSmokeCli(options: RunSmokeCliOptions): Promise<void> {
       process.exit(1);
     }
     try {
+      if (!catalog.includes(result.model)) {
+        throw new Error(
+          `parity response model is not in SMOKE_PARITY_MODELS: ${result.model}`
+        );
+      }
       smokeParityArtifactDir(smokeRoot, result.model);
     } catch (err) {
       console.error(err instanceof Error ? err.message : err);
