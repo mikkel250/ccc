@@ -8,7 +8,7 @@ Lanes (`lfg` / `operator` / `parked` / `awaiting-merge`) mark whether drain may 
 
 ## Active milestone
 
-**M7 — Cross-model parity matrix** — [plan](./2026-09-06-002-feat-cross-model-parity-matrix-plan.md). Lane: lfg
+**M7 — Cross-model parity matrix** — [plan](./2026-09-06-002-feat-cross-model-parity-matrix-plan.md). Lane: awaiting-merge
 
 Shipped on `main`: JSON curator API, auth/rate-limit, smoke library, flexible cover-letter DOCX, LLM-judge retirement, this README.
 
@@ -28,7 +28,7 @@ Drain order (composite pick): GitHub #38, then M7, then M8.1. Inbox product cont
 | M4 | Smoke runner library + cover-letter DOCX (no judges) | done | [entrypoint extract](./2026-07-23-refactor-extract-entrypoint-complexity-plan.md) (U3 on `main`), [cover letter DOCX](./2026-07-28-feat-smoke-cover-letter-docx-plan.md) | Operator artifact loop | |
 | M5 | Retire LLM judges from tailor and smoke | done | [retire LLM judges](./2026-09-03-001-feat-retire-llm-judges-plan.md) | Single-pass tailor; human quality loop | |
 | M6 | Plans README as session-start north-star | done | [plans README roadmap](./2026-09-02-001-feat-plans-readme-roadmap-plan.md) | Agents read active milestone, not newest-dated plan | |
-| M7 | Cross-model parity matrix | in progress | [cross-model parity](./2026-09-06-002-feat-cross-model-parity-matrix-plan.md) | Production confidence across providers | lfg |
+| M7 | Cross-model parity matrix | in progress | [cross-model parity](./2026-09-06-002-feat-cross-model-parity-matrix-plan.md) | Production confidence across providers | awaiting-merge |
 | M8.1 | Strict reply text on `POST /api/tailor-cv` | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) “Two fronts, one API”; [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) | Smoke yields a sendable recruiter reply plus CV artifacts | lfg |
 | M8.2 | Gmail auth + list labeled mail | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) “Two fronts, one API”; [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) | Local list of recruiter-labeled messages without creating drafts | lfg |
 | M8.3 | Body extract + processed-ID store | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) “Two fronts, one API”; [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) | Second extract of the same message is a no-op after the first mark | lfg |
