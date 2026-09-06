@@ -7,6 +7,7 @@ const DEFAULT_PREFIX = "inbox";
 const DEFAULT_CLAIM_TTL_SECONDS = 900;
 const DEFAULT_PROCESSED_TTL_SECONDS = 0;
 const DEFAULT_MESSAGE_ID_MAX_CHARS = 128;
+const DEFAULT_REDIS_TIMEOUT_MS = 2000;
 
 export function getInboxRedisPrefix(): string {
   return getEnvString("INBOX_REDIS_PREFIX", DEFAULT_PREFIX)!;
@@ -23,4 +24,9 @@ export function getInboxProcessedTtlSeconds(): number {
 
 export function getInboxMessageIdMaxChars(): number {
   return Math.max(1, getEnvNumber("INBOX_MESSAGE_ID_MAX_CHARS", DEFAULT_MESSAGE_ID_MAX_CHARS));
+}
+
+/** Abort hung inbox Redis get/set (default 2000ms, same order as rate-limit). */
+export function getInboxRedisTimeoutMs(): number {
+  return Math.max(1, getEnvNumber("INBOX_REDIS_TIMEOUT_MS", DEFAULT_REDIS_TIMEOUT_MS));
 }
