@@ -165,6 +165,13 @@ describe("smokeParityArtifactDir", () => {
       "/tmp/smoke/openrouter/openai/gpt-5.4-mini"
     );
   });
+
+  it("rejects path-traversal model segments", () => {
+    assert.throws(
+      () => smokeParityArtifactDir("/tmp/smoke", "anthropic/../etc"),
+      /Invalid model/
+    );
+  });
 });
 
 describe("mergeParityStatus", () => {

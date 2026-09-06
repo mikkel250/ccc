@@ -23,6 +23,12 @@ function assertNamespacedModel(model: string): void {
       `Unknown provider "${providerSegment}" in model "${model}"`
     );
   }
+  const segments = model.split("/");
+  if (segments.some((part) => part === "" || part === "." || part === "..")) {
+    throw new Error(
+      `Invalid model string "${model}": must be namespaced as provider/model`
+    );
+  }
 }
 
 /** Safe filesystem slug from a JD path (basename without its terminal extension). */
