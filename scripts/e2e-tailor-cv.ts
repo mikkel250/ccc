@@ -39,6 +39,7 @@ import {
   redactCuratedForArtifact,
   shouldWriteCoverLetterDocx,
   smokeArtifactPaths,
+  smokeParityArtifactDir,
 } from "../app/api/lib/smoke-helpers";
 import {
   markdownToDocxBase64,
@@ -210,9 +211,17 @@ export async function runSmokeCli(options: RunSmokeCliOptions): Promise<void> {
     `PASS tailor model=${result.model} builder=${result.builderVersion}`
   );
 
-  if (options.parity && !result.model.trim()) {
-    console.error("parity mode requires a non-empty response model");
-    process.exit(1);
+  if (options.parity) {
+    if (!result.model.trim()) {
+      console.error("parity mode requires a non-empty response model");
+      process.exit(1);
+    }
+    try {
+      smokeParityArtifactDir(smokeRoot, result.model);
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
   }
 
   await writeSmokeArtifacts({

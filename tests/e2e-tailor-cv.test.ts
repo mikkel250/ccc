@@ -436,7 +436,7 @@ describe("runSmokeCli exit codes", () => {
                 cv: docx,
                 curatedJson: CURATED,
                 builderVersion: "v1",
-                model: "anthropic/sonnet",
+                model: "deepseek/deepseek-v4-pro",
               });
             },
           },
@@ -444,13 +444,14 @@ describe("runSmokeCli exit codes", () => {
       /process\.exit\(0\)/
     );
     assert.deepEqual(exits, [0]);
-    assert.ok(existsSync(join(dir, "anthropic", "sonnet", "jd.docx")));
+    assert.ok(existsSync(join(dir, "deepseek", "deepseek-v4-pro", "jd.docx")));
     assert.equal(existsSync(join(dir, "jd.docx")), false);
+    assert.equal(existsSync(join(dir, "anthropic", "sonnet", "jd.docx")), false);
     const status = JSON.parse(
       readFileSync(join(dir, "parity-status.json"), "utf8")
     ) as { cells: Record<string, { ok: boolean }> };
-    assert.equal(status.cells["anthropic/sonnet"]?.ok, true);
-    assert.equal(status.cells["deepseek/deepseek-v4-pro"]?.ok, undefined);
+    assert.equal(status.cells["deepseek/deepseek-v4-pro"]?.ok, true);
+    assert.equal(status.cells["anthropic/sonnet"]?.ok, undefined);
   });
 
   it("parity malformed catalog fails before fetch", async () => {
@@ -482,5 +483,43 @@ describe("runSmokeCli exit codes", () => {
     );
     assert.deepEqual(exits, [1]);
     assert.equal(fetched, false);
+  });
+
+  it("parity rejects a provider-echo model that is not namespaced", async () => {
+    writeFileSync(join(dir, "jd.md"), "Need a solutions engineer");
+    process.env.SMOKE_PARITY_MODELS = "anthropic/sonnet";
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const exits: number[] = [];
+    mock.method(process, "exit", ((code?: number) => {
+      exits.push(code ?? 0);
+      throw new Error(`process.exit(${code ?? 0})`);
+    }) as typeof process.exit);
+
+    await assert.rejects(
+      () =>
+        runSmokeCli({
+          baseUrl: "http://localhost:3000",
+          jdPath: join(dir, "jd.md"),
+          wantFlexible: false,
+          artifactDir: dir,
+          parity: true,
+          deps: {
+            fetchFn: async (input: RequestInfo | URL) => {
+              const url = String(input);
+              if (url.endsWith("/api/hello")) {
+                return jsonResponse({ status: "ok" });
+              }
+              return jsonResponse({
+                cv: docx,
+                curatedJson: CURATED,
+                builderVersion: "v1",
+                model: "claude-sonnet-4-6",
+              });
+            },
+          },
+        }),
+      /process\.exit\(1\)/
+    );
+    assert.deepEqual(exits, [1]);
   });
 });

@@ -3,32 +3,11 @@
  */
 import { basename, join } from "node:path";
 import { getSmokeParityModelsCsv } from "../../../lib/env";
-import { KNOWN_PROVIDERS, type Provider } from "../../../lib/providers";
+import { parseNamespacedProvider } from "../../../lib/providers";
 import type { CurationMode } from "./curation-mode";
 
-/**
- * Same namespaced-model rules as `detectProvider` in llm.ts, without importing
- * that module (it pulls provider SDKs). Used by the parity catalog parser.
- */
 function assertNamespacedModel(model: string): void {
-  const slash = model.indexOf("/");
-  if (slash === -1) {
-    throw new Error(
-      `Invalid model string "${model}": must be namespaced as provider/model`
-    );
-  }
-  const providerSegment = model.slice(0, slash);
-  if (!KNOWN_PROVIDERS.has(providerSegment as Provider)) {
-    throw new Error(
-      `Unknown provider "${providerSegment}" in model "${model}"`
-    );
-  }
-  const segments = model.split("/");
-  if (segments.some((part) => part === "" || part === "." || part === ".." || part.includes("\\"))) {
-    throw new Error(
-      `Invalid model string "${model}": must be namespaced as provider/model`
-    );
-  }
+  parseNamespacedProvider(model);
 }
 
 /** Safe filesystem slug from a JD path (basename without its terminal extension). */
