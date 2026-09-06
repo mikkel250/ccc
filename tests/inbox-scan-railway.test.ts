@@ -19,7 +19,7 @@ describe("Railway inbox-scan cron config", () => {
   it("schedules the same inbox:scan job at 05:00 UTC", () => {
     const toml = read("railway.inbox-scan.toml");
     assert.match(toml, /startCommand\s*=\s*"npm run inbox:scan"/);
-    assert.match(toml, /cronSchedule\s*=\s*"0 9 \* \* \*"/);
+    assert.match(toml, /cronSchedule\s*=\s*"0 5 \* \* \*"/);
     assert.match(toml, /restartPolicyType\s*=\s*"NEVER"/);
   });
 
