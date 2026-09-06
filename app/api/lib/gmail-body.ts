@@ -19,9 +19,25 @@ function decodeGmailBodyData(data: unknown): string | undefined {
 }
 
 export function htmlToText(html: string): string {
-  const withoutBlocks = html
+  let withoutBlocks = html
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<head\b[^>]*>[\s\S]*?<\/head>/gi, " ")
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ");
+  let previous = "";
+  while (previous !== withoutBlocks) {
+    previous = withoutBlocks;
+    withoutBlocks = withoutBlocks
+      .replace(
+        /<([a-zA-Z][\w:-]*)\b[^>]*\bhidden\b[^>]*>[\s\S]*?<\/\1>/gi,
+        " "
+      )
+      .replace(
+        /<([a-zA-Z][\w:-]*)\b[^>]*style\s*=\s*(["'])[^"'<>]*display\s*:\s*none[^"'<>]*\2[^>]*>[\s\S]*?<\/\1>/gi,
+        " "
+      );
+  }
+  withoutBlocks = withoutBlocks
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n")
     .replace(/<\/div>/gi, "\n")
