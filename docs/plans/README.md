@@ -8,7 +8,7 @@ Lanes (`lfg` / `operator` / `parked` / `awaiting-merge`) mark whether drain may 
 
 ## Active milestone
 
-**M8.6 — Railway schedule for the same scan job** — [plan](./2026-09-06-008-feat-railway-inbox-cron-plan.md). Lane: lfg
+**M8.6 — Railway schedule for the same scan job** — [plan](./2026-09-06-008-feat-railway-inbox-cron-plan.md). Lane: awaiting-merge
 
 Shipped on `main`: JSON curator API, auth/rate-limit, smoke library, flexible cover-letter DOCX, LLM-judge retirement, this README.
 
