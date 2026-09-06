@@ -116,12 +116,12 @@ npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 | `tests/rate-limit.test.ts` | Dual IP + secret rate limits |
 | `tests/gmail-body.test.ts` | Gmail payload → JD (`text/plain` else html-to-text) |
 | `tests/inbox-processed-store.test.ts` | Claim SET NX vs processed skip / crash recovery |
-| `tests/gmail-oauth.test.ts` | Gmail OAuth URL, callback, token exchange/refresh |
+| `tests/gmail-oauth.test.ts` | Gmail OAuth URL, callback, token exchange/refresh/resolve |
 | `tests/gmail-list.test.ts` | Recruiter-label resolve + `messages.list` |
 | `tests/gmail-auth.test.ts` | `gmail:auth` / `gmail:list` CLI helpers |
 | `tests/gmail-message.test.ts` | Reply headers from a Gmail message resource |
 | `tests/gmail-drafts.test.ts` | MIME + draft create vs thread reuse |
-| `tests/inbox-scan.test.ts` | Scan job: draft, reuse, 422 skip, claim release on tailor/draft failure, processed skip |
+| `tests/inbox-scan.test.ts` | Scan job: draft, reuse, 422 skip, claim release on tailor/draft failure, processed skip, one token refresh per unprocessed message |
 | `tests/inbox-scan-railway.test.ts` | Railway cron toml vs always-on API toml |
 | `tests/route.test.ts` | Auth, curator cutover, dual response |
 | `tests/tailor-cv-validation.test.ts` | Request body + JD size validation |

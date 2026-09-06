@@ -149,6 +149,17 @@ export async function exchangeGmailAuthCode(
   );
 }
 
+export async function resolveGmailAccessToken(params: {
+  fetchImpl?: FetchLike;
+  accessToken?: string;
+}): Promise<GmailOauthResult<GmailTokenSet>> {
+  const provided = params.accessToken?.trim();
+  if (provided) {
+    return { ok: true, data: { accessToken: provided } };
+  }
+  return refreshGmailAccessToken({ fetchImpl: params.fetchImpl });
+}
+
 export async function refreshGmailAccessToken(params?: {
   fetchImpl?: FetchLike;
   refreshToken?: string;

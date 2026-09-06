@@ -41,7 +41,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── inbox-scan.ts     # list → tailor → draft → processed (inbox:scan job)
 │           ├── gmail-body.ts     # Gmail payload → JD (text/plain else html-to-text)
 │           ├── gmail-config.ts   # Gmail OAuth/API env getters
-│           ├── gmail-oauth.ts    # Authorize URL, callback, token exchange/refresh
+│           ├── gmail-oauth.ts    # Authorize URL, callback, token exchange/refresh/resolve
 │           ├── gmail-list.ts     # Recruiter-label resolve + messages.list
 │           ├── gmail-http.ts     # Injected-fetch Gmail JSON GET/POST + shared JSON/MIME helpers
 │           ├── gmail-message.ts  # messages.get + reply headers

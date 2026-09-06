@@ -180,6 +180,73 @@ describe("scanInbox", () => {
     }
   });
 
+  it("refreshes one access token per unprocessed message besides the list refresh", async () => {
+    let tokenPosts = 0;
+    const base = gmailFetch({});
+    const fetchImpl: typeof base = async (input, init) => {
+      const url = String(input);
+      if (url.includes("/token")) {
+        tokenPosts += 1;
+      }
+      const parsed = new URL(url);
+      if (parsed.pathname.endsWith("/users/me/messages")) {
+        return jsonResponse({
+          messages: [
+            { id: "m1", threadId: "t1" },
+            { id: "m2", threadId: "t2" },
+          ],
+        });
+      }
+      if (/\/users\/me\/messages\/m2$/.test(parsed.pathname)) {
+        return jsonResponse({
+          id: "m2",
+          threadId: "t2",
+          payload: (recruiterMessage() as { payload: unknown }).payload,
+        });
+      }
+      return base(input, init);
+    };
+    const result = await scanInbox({
+      fetchImpl,
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.items.length, 2);
+      assert.equal(result.items[0]?.status, "drafted");
+      assert.equal(result.items[1]?.status, "drafted");
+    }
+    assert.equal(tokenPosts, 3);
+  });
+
+  it("does not refresh again when the only listed message is already processed", async () => {
+    const marked = await markInboxProcessed("m1");
+    assert.equal(marked.ok, true);
+    let tokenPosts = 0;
+    const base = gmailFetch({
+      onMessageGet: () => {
+        throw new Error("message get must not run for processed ids");
+      },
+    });
+    const fetchImpl: typeof base = async (input, init) => {
+      if (String(input).includes("/token")) {
+        tokenPosts += 1;
+      }
+      return base(input, init);
+    };
+    const result = await scanInbox({
+      fetchImpl,
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.items[0]?.status, "skipped-processed");
+    }
+    assert.equal(tokenPosts, 1);
+  });
+
   it("creates a draft and marks processed after a successful tailor", async () => {
     let draftCreates = 0;
     const result = await scanInbox({

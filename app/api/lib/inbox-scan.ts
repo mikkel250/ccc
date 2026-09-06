@@ -14,7 +14,7 @@ import {
 } from "./inbox-processed-store";
 import { tailorLabeledMessage } from "./inbox-tailor";
 import type { TailorPipelineDeps } from "./tailor-pipeline";
-import type { FetchLike } from "./gmail-oauth";
+import { refreshGmailAccessToken, type FetchLike } from "./gmail-oauth";
 
 export type InboxScanItemStatus =
   | "skipped-processed"
@@ -54,7 +54,20 @@ async function scanOneMessage(params: {
     if (await isInboxProcessed(messageId)) {
       return { messageId, status: "skipped-processed" };
     }
-    const fetched = await getGmailMessage({ messageId, fetchImpl });
+    const token = await refreshGmailAccessToken({ fetchImpl });
+    if (!token.ok) {
+      return {
+        messageId,
+        status: "draft-failed",
+        error: token.error,
+      };
+    }
+    const accessToken = token.data.accessToken;
+    const fetched = await getGmailMessage({
+      messageId,
+      fetchImpl,
+      accessToken,
+    });
     if (!fetched.ok) {
       return {
         messageId,
@@ -65,6 +78,7 @@ async function scanOneMessage(params: {
     const existing = await gmailThreadHasDraft({
       threadId,
       fetchImpl,
+      accessToken,
     });
     if (!existing.ok) {
       return {
@@ -101,6 +115,7 @@ async function scanOneMessage(params: {
       replyText: tailored.body.replyText ?? "",
       docxBase64: tailored.body.cv,
       fetchImpl,
+      accessToken,
     });
     if (!drafted.ok) {
       await releaseInboxClaim(messageId);

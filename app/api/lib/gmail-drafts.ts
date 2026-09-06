@@ -11,7 +11,7 @@ import {
   parseGmailReplyHeaders,
 } from "./gmail-message";
 import {
-  refreshGmailAccessToken,
+  resolveGmailAccessToken,
   type FetchLike,
 } from "./gmail-oauth";
 
@@ -94,9 +94,13 @@ export function buildReplyRfc822(input: {
 export async function gmailThreadHasDraft(params: {
   threadId: string;
   fetchImpl?: FetchLike;
+  accessToken?: string;
 }): Promise<{ ok: true; hasDraft: boolean } | { ok: false; error: string }> {
   const fetchImpl = params.fetchImpl ?? fetch;
-  const token = await refreshGmailAccessToken({ fetchImpl });
+  const token = await resolveGmailAccessToken({
+    fetchImpl,
+    accessToken: params.accessToken,
+  });
   if (!token.ok) {
     return { ok: false, error: token.error };
   }
@@ -118,6 +122,7 @@ export async function ensureReplyDraft(params: {
   docxBase64: string;
   fetchImpl?: FetchLike;
   boundary?: string;
+  accessToken?: string;
 }): Promise<EnsureReplyDraftResult> {
   const replyText = params.replyText.trim();
   if (replyText === "") {
@@ -128,7 +133,10 @@ export async function ensureReplyDraft(params: {
     return headers;
   }
   const fetchImpl = params.fetchImpl ?? fetch;
-  const token = await refreshGmailAccessToken({ fetchImpl });
+  const token = await resolveGmailAccessToken({
+    fetchImpl,
+    accessToken: params.accessToken,
+  });
   if (!token.ok) {
     return { ok: false, error: token.error };
   }

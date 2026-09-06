@@ -173,6 +173,38 @@ describe("ensureReplyDraft", () => {
     assert.match(rfc, /filename="CV\.docx"/);
   });
 
+  it("skips token refresh when an access token is provided", async () => {
+    let tokenPosts = 0;
+    const result = await ensureReplyDraft({
+      sourceMessage: sourceMessage(),
+      replyText: "Thanks for reaching out.",
+      docxBase64: "QQ==",
+      boundary: "ccc-test",
+      accessToken: "already-fresh",
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        if (url.includes("/token")) {
+          tokenPosts += 1;
+          throw new Error("token refresh must not run when accessToken is set");
+        }
+        if (url.includes("/threads/t1")) {
+          return jsonResponse({
+            messages: [{ id: "m1", labelIds: ["INBOX"] }],
+          });
+        }
+        if (url.endsWith("/users/me/drafts") && init?.method === "POST") {
+          return jsonResponse({ id: "draft1" });
+        }
+        throw new Error(`unexpected ${url}`);
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.status, "created");
+    }
+    assert.equal(tokenPosts, 0);
+  });
+
   it("does not create a stub draft when reply text is blank", async () => {
     const result = await ensureReplyDraft({
       sourceMessage: sourceMessage(),

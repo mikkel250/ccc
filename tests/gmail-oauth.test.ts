@@ -15,6 +15,7 @@ import {
   exchangeGmailAuthCode,
   parseOAuthCallback,
   refreshGmailAccessToken,
+  resolveGmailAccessToken,
 } from "../app/api/lib/gmail-oauth";
 
 const KEYS = [
@@ -189,6 +190,33 @@ describe("gmail-oauth", () => {
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.match(result.error, /refresh_token/);
+    }
+  });
+
+  it("returns a provided access token without posting a refresh", async () => {
+    const result = await resolveGmailAccessToken({
+      accessToken: "already-fresh",
+      fetchImpl: async () => {
+        throw new Error("token POST must not run when accessToken is set");
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.data.accessToken, "already-fresh");
+    }
+  });
+
+  it("refreshes when the provided access token is blank", async () => {
+    const result = await resolveGmailAccessToken({
+      accessToken: "   ",
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ access_token: "new-access" }), {
+          status: 200,
+        }),
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.data.accessToken, "new-access");
     }
   });
 

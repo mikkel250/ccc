@@ -4,7 +4,7 @@
 import { getGmailApiBaseUrl } from "./gmail-config";
 import { gmailFetchJson, gmailJsonObject, sanitizeMimeHeaderValue } from "./gmail-http";
 import {
-  refreshGmailAccessToken,
+  resolveGmailAccessToken,
   type FetchLike,
 } from "./gmail-oauth";
 import { parseInboxMessageId } from "./inbox-processed-store";
@@ -90,13 +90,17 @@ export function parseGmailReplyHeaders(message: unknown): GmailReplyHeadersResul
 export async function getGmailMessage(params: {
   messageId: string;
   fetchImpl?: FetchLike;
+  accessToken?: string;
 }): Promise<GmailMessageResult> {
   const parsed = parseInboxMessageId(params.messageId);
   if (!parsed.ok) {
     return parsed;
   }
   const fetchImpl = params.fetchImpl ?? fetch;
-  const token = await refreshGmailAccessToken({ fetchImpl });
+  const token = await resolveGmailAccessToken({
+    fetchImpl,
+    accessToken: params.accessToken,
+  });
   if (!token.ok) {
     return { ok: false, error: token.error };
   }
