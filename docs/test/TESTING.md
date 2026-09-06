@@ -121,7 +121,7 @@ npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 | `tests/gmail-auth.test.ts` | `gmail:auth` / `gmail:list` CLI helpers |
 | `tests/gmail-message.test.ts` | Reply headers from a Gmail message resource |
 | `tests/gmail-drafts.test.ts` | MIME + draft create vs thread reuse |
-| `tests/inbox-scan.test.ts` | Scan job: draft, reuse, 422 skip, processed skip |
+| `tests/inbox-scan.test.ts` | Scan job: draft, reuse, 422 skip, claim release on tailor/draft failure, processed skip |
 | `tests/inbox-scan-railway.test.ts` | Railway cron toml vs always-on API toml |
 | `tests/route.test.ts` | Auth, curator cutover, dual response |
 | `tests/tailor-cv-validation.test.ts` | Request body + JD size validation |

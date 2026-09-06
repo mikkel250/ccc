@@ -246,6 +246,85 @@ describe("scanInbox", () => {
     assert.equal(memory.store.has(inboxProcessedKey("m1")), false);
   });
 
+  it("releases the claim after a 422 so a later scan can retry instead of skipped-claimed", async () => {
+    mock.method(tailorCvDeps, "chat", async () => ({
+      content: strictCuratorJson(FIXTURE_CURATED, "   "),
+      usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      model: "anthropic/sonnet",
+      finishReason: "stop",
+    }));
+    const first = await scanInbox({
+      fetchImpl: gmailFetch({}),
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+    assert.equal(first.ok, true);
+    if (first.ok) {
+      assert.equal(first.items[0]?.status, "tailor-failed");
+    }
+    assert.equal(memory.store.has(inboxProcessedKey("m1")), false);
+    assert.equal(memory.store.has(inboxClaimKey("m1")), false);
+
+    const second = await scanInbox({
+      fetchImpl: gmailFetch({}),
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+    assert.equal(second.ok, true);
+    if (second.ok) {
+      assert.equal(second.items[0]?.status, "tailor-failed");
+      assert.notEqual(second.items[0]?.status, "skipped-claimed");
+    }
+    assert.equal(memory.store.has(inboxClaimKey("m1")), false);
+  });
+
+  it("releases the claim when Gmail body extract fails so a later scan can retry", async () => {
+    const emptyMessage = {
+      id: "m1",
+      threadId: "t1",
+      payload: {
+        mimeType: "application/octet-stream",
+        body: {},
+        headers: [
+          { name: "From", value: "recruiter@example.com" },
+          { name: "Subject", value: "GM role" },
+          { name: "Message-ID", value: "<m@mail>" },
+        ],
+      },
+    };
+    const fetchImpl = gmailFetch({});
+    const emptyFetch: typeof fetchImpl = async (input, init) => {
+      const url = String(input);
+      const parsed = new URL(url);
+      if (/\/users\/me\/messages\/[^/]+$/.test(parsed.pathname)) {
+        return jsonResponse(emptyMessage);
+      }
+      return fetchImpl(input, init);
+    };
+    const first = await scanInbox({
+      fetchImpl: emptyFetch,
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+    assert.equal(first.ok, true);
+    if (first.ok) {
+      assert.equal(first.items[0]?.status, "tailor-failed");
+      assert.match(first.items[0]?.error ?? "", /no usable text body/i);
+    }
+    assert.equal(memory.store.has(inboxProcessedKey("m1")), false);
+    assert.equal(memory.store.has(inboxClaimKey("m1")), false);
+
+    const second = await scanInbox({
+      fetchImpl: emptyFetch,
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+    assert.equal(second.ok, true);
+    if (second.ok) {
+      assert.equal(second.items[0]?.status, "tailor-failed");
+    }
+  });
+
   it("skips processed ids without fetching the message", async () => {
     const marked = await markInboxProcessed("m1");
     assert.equal(marked.ok, true);

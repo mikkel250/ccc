@@ -89,9 +89,7 @@ async function scanOneMessage(params: {
       return { messageId, status: tailored.status };
     }
     if (!tailored.ok) {
-      if (tailored.status === 503) {
-        await releaseInboxClaim(messageId);
-      }
+      await releaseInboxClaim(messageId);
       return {
         messageId,
         status: "tailor-failed",
