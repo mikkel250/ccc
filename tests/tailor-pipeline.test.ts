@@ -8,7 +8,10 @@ import { resetRedisClientForTest } from "../app/api/lib/redis";
 import { createFailingMock } from "../tests/helpers/rate-limit-mock";
 import { BUILDER_VERSION } from "../app/api/lib/json-docx-builder";
 import { getTailorJdMaxChars } from "../app/api/lib/cv-schema";
-import { strictCuratorJson } from "../tests/helpers/strict-curator";
+import {
+  DEFAULT_STRICT_REPLY,
+  strictCuratorJson,
+} from "../tests/helpers/strict-curator";
 import {
   getRateLimitConfig,
   hashTailorApiKeyForRateLimit,
@@ -473,6 +476,8 @@ describe("buildTailorResponse — pipeline orchestration", () => {
         assert.equal(typeof result.body.remaining, "number");
         assert.equal(typeof result.body.resetTime, "number");
         assert.equal(result.body.curationMode, "strict");
+        assert.equal(result.body.replyText, DEFAULT_STRICT_REPLY);
+        assert.equal(result.body.coverLetter, undefined);
         assert.equal(typeof result.body.model, "string");
         assert.ok(result.body.usage);
       }

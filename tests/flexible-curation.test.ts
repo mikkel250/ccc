@@ -66,6 +66,40 @@ function mockFlexiblePipelineSuccess() {
   mock.method(tailorCvDeps, "isLlmServiceError", () => false);
 }
 
+function mockStrictPipeline(chatContent: string) {
+  mock.method(tailorCvDeps, "requireMasterCv", () => FIXTURE_CURATED);
+  mock.method(tailorCvDeps, "getCuratorPrompt", async () => ({
+    systemPrompt: "Strict prompt with {{MASTER_CV_JSON}} and {{CURATION_MODE_POLICY}}",
+    langfusePrompt: {
+      name: "cv-curator-json",
+      version: 1,
+      isFallback: true,
+    },
+  }));
+  mock.method(tailorCvDeps, "applyCurationModePolicy", (prompt: string) =>
+    prompt.replace("{{CURATION_MODE_POLICY}}", "MODE: strict")
+  );
+  mock.method(tailorCvDeps, "compileCuratorPrompt", (prompt: string) => ({
+    ok: true as const,
+    systemPrompt: prompt,
+  }));
+  mock.method(tailorCvDeps, "buildCuratorUserMessage", (jd: string) => `JD:\n${jd}`);
+  mock.method(tailorCvDeps, "chat", async () => ({
+    content: chatContent,
+    usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+    model: "anthropic/sonnet",
+    finishReason: "stop",
+  }));
+  mock.method(tailorCvDeps, "isLlmServiceError", () => false);
+}
+
+function strictJdBody(sessionId: string): string {
+  return JSON.stringify({
+    jobDescription: "We need a senior engineer with React experience.",
+    sessionId,
+  });
+}
+
 describe("flexible curation — cover letter + wrapper response", () => {
   beforeEach(() => {
     ensureEnv();
@@ -100,39 +134,10 @@ describe("flexible curation — cover letter + wrapper response", () => {
   });
 
   it("omits coverLetter for strict mode (backwards compatible)", async () => {
-    // strict mode: mock returns wrapper { curated_cv, reply_text }
-    mock.method(tailorCvDeps, "requireMasterCv", () => FIXTURE_CURATED);
-    mock.method(tailorCvDeps, "getCuratorPrompt", async () => ({
-      systemPrompt: "Strict prompt with {{MASTER_CV_JSON}} and {{CURATION_MODE_POLICY}}",
-      langfusePrompt: {
-        name: "cv-curator-json",
-        version: 1,
-        isFallback: true,
-      },
-    }));
-    mock.method(tailorCvDeps, "applyCurationModePolicy", (prompt: string) =>
-      prompt.replace("{{CURATION_MODE_POLICY}}", "MODE: strict")
-    );
-    mock.method(tailorCvDeps, "compileCuratorPrompt", (prompt: string) => ({
-      ok: true as const,
-      systemPrompt: prompt,
-    }));
-    mock.method(tailorCvDeps, "buildCuratorUserMessage", (jd: string) => `JD:\n${jd}`);
-    mock.method(tailorCvDeps, "chat", async () => ({
-      content: strictCuratorJson(FIXTURE_CURATED),
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-      model: "anthropic/sonnet",
-      finishReason: "stop",
-    }));
-    mock.method(tailorCvDeps, "isLlmServiceError", () => false);
-
-    const strictBody = JSON.stringify({
-      jobDescription: "We need a senior engineer with React experience.",
-      sessionId: "strict-test",
-    });
+    mockStrictPipeline(strictCuratorJson(FIXTURE_CURATED));
     const result = await buildTailorResponse(
       tailorCvDeps,
-      buildPostRequest(strictBody, XFF)
+      buildPostRequest(strictJdBody("strict-test"), XFF)
     );
     assert.equal(result.ok, true);
     if (result.ok) {
@@ -143,33 +148,10 @@ describe("flexible curation — cover letter + wrapper response", () => {
   });
 
   it("returns 422 when strict curator output is missing reply_text", async () => {
-    mock.method(tailorCvDeps, "requireMasterCv", () => FIXTURE_CURATED);
-    mock.method(tailorCvDeps, "getCuratorPrompt", async () => ({
-      systemPrompt: "Strict prompt with {{MASTER_CV_JSON}} and {{CURATION_MODE_POLICY}}",
-    }));
-    mock.method(tailorCvDeps, "applyCurationModePolicy", (prompt: string) =>
-      prompt.replace("{{CURATION_MODE_POLICY}}", "MODE: strict")
-    );
-    mock.method(tailorCvDeps, "compileCuratorPrompt", (prompt: string) => ({
-      ok: true as const,
-      systemPrompt: prompt,
-    }));
-    mock.method(tailorCvDeps, "buildCuratorUserMessage", (jd: string) => `JD:\n${jd}`);
-    mock.method(tailorCvDeps, "chat", async () => ({
-      content: JSON.stringify({ curated_cv: FIXTURE_CURATED }),
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-      model: "anthropic/sonnet",
-      finishReason: "stop",
-    }));
-    mock.method(tailorCvDeps, "isLlmServiceError", () => false);
-
-    const strictBody = JSON.stringify({
-      jobDescription: "We need a senior engineer with React experience.",
-      sessionId: "strict-missing-reply",
-    });
+    mockStrictPipeline(JSON.stringify({ curated_cv: FIXTURE_CURATED }));
     const result = await buildTailorResponse(
       tailorCvDeps,
-      buildPostRequest(strictBody, XFF)
+      buildPostRequest(strictJdBody("strict-missing-reply"), XFF)
     );
     assert.equal(result.ok, false);
     if (!result.ok) {
@@ -180,35 +162,12 @@ describe("flexible curation — cover letter + wrapper response", () => {
   });
 
   it("returns 422 when strict reply_text is whitespace-only", async () => {
-    mock.method(tailorCvDeps, "requireMasterCv", () => FIXTURE_CURATED);
-    mock.method(tailorCvDeps, "getCuratorPrompt", async () => ({
-      systemPrompt: "Strict prompt with {{MASTER_CV_JSON}} and {{CURATION_MODE_POLICY}}",
-    }));
-    mock.method(tailorCvDeps, "applyCurationModePolicy", (prompt: string) =>
-      prompt.replace("{{CURATION_MODE_POLICY}}", "MODE: strict")
+    mockStrictPipeline(
+      JSON.stringify({ curated_cv: FIXTURE_CURATED, reply_text: "   " })
     );
-    mock.method(tailorCvDeps, "compileCuratorPrompt", (prompt: string) => ({
-      ok: true as const,
-      systemPrompt: prompt,
-    }));
-    mock.method(tailorCvDeps, "buildCuratorUserMessage", (jd: string) => `JD:\n${jd}`);
-    mock.method(tailorCvDeps, "chat", async () => ({
-      content: JSON.stringify({ curated_cv: FIXTURE_CURATED, reply_text: "   " }),
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-      model: "anthropic/sonnet",
-      finishReason: "stop",
-    }));
-    mock.method(tailorCvDeps, "isLlmServiceError", () => false);
-
     const result = await buildTailorResponse(
       tailorCvDeps,
-      buildPostRequest(
-        JSON.stringify({
-          jobDescription: "We need a senior engineer with React experience.",
-          sessionId: "strict-blank-reply",
-        }),
-        XFF
-      )
+      buildPostRequest(strictJdBody("strict-blank-reply"), XFF)
     );
     assert.equal(result.ok, false);
     if (!result.ok) {
@@ -218,35 +177,12 @@ describe("flexible curation — cover letter + wrapper response", () => {
   });
 
   it("returns 422 when strict reply_text is not a string", async () => {
-    mock.method(tailorCvDeps, "requireMasterCv", () => FIXTURE_CURATED);
-    mock.method(tailorCvDeps, "getCuratorPrompt", async () => ({
-      systemPrompt: "Strict prompt with {{MASTER_CV_JSON}} and {{CURATION_MODE_POLICY}}",
-    }));
-    mock.method(tailorCvDeps, "applyCurationModePolicy", (prompt: string) =>
-      prompt.replace("{{CURATION_MODE_POLICY}}", "MODE: strict")
+    mockStrictPipeline(
+      JSON.stringify({ curated_cv: FIXTURE_CURATED, reply_text: 42 })
     );
-    mock.method(tailorCvDeps, "compileCuratorPrompt", (prompt: string) => ({
-      ok: true as const,
-      systemPrompt: prompt,
-    }));
-    mock.method(tailorCvDeps, "buildCuratorUserMessage", (jd: string) => `JD:\n${jd}`);
-    mock.method(tailorCvDeps, "chat", async () => ({
-      content: JSON.stringify({ curated_cv: FIXTURE_CURATED, reply_text: 42 }),
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-      model: "anthropic/sonnet",
-      finishReason: "stop",
-    }));
-    mock.method(tailorCvDeps, "isLlmServiceError", () => false);
-
     const result = await buildTailorResponse(
       tailorCvDeps,
-      buildPostRequest(
-        JSON.stringify({
-          jobDescription: "We need a senior engineer with React experience.",
-          sessionId: "strict-nonstring-reply",
-        }),
-        XFF
-      )
+      buildPostRequest(strictJdBody("strict-nonstring-reply"), XFF)
     );
     assert.equal(result.ok, false);
     if (!result.ok) {
@@ -256,35 +192,10 @@ describe("flexible curation — cover letter + wrapper response", () => {
   });
 
   it("returns 422 when strict curator output is bare master JSON", async () => {
-    mock.method(tailorCvDeps, "requireMasterCv", () => FIXTURE_CURATED);
-    mock.method(tailorCvDeps, "getCuratorPrompt", async () => ({
-      systemPrompt: "Strict prompt with {{MASTER_CV_JSON}} and {{CURATION_MODE_POLICY}}",
-    }));
-    mock.method(tailorCvDeps, "applyCurationModePolicy", (prompt: string) =>
-      prompt.replace("{{CURATION_MODE_POLICY}}", "MODE: strict")
-    );
-    mock.method(tailorCvDeps, "compileCuratorPrompt", (prompt: string) => ({
-      ok: true as const,
-      systemPrompt: prompt,
-    }));
-    mock.method(tailorCvDeps, "buildCuratorUserMessage", (jd: string) => `JD:\n${jd}`);
-    mock.method(tailorCvDeps, "chat", async () => ({
-      content: JSON.stringify(FIXTURE_CURATED),
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-      model: "anthropic/sonnet",
-      finishReason: "stop",
-    }));
-    mock.method(tailorCvDeps, "isLlmServiceError", () => false);
-
+    mockStrictPipeline(JSON.stringify(FIXTURE_CURATED));
     const result = await buildTailorResponse(
       tailorCvDeps,
-      buildPostRequest(
-        JSON.stringify({
-          jobDescription: "We need a senior engineer with React experience.",
-          sessionId: "strict-bare-json",
-        }),
-        XFF
-      )
+      buildPostRequest(strictJdBody("strict-bare-json"), XFF)
     );
     assert.equal(result.ok, false);
     if (!result.ok) {
