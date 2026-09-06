@@ -2,6 +2,22 @@ import { describe, it, afterEach, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { gmailFetchJson, gmailJsonObject, sanitizeMimeHeaderValue } from "../app/api/lib/gmail-http";
 
+describe("gmail JSON and MIME helpers", () => {
+  it("accepts plain objects and rejects arrays, null, and primitives", () => {
+    assert.equal(gmailJsonObject({ threadId: "t1" }) !== undefined, true);
+    assert.equal(gmailJsonObject([]), undefined);
+    assert.equal(gmailJsonObject(null), undefined);
+    assert.equal(gmailJsonObject("msg"), undefined);
+  });
+
+  it("keeps only the first MIME header line", () => {
+    assert.equal(
+      sanitizeMimeHeaderValue("recruiter@example.com\r\nBcc: evil@x.com"),
+      "recruiter@example.com"
+    );
+  });
+});
+
 describe("gmailFetchJson", () => {
   const previous = process.env.GMAIL_HTTP_TIMEOUT_MS;
 
@@ -36,21 +52,5 @@ describe("gmailFetchJson", () => {
     if (!result.ok) {
       assert.match(result.error, /Gmail API request failed/);
     }
-  });
-});
-
-describe("gmail JSON and MIME helpers", () => {
-  it("accepts plain objects and rejects arrays, null, and primitives", () => {
-    assert.equal(gmailJsonObject({ threadId: "t1" }) !== undefined, true);
-    assert.equal(gmailJsonObject([]), undefined);
-    assert.equal(gmailJsonObject(null), undefined);
-    assert.equal(gmailJsonObject("msg"), undefined);
-  });
-
-  it("keeps only the first MIME header line", () => {
-    assert.equal(
-      sanitizeMimeHeaderValue("recruiter@example.com\r\nBcc: evil@x.com"),
-      "recruiter@example.com"
-    );
   });
 });
