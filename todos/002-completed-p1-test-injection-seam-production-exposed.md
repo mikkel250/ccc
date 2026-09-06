@@ -94,7 +94,7 @@ export function __injectRatelimitForTest(r: RatelimitLike | null): void {
 
 ## Recommended Action
 
-**To be filled during triage.**
+**Option 1** — guard `__injectRatelimitForTest` / `resetRedisClientForTest` with `NODE_ENV !== "test"` throw.
 
 ## Technical Details
 
@@ -112,10 +112,10 @@ export function __injectRatelimitForTest(r: RatelimitLike | null): void {
 
 ## Acceptance Criteria
 
-- [ ] `__injectRatelimitForTest` throws if called outside test environment (Option 1)
-- [ ] `resetRedisClientForTest` similarly guarded
-- [ ] `npm test` passes (NODE_ENV=test allows the call)
-- [ ] `npm run lint` passes
+- [x] `__injectRatelimitForTest` throws if called outside test environment (Option 1)
+- [x] `resetRedisClientForTest` similarly guarded
+- [x] `npm test` passes (NODE_ENV=test allows the call)
+- [x] `npm run lint` passes
 
 ## Work Log
 
@@ -132,3 +132,12 @@ export function __injectRatelimitForTest(r: RatelimitLike | null): void {
 - The plan (U2 Deviation) acknowledges this was an intentional tradeoff vs. `mock.method` on SDK internals
 - `resetRedisClientForTest` in redis.ts has the same vulnerability
 - `llm.ts` uses `mock.method` on the deps bag instead — but this doesn't work for ESM modules with own-property methods
+
+### 2026-07-02 - Resolved (Option 1)
+
+**By:** Work execution agent
+
+**Actions:**
+- Confirmed production guards: `__injectRatelimitForTest` and `__injectSecretRatelimitForTest` in `rate-limit.ts` throw when `NODE_ENV !== "test"`
+- Confirmed `resetRedisClientForTest` in `redis.ts` uses the same guard
+- Tests exercise the seams under `NODE_ENV=test` only

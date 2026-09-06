@@ -295,7 +295,7 @@
           <span class="chip cx">Complexity Low</span>
         </div>
         <p class="field-label">Description</p>
-        <p>Do not rename 30 <code>*-pending-*</code> files or rewrite protected plan bodies. Filenames stay immutable IDs. Add a thin overlay: liveness on July plans still stamped <code>implementation-ready</code> that contradict STRATEGY, plus a one-line notice that extract-entrypoint U3 landed on <code>main</code> (the plan body still points at <code>feature/smoke-runner-extract</code>). Bakeoff’s <code>status: superseded</code> is the pattern. Ban glob-as-queue in AGENTS.md beside “never write on <code>main</code>.”</p>
+        <p>Closed todos were already renamed — no <code>todos/*-pending-*</code> files remain. Do not rewrite protected plan bodies; filenames stay immutable IDs. Add a thin overlay: liveness on July plans still stamped <code>implementation-ready</code> that contradict STRATEGY, plus a one-line notice that extract-entrypoint U3 landed on <code>main</code> (the plan body still points at <code>feature/smoke-runner-extract</code>). Bakeoff’s <code>status: superseded</code> is the pattern. Ban glob-as-queue in AGENTS.md beside “never write on <code>main</code>.”</p>
         <div class="diagram" aria-hidden="true">
           <svg viewBox="0 0 840 210" width="100%" height="210" role="img" aria-label="Museum, liveness, notices layers">
             <rect x="40" y="28" width="760" height="48" rx="6" fill="#ece6dc" stroke="#5c564e"/>
@@ -311,11 +311,11 @@
         </div>
         <p class="diagram-cap">The README already overlays milestone status. The hole is plan-file stamps and filename globs that still look live.</p>
         <p class="field-label">Basis</p>
-        <p><code>direct:</code> retire-judges KTD5: do not rewrite completed historical plans; stamp bakeoff superseded. Extract plan still: “U3 implemented on <code>feature/smoke-runner-extract</code>.” <code>app/api/lib/smoke-runner.ts</code> is on <code>main</code> and imported by <code>scripts/e2e-tailor-cv.ts</code>. 30 pending filenames, 0 pending YAML.</p>
+        <p><code>direct:</code> retire-judges KTD5: do not rewrite completed historical plans; stamp bakeoff superseded. Extract plan still: “U3 implemented on <code>feature/smoke-runner-extract</code>.” <code>app/api/lib/smoke-runner.ts</code> is on <code>main</code> and imported by <code>scripts/e2e-tailor-cv.ts</code>. Post-merge queue: 0 <code>todos/*-pending-*</code> filenames, 0 pending YAML.</p>
         <p class="field-label">Rationale</p>
         <p>A rename migration is still negative value. The cheapest remaining hygiene is making museum files non-actuatable without reprinting them. Rose from #3 because the board is now truthful and these files are the remaining liars.</p>
         <p class="field-label">Downsides</p>
-        <p>Humans still see <code>pending</code> in paths. Overlay notes can rot; the README must stay the authority so a stale notice cannot resurrect a milestone.</p>
+        <p>Humans still see historical closed-todo paths. Overlay notes can rot; the README must stay the authority so a stale notice cannot resurrect a milestone.</p>
       </article>
 
       <article class="idea" id="idea-3">
@@ -395,7 +395,7 @@
         <tbody>
           <tr><td>—</td><td>Workset JSON / ce-next / WIP lockfile</td><td>Post-merge: README <em>is</em> the workset. Duplicate SoT.</td></tr>
           <tr><td>—</td><td>GitHub Issues projection with writeback</td><td>Unchanged: #38 already exists; sync risk.</td></tr>
-          <tr><td>—</td><td>Rename 30 pending filenames</td><td>Unchanged: breaks cross-links for zero open YAML work.</td></tr>
+          <tr><td>—</td><td>Rename 30 pending filenames</td><td>Post-merge: closed todos already renamed; zero <code>todos/*-pending-*</code> remain.</td></tr>
           <tr><td>—</td><td>Make todos/ invisible to the loop</td><td>Unchanged: /ce-code-review still writes todos/.</td></tr>
           <tr><td>—</td><td>Automate July 05 verify-close</td><td>Unchanged: close-out already ran.</td></tr>
           <tr><td>—</td><td>STRATEGY execution graph of every track</td><td>Post-merge: README Active + STRATEGY tracks already split operator vs code.</td></tr>

@@ -117,7 +117,7 @@ mock.method(rl, "limit", mockLimitFn);
 
 ## Recommended Action
 
-**To be filled during triage.**
+**Option 1 (derived-type variant)** — export `RatelimitLike` / response types derived from the SDK; remove all `as any` casts from test mocks.
 
 ## Technical Details
 
@@ -132,10 +132,10 @@ mock.method(rl, "limit", mockLimitFn);
 
 ## Acceptance Criteria
 
-- [ ] All `as any` casts in test mocks replaced with proper types or a documented rationale
-- [ ] Tests still pass with same assertions
-- [ ] `npm test` passes
-- [ ] `npm run lint` passes
+- [x] All `as any` casts in test mocks replaced with proper types or a documented rationale
+- [x] Tests still pass with same assertions
+- [x] `npm test` passes
+- [x] `npm run lint` passes
 
 ## Work Log
 

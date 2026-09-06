@@ -70,6 +70,27 @@ describe("markdown-docx", () => {
     assert.equal(isValidDocxBase64("UEsDB!!!invalid###chars"), false);
   });
 
+  it("isValidDocxBase64 rejects length modulo 4 equal to 1 before Buffer.from", async () => {
+    // Strip padding, then append alphabet chars so length % 4 === 1 while
+    // staying charset-valid. Buffer.from still decodes the PK magic prefix.
+    const base64 = await markdownToDocxBase64(SAMPLE_CV);
+    const stripped = base64.replace(/=+$/, "");
+    const need = (1 - (stripped.length % 4) + 4) % 4;
+    const bad = stripped + "A".repeat(need === 0 ? 4 : need);
+    assert.equal(bad.length % 4, 1);
+    assert.equal(isValidDocxBase64(bad), false);
+  });
+
+  it("isValidDocxBase64 rejects improper padding before Buffer.from", async () => {
+    // Valid Base64 with "==" padding, drop one "=" → length % 4 === 3.
+    // Charset still matches; Buffer.from still yields PK magic.
+    const base64 = await markdownToDocxBase64(SAMPLE_CV);
+    assert.ok(base64.endsWith("="), "fixture must include padding");
+    const bad = base64.slice(0, -1);
+    assert.equal(bad.length % 4, 3);
+    assert.equal(isValidDocxBase64(bad), false);
+  });
+
   it("isValidDocxBase64 still returns true for a real base64-encoded docx buffer", async () => {
     const base64 = await markdownToDocxBase64(SAMPLE_CV);
     assert.equal(isValidDocxBase64(base64), true);

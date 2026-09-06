@@ -82,7 +82,7 @@ The code comment correctly identifies the fail-open risk: _"Disable SDK fail-ope
 
 ## Recommended Action
 
-**To be filled during triage.**
+**Option 1** — env-var-driven bounded timeout (`RATE_LIMIT_TIMEOUT_MS`, default 2000ms); SDK timeout maps to existing `ServiceError` (503) path.
 
 ## Technical Details
 
@@ -99,11 +99,11 @@ The code comment correctly identifies the fail-open risk: _"Disable SDK fail-ope
 
 ## Acceptance Criteria
 
-- [ ] `timeout: 0` replaced with a bounded timeout (env-var-driven or hardcoded)
-- [ ] Slow-Redis scenario produces 503 (ServiceError) within the timeout window, not indefinite hang
-- [ ] If new env var added: documented in `.env.example` with comment
-- [ ] `npm test` passes
-- [ ] `npm run lint` passes
+- [x] `timeout: 0` replaced with a bounded timeout (env-var-driven or hardcoded)
+- [x] Slow-Redis scenario produces 503 (ServiceError) within the timeout window, not indefinite hang
+- [x] If new env var added: documented in `.env.example` with comment
+- [x] `npm test` passes
+- [x] `npm run lint` passes
 
 ## Work Log
 
@@ -119,3 +119,12 @@ The code comment correctly identifies the fail-open risk: _"Disable SDK fail-ope
 **Learnings:**
 - The code comment at line 47-48 correctly diagnoses the fail-open problem but chooses the wrong fix
 - The existing `reason === "timeout"` error path at line 74 is already correct — just needs the timeout to fire
+
+### 2026-07-02 - Resolved (Option 1)
+
+**By:** Work execution agent
+
+**Actions:**
+- Replaced `timeout: 0` with `RATE_LIMIT_TIMEOUT_MS` (default 2000) via `getEnvNumber` in `app/api/lib/rate-limit.ts`
+- Documented `RATE_LIMIT_TIMEOUT_MS=2000` in `.env.example`
+- SDK `reason === "timeout"` continues to map to `ServiceError` (503) — fail-closed within the bounded window

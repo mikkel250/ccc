@@ -1,5 +1,5 @@
 /**
- * Composite dispatcher for tracer adapters — the single import `llm.ts::chat()` needs.
+ * Tracer adapter exports — the two helpers `llm.ts::chat()` couples directly.
  *
  * Flush semantics are preserved per-adapter from the pre-refactor implementation:
  * LangSmith is fire-and-forget (serverless-safe by design, no flush step), Langfuse
