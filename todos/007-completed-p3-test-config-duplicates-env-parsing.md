@@ -100,7 +100,7 @@ And update the `config.maxRequests` / `config.windowMs` references in test bodie
 ## Resources
 
 - **AGENTS.md:** "80% overlap means extend, don't copy"
-- **Related P2:** `todos/005-pending-p2-duplicate-sliding-window-mock-tests.md`
+- **Related P2:** `todos/005-done-p2-duplicate-sliding-window-mock-tests.md`
 
 ## Acceptance Criteria
 

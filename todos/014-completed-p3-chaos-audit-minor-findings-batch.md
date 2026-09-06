@@ -112,7 +112,7 @@ Per sub-item, when picked up:
 
 | ID | Fix |
 |---|---|
-| L1-08 | `isValidDocxBase64`: replaced the dead try/catch with a real base64-charset regex check (`Buffer.from` never throws — it silently truncates). |
+| L1-08 | `isValidDocxBase64`: replaced the dead try/catch with a real base64-charset regex check (`Buffer.from` never throws — it silently truncates); also rejects length % 4 === 1 and improper padding before `Buffer.from`. |
 | L1-09 | `dispatchProvider` no longer strips the deepseek prefix (only `callDeepSeek` does now) — single strip site, comment updated. |
 | L1-10 | `parseInlineMarkdown`: skips pushing empty-text `TextRun`s for pathological `"**"`/`"****"` input; falls back to a plain non-empty run instead. |
 | L1-13 | `RateLimitResult.resetTime` is now non-optional (`checkRateLimit` already always set it — type-only tightening, no runtime change). |

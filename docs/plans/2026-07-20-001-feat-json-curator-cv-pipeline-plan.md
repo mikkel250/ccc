@@ -7,7 +7,10 @@ artifact_readiness: implementation-ready
 product_contract_source: ce-brainstorm
 execution: code
 origin: ce-brainstorm session — Claude Projects JSON curator port + dual-representation / smoke
+status: shipped
 ---
+
+> **Shipped.** Judge/smoke-gate language in this body is superseded by [`2026-09-03-001-feat-retire-llm-judges-plan.md`](./2026-09-03-001-feat-retire-llm-judges-plan.md). Do not implement those sections.
 
 # JSON Curator CV Pipeline - Plan
 

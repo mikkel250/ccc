@@ -260,6 +260,24 @@ describe("buildTailorResponse — pipeline orchestration", () => {
     assert.equal(checkRateLimitSpy.mock.callCount(), 0);
   });
 
+  it("returns unknown-IP error for oversized x-forwarded-for without rate-limiting", async () => {
+    const checkRateLimitSpy = mock.method(tailorCvDeps, "checkRateLimit");
+    const oversized = `${"a".repeat(2000)}, 198.51.100.42`;
+    const result = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(
+        VALID_BODY,
+        authHeaders({ "x-forwarded-for": oversized })
+      )
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 400);
+      assert.equal(result.error, "Cannot determine client IP");
+    }
+    assert.equal(checkRateLimitSpy.mock.callCount(), 0);
+  });
+
   // --- Rate limiting ---
 
   it("returns rate limit error when RateLimitError is thrown", async () => {

@@ -65,14 +65,20 @@ export type TailorPipelineResult =
 // Helpers (moved from route.ts)
 // ---------------------------------------------------------------------------
 
+/** Max rightmost x-forwarded-for entries to examine before giving up. */
+const MAX_XFF_ENTRIES = Math.max(1, getEnvNumber("TAILOR_MAX_XFF_ENTRIES", 5));
+
+/** Max x-forwarded-for header character length before skipping parse. */
+const MAX_XFF_HEADER_CHARS = Math.max(
+  1,
+  getEnvNumber("TAILOR_MAX_XFF_HEADER_CHARS", 1024)
+);
+
 /** Reject values too long to be valid IP addresses (IPv6 with zone ID ≤ 55 chars). */
 function isValidIp(value: string): boolean {
   if (value.length > 55) return false;
   return isIP(value) !== 0;
 }
-
-/** Max rightmost x-forwarded-for entries to examine before giving up. */
-const MAX_XFF_ENTRIES = Math.max(1, getEnvNumber("TAILOR_MAX_XFF_ENTRIES", 5));
 
 function parseClientIp(request: NextRequest): string {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -231,8 +237,12 @@ export async function buildTailorResponse(
   deps: TailorPipelineDeps,
   request: NextRequest
 ): Promise<TailorPipelineResult> {
-  // 1. IP resolution
-  const ipAddress = parseClientIp(request);
+  // 1. IP resolution — oversized XFF skips parse (same "unknown" outcome)
+  const forwarded = request.headers.get("x-forwarded-for");
+  const ipAddress =
+    forwarded !== null && forwarded.length > MAX_XFF_HEADER_CHARS
+      ? "unknown"
+      : parseClientIp(request);
   if (ipAddress === "unknown") {
     return { ok: false, error: "Cannot determine client IP", status: 400 };
   }

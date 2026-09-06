@@ -52,4 +52,4 @@ When `request.json()` ran before `parseClientIp`, requests missing `x-forwarded-
 
 - PR branch: `feature/rate-limit-unknown-ip-fastfollow`
 - Plan: `docs/plans/2026-07-04-001-fix-rate-limit-client-ip-resolution-plan.md`
-- Related todo: `todos/000-pending-p1-resolve-unknown-ip-global-bucket.md` (completed)
+- Related todo: `todos/000-completed-p1-resolve-unknown-ip-global-bucket.md` (completed)

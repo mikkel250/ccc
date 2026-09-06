@@ -93,7 +93,7 @@ ratelimit = new Ratelimit({
 
 - **AGENTS.md:** "Config-driven routing, code-driven integration" section
 - **AGENTS.md:** "Senior Engineer Heuristics" — "Every literal value is a future outage"
-- **Related P1:** `todos/001-pending-p1-ratelimit-timeout-zero-unbounded-wait.md`
+- **Related P1:** `todos/001-completed-p1-ratelimit-timeout-zero-unbounded-wait.md`
 
 ## Acceptance Criteria
 

@@ -4,7 +4,10 @@ type: feat
 date: 2026-07-27
 deepened: 2026-07-27
 source: docs/brainstorms/2026-07-27-flexible-transferable-skills-posture-brainstorm.md
+status: parked
 ---
+
+> **Parked / partially superseded.** Critique-revise is retired by [`2026-09-03-001-feat-retire-llm-judges-plan.md`](./2026-09-03-001-feat-retire-llm-judges-plan.md). `flexible` as a commercial path is STRATEGY “Not working on.” Cover-letter artifact work shipped separately. Do not implement the critique loop from this plan.
 
 # Flexible Curation Posture & Critique-Revise Loop
 

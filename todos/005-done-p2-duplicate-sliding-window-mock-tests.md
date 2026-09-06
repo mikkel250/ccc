@@ -88,7 +88,7 @@ mock.method(tailorCvDeps, "checkRateLimit", async () => ({
 
 ## Recommended Action
 
-**To be filled during triage.** Option 1 is simpler and keeps the mock at the correct abstraction level. Option 2 is more aligned with existing test patterns in the file.
+**Option 1** — extract shared `createSlidingWindowMock` / `createFailingMock` into `tests/helpers/rate-limit-mock.ts` and import from both test files.
 
 ## Technical Details
 
@@ -124,3 +124,11 @@ mock.method(tailorCvDeps, "checkRateLimit", async () => ({
 **Learnings:**
 - The route.test.ts mock was likely copied from rate-limit.test.ts during initial implementation
 - Route.test.ts already uses `mock.method(tailorCvDeps, ...)` for other pipeline steps — the Ratelimit mock is the only one that bypasses the deps bag
+
+### 2026-07-02 - Resolved (Option 1)
+
+**By:** Work execution agent
+
+**Actions:**
+- Extracted shared factories to `tests/helpers/rate-limit-mock.ts`
+- `tests/rate-limit.test.ts` and `tests/route.test.ts` import from the shared helper (no duplicate sliding-window mock)

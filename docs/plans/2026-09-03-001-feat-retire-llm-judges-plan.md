@@ -7,7 +7,10 @@ artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
 product_contract_source: ce-brainstorm
 execution: code
+status: shipped
 ---
+
+> **Shipped** (PR #40). Named leftover: eval-parse unit tests in [`docs/residual-review-findings/feature-retire-llm-judges.md`](../residual-review-findings/feature-retire-llm-judges.md) (GitHub #38).
 
 # Retire LLM Judges - Plan
 

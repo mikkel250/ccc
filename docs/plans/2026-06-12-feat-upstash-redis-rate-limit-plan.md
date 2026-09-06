@@ -68,7 +68,7 @@
 
 - **[TRUSTED_PROXIES never validates connecting peer]:** Deferred (P1 000)
   - **Evidence:** `app/api/tailor-cv/route.ts:30-48` — `parseClientIp` unchanged. The `TRUSTED_PROXIES` set is checked for the connecting peer IP, but there is no assertion that the immediate peer IS a trusted proxy before honoring `X-Forwarded-For`/`X-Real-IP`.
-  - **Notes:** Captured in `todos/000-pending-p1-resolve-unknown-ip-global-bucket.md` as a fast-follow policy change. Not blocking this branch's merge.
+  - **Notes:** Captured in `todos/000-completed-p1-resolve-unknown-ip-global-bucket.md` as a fast-follow policy change. Not blocking this branch's merge.
 
 - **[Default config collapses all clients into shared "unknown" bucket]:** Refuted (unchanged)
   - **Notes:** Deployment configuration concern, not a code regression. No change since original assessment.

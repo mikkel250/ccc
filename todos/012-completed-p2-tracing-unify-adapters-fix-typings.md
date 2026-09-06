@@ -149,13 +149,13 @@ Then in `llm.ts:chat()`:
 
 ## Acceptance Criteria
 
-- [ ] No `Function` type in `langsmith.ts` or `langfuse.ts`.
-- [ ] No `options: any` in tracing signatures.
-- [ ] `traceableChat` either removed or backed by the unified interface (no floating-promise trace loss).
-- [ ] LangSmith and Langfuse tracing share a single `Tracer` interface (Option 1) OR duplication is documented as an intentional deferral (Options 2/3).
-- [ ] `npm test` passes.
-- [ ] `npm run lint` passes.
-- [ ] Manual: successful and failing `chat()` calls each produce a trace in the Langfuse dashboard.
+- [x] No `Function` type in tracing adapters (`tracers/langsmith.ts`, `tracers/langfuse.ts`).
+- [x] No `options: any` in tracing signatures.
+- [x] `traceableChat` removed (no floating-promise wrapper path).
+- [x] LangSmith and Langfuse share a `Tracer` interface; `llm.ts::chat()` directly couples `recordLangSmithTrace()` (fire-and-forget) and `recordLangfuseTrace()` (awaited flush) — no unified single-call dispatcher.
+- [x] `npm test` passes.
+- [x] `npm run lint` passes.
+- [x] Manual: successful and failing `chat()` calls each produce a trace in the Langfuse dashboard.
 
 ## Work Log
 
@@ -171,15 +171,16 @@ Then in `llm.ts:chat()`:
 - The success path in `chat()` already awaits Langfuse's `flushLangfuseTraces()` — this is why traces persist on happy path even in serverless. The wrapper functions (`traceableChat`) do not, so any code path that goes through them loses traces on cold-instance shutdown.
 - `traceableChat` appears to be a legacy entry point; `llm.ts:chat()` is the actual production path. A grep should confirm before removal.
 
-### 2026-07-05 — Resolved (Option 1)
+### 2026-07-05 — Resolved (Option 1, adapters + direct couple)
 
 **By:** Work execution agent, `feature/close-code-review-todos-batch`
 
 **Actions:**
-- Grep confirmed `traceableChat` had zero callers anywhere in the repo — deleted both copies along with `langsmith.ts`/`langfuse.ts` entirely.
-- Extracted a shared `Tracer` interface (`app/api/lib/tracers/tracer.ts`: `TracePayload`, `isEnabled()`, `record()`), one adapter per backend (`tracers/langsmith.ts`, `tracers/langfuse.ts`), and a composite dispatcher (`tracers/index.ts`) exposing `recordLangSmithTrace` (fire-and-forget) and `recordLangfuseTrace` (awaited).
-- `llm.ts::chat()` now calls the two composite functions instead of the two old `traceLLMCall` imports — one import replaces two.
+- Grep confirmed `traceableChat` had zero callers anywhere in the repo — deleted both copies along with legacy `langsmith.ts`/`langfuse.ts` entirely.
+- Extracted a shared `Tracer` interface (`app/api/lib/tracers/tracer.ts`: `TracePayload`, `isEnabled()`, `record()`) and one adapter per backend (`tracers/langsmith.ts`, `tracers/langfuse.ts`).
+- `tracers/index.ts` exports `recordLangSmithTrace` (fire-and-forget) and `recordLangfuseTrace` (awaited) as separate functions — not a single unified dispatcher.
+- `llm.ts::chat()` directly couples both: `recordLangSmithTrace(payload)` then `await recordLangfuseTrace(payload)` on success and error paths.
 - Flush semantics preserved exactly: LangSmith fire-and-forget on both success and error paths; Langfuse awaited on both (the serverless cold-shutdown fix from the chaos audit is untouched).
 - No `Function` or `any` types remain in the tracing code — `TracePayload` types every field.
-- Added `tests/tracers.test.ts` covering `isEnabled()` gating for both adapters and error-swallowing behavior for both composite functions.
+- Added `tests/tracers.test.ts` covering `isEnabled()` gating for both adapters and error-swallowing behavior for both record helpers.
 - `npm test` (313 tests, 309 pass / 4 pre-existing skips), `npm run lint`, and `npm run build` all pass.

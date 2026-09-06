@@ -19,7 +19,7 @@ function isValidIp(value: string): boolean {
 }
 ```
 
-The longest standard IPv6 representation is 39 characters (8 groups of 4 hex digits, 7 colons). However, IPv6 addresses with zone IDs (e.g., `fe80::1%eth0`) or IPv4-mapped notation (`::ffff:192.0.2.128`) can reach ~55 characters. These are valid per RFC 4007 and Node's `isIP()` accepts them — but the 45-char guard rejects them prematurely.
+The longest standard IPv6 representation is 39 characters (8 groups of 4 hex digits, 7 colons). IPv6 addresses with zone IDs (e.g., `fe80::1%eth0`) can reach ~55 characters. IPv4-mapped notation (`::ffff:192.0.2.128` = 21 chars) is a separate, shorter case well within the old 45-char guard. Zone-ID forms are valid per RFC 4007 and Node's `isIP()` accepts them — but the 45-char guard rejects them prematurely.
 
 ## Findings
 
@@ -66,7 +66,7 @@ The longest standard IPv6 representation is 39 characters (8 groups of 4 hex dig
 | Date | Action | Notes |
 |------|--------|-------|
 | 2026-07-22 | Created from code review | security-sentinel |
-| 2026-07-22 | Resolved — increased to 55 | `isValidIp` length guard changed from 45 → 55 to accommodate IPv6 + zone ID addresses per RFC 4007. |
+| 2026-07-22 | Resolved — increased to 55 | `isValidIp` length guard changed from 45 → 55 to accommodate IPv6 + zone ID addresses per RFC 4007 (not IPv4-mapped notation, which is shorter). |
 
 ## Resources
 
