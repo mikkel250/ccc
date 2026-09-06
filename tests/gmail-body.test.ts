@@ -1,0 +1,86 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import {
+  extractGmailJobDescription,
+  htmlToText,
+} from "../app/api/lib/gmail-body";
+
+function b64(text: string): string {
+  return Buffer.from(text, "utf8").toString("base64url");
+}
+
+describe("htmlToText", () => {
+  it("strips tags and decodes basic entities", () => {
+    assert.equal(htmlToText("<p>Need a GM &amp; chef</p>"), "Need a GM & chef");
+  });
+});
+
+describe("extractGmailJobDescription", () => {
+  it("prefers text/plain over text/html in multipart", () => {
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "multipart/alternative",
+        parts: [
+          {
+            mimeType: "text/plain",
+            body: { data: b64("Plain JD for a GM role.") },
+          },
+          {
+            mimeType: "text/html",
+            body: { data: b64("<p>HTML JD should lose.</p>") },
+          },
+        ],
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.jobDescription, "Plain JD for a GM role.");
+    }
+  });
+
+  it("falls back to html-to-text when plain is missing", () => {
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "text/html",
+        body: { data: b64("<p>Hire a <b>GM</b></p>") },
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.jobDescription, "Hire a GM");
+    }
+  });
+
+  it("walks nested multipart parts", () => {
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "multipart/mixed",
+        parts: [
+          {
+            mimeType: "multipart/alternative",
+            parts: [
+              {
+                mimeType: "text/plain",
+                body: { data: b64("Nested plain JD.") },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.jobDescription, "Nested plain JD.");
+    }
+  });
+
+  it("fails when the payload has no usable text", () => {
+    const result = extractGmailJobDescription({
+      payload: { mimeType: "multipart/mixed", parts: [] },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /no usable text/);
+    }
+  });
+});
