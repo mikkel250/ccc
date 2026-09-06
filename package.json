@@ -16,7 +16,9 @@
     "typecheck:tests": "tsc -p tsconfig.test.json --noEmit",
     "test:e2e": "playwright test",
     "regen-docx": "tsx scripts/regen-docx.ts",
-    "smoke": "tsx scripts/e2e-tailor-cv.ts"
+    "smoke": "tsx scripts/e2e-tailor-cv.ts",
+    "gmail:auth": "tsx scripts/gmail-auth.ts",
+    "gmail:list": "tsx scripts/gmail-list.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.67.1",
