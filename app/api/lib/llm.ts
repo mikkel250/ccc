@@ -13,7 +13,7 @@ import { recordLangSmithTrace, recordLangfuseTrace, type LangfusePromptRef } fro
 import { toTraceOptions, type TracePayload } from './tracers/tracer';
 import { getDeepSeekBaseUrl, getEnvNumber, getLLMConfig, getDefaultLlmModel, truncateSafeLogDetail } from '../../../lib/env';
 import type { ReasoningEffort } from '../../../lib/env';
-import { KNOWN_PROVIDERS, type Provider } from '../../../lib/providers';
+import { parseNamespacedProvider, KNOWN_PROVIDERS, type Provider } from '../../../lib/providers';
 import anthropicModels from '../../../config/anthropic-models.json';
 
 // Re-exported for backward compatibility — llm.ts was the historical home of
@@ -173,15 +173,7 @@ function getDeepSeek(options?: ChatOptions): OpenAI {
  * The first slash-delimited segment must be a known provider.
  */
 export function detectProvider(model: string): Provider {
-  const slash = model.indexOf('/');
-  if (slash === -1) {
-    throw new Error(`Invalid model string "${model}": must be namespaced as provider/model`);
-  }
-  const providerSegment = model.slice(0, slash);
-  if (!KNOWN_PROVIDERS.has(providerSegment as Provider)) {
-    throw new Error(`Unknown provider "${providerSegment}" in model "${model}"`);
-  }
-  return providerSegment as Provider;
+  return parseNamespacedProvider(model);
 }
 
 /** Strip the provider prefix before passing model to a provider integration function. */

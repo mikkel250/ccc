@@ -192,6 +192,7 @@ describe("writeSmokeArtifacts", () => {
 describe("runSmokeCli exit codes", () => {
   const prevKey = process.env.TAILOR_API_KEY;
   const prevMaster = process.env.MASTER_CV_JSON;
+  const prevParity = process.env.SMOKE_PARITY_MODELS;
   let dir: string;
 
   beforeEach(() => {
@@ -204,6 +205,8 @@ describe("runSmokeCli exit codes", () => {
     else process.env.TAILOR_API_KEY = prevKey;
     if (prevMaster === undefined) delete process.env.MASTER_CV_JSON;
     else process.env.MASTER_CV_JSON = prevMaster;
+    if (prevParity === undefined) delete process.env.SMOKE_PARITY_MODELS;
+    else process.env.SMOKE_PARITY_MODELS = prevParity;
     rmSync(dir, { recursive: true, force: true });
     mock.restoreAll();
   });
@@ -402,5 +405,161 @@ describe("runSmokeCli exit codes", () => {
     assert.deepEqual(exits, [0]);
     assert.ok(existsSync(join(dir, "jd.curated.json")));
     assert.ok(existsSync(join(dir, "jd.docx")));
+  });
+
+  it("parity run nests artifacts by response model and records pending catalog cells", async () => {
+    writeFileSync(join(dir, "jd.md"), "Need a solutions engineer");
+    process.env.SMOKE_PARITY_MODELS =
+      "anthropic/sonnet,deepseek/deepseek-v4-pro";
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const exits: number[] = [];
+    mock.method(process, "exit", ((code?: number) => {
+      exits.push(code ?? 0);
+      throw new Error(`process.exit(${code ?? 0})`);
+    }) as typeof process.exit);
+
+    await assert.rejects(
+      () =>
+        runSmokeCli({
+          baseUrl: "http://localhost:3000",
+          jdPath: join(dir, "jd.md"),
+          wantFlexible: false,
+          artifactDir: dir,
+          parity: true,
+          deps: {
+            fetchFn: async (input: RequestInfo | URL) => {
+              const url = String(input);
+              if (url.endsWith("/api/hello")) {
+                return jsonResponse({ status: "ok" });
+              }
+              return jsonResponse({
+                cv: docx,
+                curatedJson: CURATED,
+                builderVersion: "v1",
+                model: "deepseek/deepseek-v4-pro",
+              });
+            },
+          },
+        }),
+      /process\.exit\(0\)/
+    );
+    assert.deepEqual(exits, [0]);
+    assert.ok(existsSync(join(dir, "deepseek", "deepseek-v4-pro", "jd.docx")));
+    assert.equal(existsSync(join(dir, "jd.docx")), false);
+    assert.equal(existsSync(join(dir, "anthropic", "sonnet", "jd.docx")), false);
+    const status = JSON.parse(
+      readFileSync(join(dir, "parity-status.json"), "utf8")
+    ) as { cells: Record<string, { ok: boolean }> };
+    assert.equal(status.cells["deepseek/deepseek-v4-pro"]?.ok, true);
+    assert.equal(status.cells["anthropic/sonnet"]?.ok, undefined);
+  });
+
+  it("parity malformed catalog fails before fetch", async () => {
+    writeFileSync(join(dir, "jd.md"), "Need a solutions engineer");
+    process.env.SMOKE_PARITY_MODELS = "sonnet";
+    let fetched = false;
+    const exits: number[] = [];
+    mock.method(process, "exit", ((code?: number) => {
+      exits.push(code ?? 0);
+      throw new Error(`process.exit(${code ?? 0})`);
+    }) as typeof process.exit);
+
+    await assert.rejects(
+      () =>
+        runSmokeCli({
+          baseUrl: "http://localhost:3000",
+          jdPath: join(dir, "jd.md"),
+          wantFlexible: false,
+          artifactDir: dir,
+          parity: true,
+          deps: {
+            fetchFn: async () => {
+              fetched = true;
+              return jsonResponse({ status: "ok" });
+            },
+          },
+        }),
+      /process\.exit\(1\)/
+    );
+    assert.deepEqual(exits, [1]);
+    assert.equal(fetched, false);
+  });
+
+  it("parity rejects a provider-echo model that is not namespaced", async () => {
+    writeFileSync(join(dir, "jd.md"), "Need a solutions engineer");
+    process.env.SMOKE_PARITY_MODELS = "anthropic/sonnet";
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const exits: number[] = [];
+    mock.method(process, "exit", ((code?: number) => {
+      exits.push(code ?? 0);
+      throw new Error(`process.exit(${code ?? 0})`);
+    }) as typeof process.exit);
+
+    await assert.rejects(
+      () =>
+        runSmokeCli({
+          baseUrl: "http://localhost:3000",
+          jdPath: join(dir, "jd.md"),
+          wantFlexible: false,
+          artifactDir: dir,
+          parity: true,
+          deps: {
+            fetchFn: async (input: RequestInfo | URL) => {
+              const url = String(input);
+              if (url.endsWith("/api/hello")) {
+                return jsonResponse({ status: "ok" });
+              }
+              return jsonResponse({
+                cv: docx,
+                curatedJson: CURATED,
+                builderVersion: "v1",
+                model: "claude-sonnet-4-6",
+              });
+            },
+          },
+        }),
+      /process\.exit\(1\)/
+    );
+    assert.deepEqual(exits, [1]);
+  });
+
+  it("parity rejects a response model outside the catalog before writing artifacts or status", async () => {
+    writeFileSync(join(dir, "jd.md"), "Need a solutions engineer");
+    process.env.SMOKE_PARITY_MODELS = "anthropic/sonnet";
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const exits: number[] = [];
+    mock.method(process, "exit", ((code?: number) => {
+      exits.push(code ?? 0);
+      throw new Error(`process.exit(${code ?? 0})`);
+    }) as typeof process.exit);
+
+    await assert.rejects(
+      () =>
+        runSmokeCli({
+          baseUrl: "http://localhost:3000",
+          jdPath: join(dir, "jd.md"),
+          wantFlexible: false,
+          artifactDir: dir,
+          parity: true,
+          deps: {
+            fetchFn: async (input: RequestInfo | URL) => {
+              const url = String(input);
+              if (url.endsWith("/api/hello")) {
+                return jsonResponse({ status: "ok" });
+              }
+              return jsonResponse({
+                cv: docx,
+                curatedJson: CURATED,
+                builderVersion: "v1",
+                model: "deepseek/deepseek-v4-pro",
+              });
+            },
+          },
+        }),
+      /process\.exit\(1\)/
+    );
+    assert.deepEqual(exits, [1]);
+    assert.equal(existsSync(join(dir, "deepseek")), false);
+    assert.equal(existsSync(join(dir, "parity-status.json")), false);
   });
 });
