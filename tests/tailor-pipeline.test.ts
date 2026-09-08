@@ -37,6 +37,7 @@ const VALID_BODY = JSON.stringify({
   sessionId: "test-session",
 });
 
+/** Stub a successful strict pipeline response while leaving real validation enabled. */
 function mockPipelineSuccess(
   curated: Record<string, unknown> = FIXTURE_CURATED
 ) {

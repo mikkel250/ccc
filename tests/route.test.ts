@@ -79,6 +79,7 @@ function injectSlidingWindowMock() {
   );
 }
 
+/** Stub a successful strict tailoring pass while retaining real validation and rendering. */
 function mockTailorPipelineSuccess(
   curated: Record<string, unknown> = FIXTURE_CURATED
 ) {

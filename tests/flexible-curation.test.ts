@@ -66,6 +66,7 @@ function mockFlexiblePipelineSuccess() {
   mock.method(tailorCvDeps, "isLlmServiceError", () => false);
 }
 
+/** Stub the pipeline dependencies with a caller-supplied strict curator response. */
 function mockStrictPipeline(chatContent: string) {
   mock.method(tailorCvDeps, "requireMasterCv", () => FIXTURE_CURATED);
   mock.method(tailorCvDeps, "getCuratorPrompt", async () => ({
@@ -93,6 +94,7 @@ function mockStrictPipeline(chatContent: string) {
   mock.method(tailorCvDeps, "isLlmServiceError", () => false);
 }
 
+/** Build the default strict tailoring request body for a test session. */
 function strictJdBody(sessionId: string): string {
   return JSON.stringify({
     jobDescription: "We need a senior engineer with React experience.",

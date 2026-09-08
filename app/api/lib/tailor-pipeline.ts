@@ -240,6 +240,7 @@ function resolveSecretBucketKey(): string {
 // Pipeline
 // ---------------------------------------------------------------------------
 
+/** Run the authenticated tailoring pipeline and produce its route-ready result. */
 export async function buildTailorResponse(
   deps: TailorPipelineDeps,
   request: NextRequest

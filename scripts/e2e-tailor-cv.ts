@@ -93,6 +93,7 @@ export type WriteSmokeArtifactsInput = {
   artifactDir?: string;
 };
 
+/** Persist the CV, curated JSON, and mode-specific artifacts from a smoke run. */
 export async function writeSmokeArtifacts(
   input: WriteSmokeArtifactsInput
 ): Promise<{
@@ -175,6 +176,7 @@ export type RunSmokeCliOptions = {
   deps?: SmokePipelineDeps;
 };
 
+/** Execute one smoke request and write its validated response artifacts. */
 export async function runSmokeCli(options: RunSmokeCliOptions): Promise<void> {
   const curationMode = resolveCurationMode(options.wantFlexible);
 

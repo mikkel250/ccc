@@ -46,6 +46,7 @@ describe("tailor pipeline — single curator pass", () => {
     sessionId: "cr-test",
   });
 
+  /** Stub one curator response and expose the resulting chat-call count. */
   function mockSingleCuratorPass(content: string = strictCuratorJson(FIXTURE_CURATED)) {
     mock.method(tailorCvDeps, "requireMasterCv", () => FIXTURE_CURATED);
     mock.method(tailorCvDeps, "getCuratorPrompt", async () => ({
