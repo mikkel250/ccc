@@ -42,6 +42,10 @@ Live quality for the JSON curator pipeline is **`npm run smoke`** (not part of `
 
 Artifacts: `<jd-slug>.docx` + `<jd-slug>.curated.json` named from the JD basename; flexible runs may also write `<jd-slug>.cover-letter.docx`. Test JDs are raw recruiter text in `knowledge-base/test-jds/` (no YAML frontmatter). Operators review all generated files — that review is the quality signal.
 
+### Cross-model parity (`npm run smoke:parity`)
+
+Server `TAILOR_MODEL` stays the only selector (no client model field). A parity run fills **one matrix cell** against the running server, then writes artifacts under `tmp/smoke/<provider>/<model>/` using the response `model` and updates `tmp/smoke/parity-status.json` (filled cell + pending catalog). Remaining cells need a restart with the next `TAILOR_MODEL`. Catalog: `SMOKE_PARITY_MODELS` (default: `anthropic/sonnet`, `deepseek/deepseek-v4-pro`, `openrouter/openai/gpt-5.4-mini`, `openrouter/google/gemini-3.1-pro-preview`). Pin `TAILOR_REASONING_EFFORT` so provider defaults do not skew the A/B. Quality is still operator read of the files — no judges.
+
 ### Historical model-selection eval (markdown era)
 
 The composite scores below come from the pre-cutover markdown CV eval (format / relevance / hallucination / extraction). That workflow is **retired** for day-to-day quality; keep the numbers only as rationale for the current `TAILOR_MODEL` default. Legacy score artifacts may still exist under `eval-results/`.

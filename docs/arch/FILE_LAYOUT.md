@@ -19,7 +19,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── cv-schema.ts      # Ajv draft-2020-12 validation + size limits
 │           ├── json-docx-builder.ts # Mechanical JSON → .docx (BUILDER_VERSION)
 │           ├── tailor-auth.ts    # Bearer shared-secret gate
-│           ├── smoke-helpers.ts  # Smoke artifact redaction + writes
+│           ├── smoke-helpers.ts  # Smoke artifact redaction, parity catalog, nested paths
 │           ├── smoke-runner.ts   # verifySmokePipeline — health → tailor → artifacts
 │           ├── chat-prompt.ts    # Chat assistant system prompt (legacy, no route yet)
 │           ├── jd-prompt.ts      # Job description analysis prompt (evaluation rubric inside)

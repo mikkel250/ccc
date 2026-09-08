@@ -108,7 +108,7 @@ npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 | `tests/errors.test.ts` | Typed error classes (`RateLimitError`, `ServiceError`) |
 | `tests/eval-architecture-docs.test.ts` | Eval architecture doc cross-references |
 | `tests/e2e-tailor-cv.test.ts` | Smoke CLI: artifacts, redaction, curation mode, exit codes |
-| `tests/smoke-helpers.test.ts` | Smoke artifact redaction |
+| `tests/smoke-helpers.test.ts` | Smoke artifact redaction + parity catalog/paths |
 | `tests/smoke-runner.test.ts` | `verifySmokePipeline` library with mocked fetch |
 | `tests/json-docx-builder.test.ts` | JSON→docx builder + regen CLI |
 | `tests/curator-prompt.test.ts` | Curator prompt contract |
@@ -129,9 +129,15 @@ npm run smoke -- http://localhost:3000
 npm run smoke -- http://localhost:3000 path/to/jd.md
 # optional flexible curation (category-style collapse allowed):
 npm run smoke -- http://localhost:3000 path/to/jd.md --flexible
+# one parity cell (nests under tmp/smoke/<provider>/<model>/; remaining catalog needs restart):
+npm run smoke:parity -- http://localhost:3000
+# equivalent:
+npm run smoke -- http://localhost:3000 --parity
 ```
 
 Requires a running server and `TAILOR_API_KEY`. Master CV (`MASTER_CV_JSON` / `MASTER_CV_PATH`) is the server's concern — smoke exercises it end-to-end via tailor. Asserts dual artifacts (health, tailor, schema, docx). No judge model keys and no score-based exit. Default `curationMode` is `strict`; pass `--flexible` or set `SMOKE_CURATION_MODE=flexible`. Writes `tmp/smoke/<jd-slug>.docx` and `tmp/smoke/<jd-slug>.curated.json` (JD basename; does not overwrite other JDs with distinct basenames). Flexible runs also write `tmp/smoke/<jd-slug>.cover-letter.docx` when `coverLetter` is returned (missing/empty letters warn and skip). Like CV DOCX, cover-letter DOCX is written unredacted (`SMOKE_WRITE_UNREDACTED` remains specific to `curated.json`). Reusing a basename warns before overwriting its artifacts.
+
+`--parity` / `npm run smoke:parity` writes the same dual artifacts under `tmp/smoke/<provider>/<model>/` using the tailor response `model`, plus `tmp/smoke/parity-status.json` (filled cell and pending `SMOKE_PARITY_MODELS`). One live `TAILOR_MODEL` per process — restart `npm run dev` to fill the next cell. Default smoke without `--parity` stays flat (`tmp/smoke/<jd-slug>.*`). Pin `TAILOR_REASONING_EFFORT` for fair A/B. Catalog is env-overridable; bare aliases fail closed.
 
 Mechanical regen (no LLM):
 
