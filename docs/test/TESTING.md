@@ -114,6 +114,8 @@ npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 | `tests/curator-prompt.test.ts` | Curator prompt contract |
 | `tests/knowledge-base.test.ts` | Legacy KB helpers (not tailor hot path) |
 | `tests/rate-limit.test.ts` | Dual IP + secret rate limits |
+| `tests/gmail-body.test.ts` | Gmail payload → JD (`text/plain` else html-to-text) |
+| `tests/inbox-processed-store.test.ts` | Claim SET NX vs processed skip / crash recovery |
 | `tests/route.test.ts` | Auth, curator cutover, dual response |
 | `tests/tailor-cv-validation.test.ts` | Request body + JD size validation |
 
