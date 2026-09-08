@@ -98,7 +98,10 @@ Fast, no server, no API keys:
 ```bash
 npm test
 npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
+# Optional live Upstash claim/processed (not CI):
+RUN_INBOX_REDIS_TESTS=true npm test
 ```
+
 
 | File | Covers |
 |------|--------|
@@ -115,7 +118,7 @@ npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 | `tests/knowledge-base.test.ts` | Legacy KB helpers (not tailor hot path) |
 | `tests/rate-limit.test.ts` | Dual IP + secret rate limits |
 | `tests/gmail-body.test.ts` | Gmail payload → JD (`text/plain` else html-to-text) |
-| `tests/inbox-processed-store.test.ts` | Claim SET NX vs processed skip / crash recovery |
+| `tests/inbox-processed-store.test.ts` | Claim vs processed skip / crash recovery; live Redis gated by `RUN_INBOX_REDIS_TESTS=true` |
 | `tests/route.test.ts` | Auth, curator cutover, dual response |
 | `tests/tailor-cv-validation.test.ts` | Request body + JD size validation |
 

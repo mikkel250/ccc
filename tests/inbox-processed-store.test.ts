@@ -1,5 +1,7 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { getRedisClient, resetRedisClientForTest } from "../app/api/lib/redis";
 import {
   __injectInboxKvForTest,
   claimInboxMessage,
@@ -202,5 +204,70 @@ describe("inbox processed store", () => {
 
     assert.deepEqual(result, { ok: true, outcome: "processed" });
     assert.equal(memory.store.get(inboxClaimKey(ID)), "replacement-token");
+  });
+});
+
+describe("inbox processed store — RUN_INBOX_REDIS_TESTS integration", () => {
+  const runLive = process.env.RUN_INBOX_REDIS_TESTS === "true";
+  const prefix = `inbox-it-${randomUUID().replace(/-/g, "")}`;
+  let savedPrefix: string | undefined;
+
+  beforeEach(() => {
+    if (!runLive) return;
+    savedPrefix = process.env.INBOX_REDIS_PREFIX;
+    process.env.INBOX_REDIS_PREFIX = prefix;
+    __injectInboxKvForTest(null);
+  });
+
+  afterEach(() => {
+    if (!runLive) return;
+    __injectInboxKvForTest(null);
+    resetRedisClientForTest();
+    if (savedPrefix === undefined) delete process.env.INBOX_REDIS_PREFIX;
+    else process.env.INBOX_REDIS_PREFIX = savedPrefix;
+  });
+
+  async function deleteInboxKeys(messageId: string): Promise<void> {
+    await getRedisClient().del(inboxClaimKey(messageId), inboxProcessedKey(messageId));
+  }
+
+  it("lets only one concurrent Redis claim win", { skip: !runLive }, async () => {
+    const messageId = `msg-${randomUUID().replace(/-/g, "")}`;
+    try {
+      const [a, b] = await Promise.all([
+        claimInboxMessage(messageId),
+        claimInboxMessage(messageId),
+      ]);
+      assert.equal(a.ok && b.ok, true);
+      if (a.ok && b.ok) {
+        const outcomes = [a.outcome, b.outcome].sort();
+        assert.deepEqual(outcomes, ["lost", "won"]);
+      }
+      assert.equal(Boolean(await getRedisClient().exists(inboxClaimKey(messageId))), true);
+      assert.equal(Boolean(await getRedisClient().exists(inboxProcessedKey(messageId))), false);
+    } finally {
+      await deleteInboxKeys(messageId);
+    }
+  });
+
+  it("returns processed on Redis when the marker already exists", { skip: !runLive }, async () => {
+    const messageId = `msg-${randomUUID().replace(/-/g, "")}`;
+    try {
+      const marked = await markInboxProcessed(messageId);
+      assert.equal(marked.ok, true);
+      const [a, b] = await Promise.all([
+        claimInboxMessage(messageId),
+        claimInboxMessage(messageId),
+      ]);
+      assert.equal(a.ok && b.ok, true);
+      if (a.ok && b.ok) {
+        assert.equal(a.outcome, "processed");
+        assert.equal(b.outcome, "processed");
+      }
+      assert.equal(Boolean(await getRedisClient().exists(inboxClaimKey(messageId))), false);
+      assert.equal(Boolean(await getRedisClient().exists(inboxProcessedKey(messageId))), true);
+    } finally {
+      await deleteInboxKeys(messageId);
+    }
   });
 });
