@@ -22,6 +22,7 @@ import {
 
 loadDotenv();
 
+/** Format the loopback origin registered for the local OAuth callback. */
 export function gmailAuthRedirectUri(host: string, port: number): string {
   if (host === "::1") {
     return `http://[::1]:${port}`;
@@ -29,10 +30,12 @@ export function gmailAuthRedirectUri(host: string, port: number): string {
   return `http://${host}:${port}`;
 }
 
+/** Format a refresh token as the environment assignment shown to the operator. */
 export function formatGmailRefreshTokenLine(refreshToken: string): string {
   return `GMAIL_REFRESH_TOKEN=${refreshToken}`;
 }
 
+/** Validate the callback and exchange its code for a required refresh token. */
 export async function completeGmailAuth(params: {
   callbackUrl: URL;
   expectedState: string;
@@ -58,10 +61,12 @@ export async function completeGmailAuth(params: {
   return { ok: true, refreshToken };
 }
 
+/** Parse an incoming loopback request against the listener origin. */
 function requestUrl(req: IncomingMessage, host: string, port: number): URL {
   return new URL(req.url ?? "/", gmailAuthRedirectUri(host, port));
 }
 
+/** Run the one-shot local OAuth flow and print the resulting refresh token. */
 export async function runGmailAuthCli(params?: {
   fetchImpl?: typeof fetch;
   openUrl?: (url: string) => void;
@@ -155,6 +160,7 @@ export async function runGmailAuthCli(params?: {
   return { ok: true };
 }
 
+/** Execute the Gmail authorization CLI and map failure to its process exit code. */
 async function main(): Promise<void> {
   const result = await runGmailAuthCli();
   if (!result.ok) {

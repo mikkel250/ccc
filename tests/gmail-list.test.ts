@@ -19,6 +19,7 @@ const KEYS = [
 
 const saved: Record<string, string | undefined> = {};
 
+/** Build a JSON response used by Gmail API fetch stubs. */
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,

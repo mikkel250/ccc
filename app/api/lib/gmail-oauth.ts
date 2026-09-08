@@ -23,6 +23,7 @@ export type GmailOauthResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string };
 
+/** Build the state-protected Google OAuth URL for offline Gmail consent. */
 export function buildGmailAuthUrl(params: {
   clientId: string;
   redirectUri: string;
@@ -41,6 +42,7 @@ export function buildGmailAuthUrl(params: {
   return url.toString();
 }
 
+/** Validate an OAuth callback and extract its authorization code. */
 export function parseOAuthCallback(
   callbackUrl: URL,
   expectedState: string
@@ -60,6 +62,7 @@ export function parseOAuthCallback(
   return { ok: true, data: code };
 }
 
+/** Validate the token fields returned by the OAuth token endpoint. */
 function parseTokenPayload(
   raw: unknown,
   requireRefreshToken: boolean
@@ -98,6 +101,7 @@ function parseTokenPayload(
   };
 }
 
+/** Post a token grant and normalize transport, HTTP, and payload failures. */
 async function postTokenRequest(
   body: URLSearchParams,
   fetchImpl: FetchLike,
@@ -127,6 +131,7 @@ async function postTokenRequest(
   return parseTokenPayload(parsed, requireRefreshToken);
 }
 
+/** Exchange a Gmail authorization code for access and refresh tokens. */
 export async function exchangeGmailAuthCode(
   params: {
     code: string;
@@ -149,6 +154,7 @@ export async function exchangeGmailAuthCode(
   );
 }
 
+/** Refresh the short-lived Gmail access token used by REST requests. */
 export async function refreshGmailAccessToken(params?: {
   fetchImpl?: FetchLike;
   refreshToken?: string;

@@ -21,6 +21,7 @@ export type GmailListResult =
   | { ok: true; messages: GmailListedMessage[] }
   | { ok: false; error: string };
 
+/** Narrow an unknown JSON value to a non-array object. */
 function jsonObject(raw: unknown): object | undefined {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
     return undefined;
@@ -28,6 +29,7 @@ function jsonObject(raw: unknown): object | undefined {
   return raw;
 }
 
+/** Fetch and decode one authenticated Gmail API JSON response. */
 async function gmailGetJson(
   url: string,
   accessToken: string,
@@ -56,6 +58,7 @@ export type GmailLabelMatch =
   | { ok: true; labelId: string }
   | { ok: false; error: string };
 
+/** Resolve an operator label name to its Gmail label ID. */
 export function matchGmailLabelId(
   labelsRaw: unknown,
   wantedName: string
@@ -89,6 +92,7 @@ export function matchGmailLabelId(
   return { ok: false, error: "Gmail recruiter label not found" };
 }
 
+/** Validate a Gmail messages response and extract message identifiers. */
 export function parseGmailMessageList(
   raw: unknown
 ): GmailListResult {
@@ -121,6 +125,7 @@ export function parseGmailMessageList(
   return { ok: true, messages };
 }
 
+/** List the first bounded page of messages carrying the recruiter label. */
 export async function listLabeledRecruiterMail(params?: {
   fetchImpl?: FetchLike;
 }): Promise<GmailListResult> {

@@ -11,6 +11,7 @@ import type { FetchLike } from "../app/api/lib/gmail-oauth";
 
 loadDotenv();
 
+/** Serialize one listed Gmail message as a JSON line. */
 export function formatListedMessageLine(message: {
   id: string;
   threadId: string;
@@ -18,6 +19,7 @@ export function formatListedMessageLine(message: {
   return JSON.stringify(message);
 }
 
+/** Fetch recruiter-labeled messages and format them for CLI output. */
 export async function runGmailListCli(params?: {
   fetchImpl?: FetchLike;
 }): Promise<{ ok: true; lines: string[] } | { ok: false; error: string }> {
@@ -38,6 +40,7 @@ export async function runGmailListCli(params?: {
   }
 }
 
+/** Execute the Gmail list CLI and write its lines or failure to the console. */
 async function main(): Promise<void> {
   const result = await runGmailListCli();
   if (!result.ok) {

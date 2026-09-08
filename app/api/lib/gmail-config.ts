@@ -15,6 +15,7 @@ const DEFAULT_AUTH_BIND_HOST = "127.0.0.1";
 const DEFAULT_HTTP_TIMEOUT_MS = 15_000;
 const DEFAULT_AUTH_TIMEOUT_MS = 300_000;
 
+/** Read a required environment variable or name it in a configuration error. */
 function requireEnv(key: string): string {
   const value = getEnvString(key);
   if (value === undefined) {
@@ -23,38 +24,47 @@ function requireEnv(key: string): string {
   return value;
 }
 
+/** Return the OAuth client ID configured for the Gmail integration. */
 export function getGmailClientId(): string {
   return requireEnv("GMAIL_CLIENT_ID");
 }
 
+/** Return the OAuth client secret configured for the Gmail integration. */
 export function getGmailClientSecret(): string {
   return requireEnv("GMAIL_CLIENT_SECRET");
 }
 
+/** Return the operator refresh token used for Gmail API access. */
 export function getGmailRefreshToken(): string {
   return requireEnv("GMAIL_REFRESH_TOKEN");
 }
 
+/** Return the operator-facing label used to select recruiter messages. */
 export function getGmailRecruiterLabel(): string {
   return requireEnv("GMAIL_RECRUITER_LABEL");
 }
 
+/** Return the authorization endpoint for the Gmail OAuth flow. */
 export function getGmailOauthAuthUrl(): string {
   return getEnvString("GMAIL_OAUTH_AUTH_URL", DEFAULT_OAUTH_AUTH_URL)!;
 }
 
+/** Return the token endpoint for Gmail OAuth exchanges and refreshes. */
 export function getGmailOauthTokenUrl(): string {
   return getEnvString("GMAIL_OAUTH_TOKEN_URL", DEFAULT_OAUTH_TOKEN_URL)!;
 }
 
+/** Return the base URL used for Gmail REST API requests. */
 export function getGmailApiBaseUrl(): string {
   return getEnvString("GMAIL_API_BASE_URL", DEFAULT_GMAIL_API_BASE_URL)!;
 }
 
+/** Return the OAuth scope requested by the local authorization flow. */
 export function getGmailOauthScope(): string {
   return getEnvString("GMAIL_OAUTH_SCOPE", DEFAULT_OAUTH_SCOPE)!;
 }
 
+/** Return the requested Gmail page size clamped to the configured limit. */
 export function getGmailListMaxResults(): number {
   const limit = Math.max(
     1,
