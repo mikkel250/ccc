@@ -17,6 +17,7 @@ import {
   existsSync,
   readFileSync,
   mkdirSync,
+  rmSync,
   writeFileSync,
   readdirSync,
   realpathSync,
@@ -159,6 +160,8 @@ export async function writeSmokeArtifacts(
     console.log(`Wrote ${paths.replyPath}`);
   } else if (input.curationMode === "strict") {
     console.warn("Reply text missing or empty for strict run, skipping reply file");
+  } else {
+    rmSync(paths.replyPath, { force: true });
   }
 
   return paths;

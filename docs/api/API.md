@@ -80,10 +80,9 @@ Request body size capped by `TAILOR_REQUEST_MAX_BYTES` (default 65536).
 {
   "cv": "<base64-encoded .docx>",
   "curatedJson": { "name": "…", "contact": {}, "summary": [], "…": "…" },
-  "coverLetter": "…markdown cover letter (flexible mode only)…",
   "replyText": "…recruiter reply email body (strict mode only)…",
   "builderVersion": "1.0.0",
-  "curationMode": "flexible",
+  "curationMode": "strict",
   "model": "anthropic/sonnet",
   "usage": {
     "promptTokens": 12000,

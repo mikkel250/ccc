@@ -148,6 +148,34 @@ describe("writeSmokeArtifacts", () => {
     assert.ok(existsSync(paths.docxPath));
   });
 
+  it("removes a stale strict reply file after a flexible run", async () => {
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const strictPaths = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "strict",
+      coverLetter: undefined,
+      replyText: "Thank you for reaching out.",
+      artifactDir: dir,
+    });
+    assert.ok(existsSync(strictPaths.replyPath));
+
+    const flexiblePaths = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "flexible",
+      coverLetter: undefined,
+      artifactDir: dir,
+    });
+
+    assert.equal(flexiblePaths.replyPath, strictPaths.replyPath);
+    assert.equal(existsSync(flexiblePaths.replyPath), false);
+  });
+
   it("surfaces write failures for curated JSON", async () => {
     const docx = await markdownToDocxBase64("# CV\n- bullet");
     const blocked = join(dir, "blocked");
