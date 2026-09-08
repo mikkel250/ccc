@@ -37,8 +37,12 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
       store.set(key, value);
       return "OK";
     },
-    del: async (key) => {
+    deleteIfValue: async (key, value) => {
+      if (store.get(key) !== value) {
+        return false;
+      }
       store.delete(key);
+      return true;
     },
   };
 }
@@ -161,5 +165,42 @@ describe("inbox processed store", () => {
     const claimValue = memory.store.get(inboxClaimKey(ID));
     assert.equal(typeof claimValue, "string");
     assert.notEqual(claimValue, "1");
+  });
+
+  it("returns lost when ownership changes during the processed recheck", async () => {
+    const origGet = memory.get.bind(memory);
+    memory.get = async (key) => {
+      if (
+        key === inboxProcessedKey(ID) &&
+        memory.store.has(inboxClaimKey(ID))
+      ) {
+        memory.store.set(inboxClaimKey(ID), "replacement-token");
+      }
+      return origGet(key);
+    };
+
+    const result = await claimInboxMessage(ID);
+
+    assert.deepEqual(result, { ok: true, outcome: "lost" });
+    assert.equal(memory.store.get(inboxClaimKey(ID)), "replacement-token");
+  });
+
+  it("does not delete a replacement claim when a processed mark wins", async () => {
+    const origGet = memory.get.bind(memory);
+    memory.get = async (key) => {
+      if (
+        key === inboxProcessedKey(ID) &&
+        memory.store.has(inboxClaimKey(ID))
+      ) {
+        memory.store.set(inboxClaimKey(ID), "replacement-token");
+        memory.store.set(inboxProcessedKey(ID), "1");
+      }
+      return origGet(key);
+    };
+
+    const result = await claimInboxMessage(ID);
+
+    assert.deepEqual(result, { ok: true, outcome: "processed" });
+    assert.equal(memory.store.get(inboxClaimKey(ID)), "replacement-token");
   });
 });

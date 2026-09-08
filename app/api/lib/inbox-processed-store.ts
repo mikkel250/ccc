@@ -20,7 +20,7 @@ export type InboxKv = {
     value: string,
     opts?: { nx?: boolean; ex?: number }
   ) => Promise<"OK" | null>;
-  del: (key: string) => Promise<void>;
+  deleteIfValue: (key: string, value: string) => Promise<boolean>;
 };
 
 export type InboxClaimOutcome = "won" | "lost" | "processed";
@@ -32,6 +32,8 @@ export type ExtractUnprocessedResult =
   | { ok: false; error: string };
 
 const MESSAGE_ID_RE = /^[A-Za-z0-9._-]+$/;
+const DELETE_IF_VALUE_SCRIPT =
+  'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end';
 
 let injectedKv: InboxKv | null = null;
 
@@ -73,8 +75,12 @@ function kv(): InboxKv {
       }
       return result === "OK" ? "OK" : null;
     },
-    del: async (key) => {
-      await withTimeout(client.del(key), timeoutMs);
+    deleteIfValue: async (key, value) => {
+      const deleted = await withTimeout(
+        client.eval<[string], number>(DELETE_IF_VALUE_SCRIPT, [key], [value]),
+        timeoutMs
+      );
+      return deleted === 1;
     },
   };
 }
@@ -172,11 +178,18 @@ export async function claimInboxMessage(
     }
   }
   if (claimed) {
-    if (await isInboxProcessed(parsed.messageId)) {
-      await store.del(claimKey);
+    const processed = await isInboxProcessed(parsed.messageId);
+    const currentClaim = await store.get(claimKey);
+    if (processed) {
+      if (currentClaim === token) {
+        await store.deleteIfValue(claimKey, token);
+      }
       return { ok: true, outcome: "processed" };
     }
-    return { ok: true, outcome: "won" };
+    return {
+      ok: true,
+      outcome: currentClaim === token ? "won" : "lost",
+    };
   }
   if (await isInboxProcessed(parsed.messageId)) {
     return { ok: true, outcome: "processed" };
