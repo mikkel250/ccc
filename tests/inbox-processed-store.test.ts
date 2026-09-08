@@ -37,6 +37,9 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
       store.set(key, value);
       return "OK";
     },
+    del: async (key) => {
+      store.delete(key);
+    },
   };
 }
 
@@ -120,5 +123,43 @@ describe("inbox processed store", () => {
     const result = await extractUnprocessedInboxMessage("bad:id", plainMessage("JD"));
     assert.equal(result.ok, false);
     assert.equal(memory.store.size, 0);
+  });
+
+  it("returns processed when a mark lands before the claim SET commits", async () => {
+    const origSet = memory.set.bind(memory);
+    memory.set = async (key, value, opts) => {
+      if (key === inboxClaimKey(ID)) {
+        await origSet(inboxProcessedKey(ID), "1");
+      }
+      return origSet(key, value, opts);
+    };
+    const result = await claimInboxMessage(ID);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.outcome, "processed");
+    }
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+    assert.equal(memory.store.has(inboxProcessedKey(ID)), true);
+  });
+
+  it("treats a timed-out SET that still committed as a won claim", async () => {
+    const origSet = memory.set.bind(memory);
+    let firstClaimSet = true;
+    memory.set = async (key, value, opts) => {
+      const result = await origSet(key, value, opts);
+      if (firstClaimSet && key === inboxClaimKey(ID)) {
+        firstClaimSet = false;
+        throw new Error("Inbox Redis timed out");
+      }
+      return result;
+    };
+    const result = await claimInboxMessage(ID);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.outcome, "won");
+    }
+    const claimValue = memory.store.get(inboxClaimKey(ID));
+    assert.equal(typeof claimValue, "string");
+    assert.notEqual(claimValue, "1");
   });
 });

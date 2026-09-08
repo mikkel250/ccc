@@ -2,6 +2,7 @@
  * Redis claim vs processed marks for Gmail messageIds (R10, R12).
  * Claim is SET NX and is not the terminal processed mark.
  */
+import { randomBytes } from "node:crypto";
 import {
   getInboxClaimTtlSeconds,
   getInboxMessageIdMaxChars,
@@ -19,6 +20,7 @@ export type InboxKv = {
     value: string,
     opts?: { nx?: boolean; ex?: number }
   ) => Promise<"OK" | null>;
+  del: (key: string) => Promise<void>;
 };
 
 export type InboxClaimOutcome = "won" | "lost" | "processed";
@@ -71,7 +73,14 @@ function kv(): InboxKv {
       }
       return result === "OK" ? "OK" : null;
     },
+    del: async (key) => {
+      await withTimeout(client.del(key), timeoutMs);
+    },
   };
+}
+
+function isInboxRedisTimeout(err: unknown): boolean {
+  return err instanceof Error && err.message === "Inbox Redis timed out";
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -133,11 +142,40 @@ export async function claimInboxMessage(
   if (await isInboxProcessed(parsed.messageId)) {
     return { ok: true, outcome: "processed" };
   }
-  const set = await kv().set(inboxClaimKey(parsed.messageId), "1", {
-    nx: true,
-    ex: getInboxClaimTtlSeconds(),
-  });
-  if (set === "OK") {
+  const token = randomBytes(16).toString("hex");
+  const claimKey = inboxClaimKey(parsed.messageId);
+  const store = kv();
+  let claimed = false;
+  for (let attempt = 0; attempt < 2 && !claimed; attempt += 1) {
+    let set: "OK" | null = null;
+    try {
+      set = await store.set(claimKey, token, {
+        nx: true,
+        ex: getInboxClaimTtlSeconds(),
+      });
+    } catch (err) {
+      if (!isInboxRedisTimeout(err)) {
+        throw err;
+      }
+    }
+    if (set === "OK") {
+      claimed = true;
+      break;
+    }
+    const existing = await store.get(claimKey);
+    if (existing === token) {
+      claimed = true;
+      break;
+    }
+    if (existing != null) {
+      break;
+    }
+  }
+  if (claimed) {
+    if (await isInboxProcessed(parsed.messageId)) {
+      await store.del(claimKey);
+      return { ok: true, outcome: "processed" };
+    }
     return { ok: true, outcome: "won" };
   }
   if (await isInboxProcessed(parsed.messageId)) {
