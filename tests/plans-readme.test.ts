@@ -153,7 +153,7 @@ describe("docs/plans/README.md — cross-file contracts", () => {
     const content = fs.readFileSync(README_PATH, "utf-8");
     const leftover = content.split("\n").find((line) => line.includes("GitHub #38"));
     assert.ok(leftover, "Active must name leftover GitHub #38");
-    assert.equal(requireLaneToken(leftover, "leftover #38"), "lfg");
+    assert.equal(requireLaneToken(leftover, "leftover #38"), "awaiting-merge");
     const operator = content.split("\n").find((line) => line.includes("submit bar"));
     assert.ok(operator, "Active must name the in-field submit bar");
     assert.equal(requireLaneToken(operator, "submit bar"), "operator");

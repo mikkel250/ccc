@@ -15,3 +15,38 @@ export const KNOWN_PROVIDERS = new Set<Provider>([
   'openrouter',
   'deepseek',
 ]);
+
+/**
+ * Shared namespaced-model parse used by routing (`detectProvider`) and
+ * smoke parity path nesting. Rejects bare aliases, unknown providers,
+ * empty/`.`/`..` segments, and backslash path separators.
+ */
+export function parseNamespacedProvider(model: string): Provider {
+  if (model.includes("\\") || model.includes("\0")) {
+    throw new Error(
+      `Invalid model string "${model}": must be namespaced as provider/model`
+    );
+  }
+  const segments = model.split("/");
+  if (
+    segments.length < 2 ||
+    segments[0] === "" ||
+    segments[segments.length - 1] === ""
+  ) {
+    throw new Error(
+      `Invalid model string "${model}": must be namespaced as provider/model`
+    );
+  }
+  const providerSegment = segments[0]!;
+  if (!KNOWN_PROVIDERS.has(providerSegment as Provider)) {
+    throw new Error(
+      `Unknown provider "${providerSegment}" in model "${model}"`
+    );
+  }
+  if (segments.some((part) => part === "" || part === "." || part === "..")) {
+    throw new Error(
+      `Invalid model string "${model}": must be namespaced as provider/model`
+    );
+  }
+  return providerSegment as Provider;
+}

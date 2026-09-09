@@ -18,25 +18,63 @@ function decodeGmailBodyData(data: unknown): string | undefined {
   }
 }
 
-export function htmlToText(html: string): string {
-  let withoutBlocks = html
-    .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<head\b[^>]*>[\s\S]*?<\/head>/gi, " ")
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ");
-  let previous = "";
-  while (previous !== withoutBlocks) {
-    previous = withoutBlocks;
-    withoutBlocks = withoutBlocks
-      .replace(
-        /<([a-zA-Z][\w:-]*)\b[^>]*\bhidden\b[^>]*>[\s\S]*?<\/\1>/gi,
-        " "
-      )
-      .replace(
-        /<([a-zA-Z][\w:-]*)\b[^>]*style\s*=\s*(["'])[^"'<>]*display\s*:\s*none[^"'<>]*\2[^>]*>[\s\S]*?<\/\1>/gi,
-        " "
-      );
+const WHOLE_TAG_SKIP = new Set(["head", "script", "style"]);
+
+function isHiddenOpeningTag(raw: string): boolean {
+  return (
+    /\bhidden\b/i.test(raw) ||
+    /style\s*=\s*(["'])[^"'<>]*display\s*:\s*none[^"'<>]*\1/i.test(raw)
+  );
+}
+
+/** Depth-aware omit of comments, head/script/style, and hidden containers. */
+function omitHiddenHtml(html: string): string {
+  const tokenRe = /<!--[\s\S]*?-->|<\/?([a-zA-Z][\w:-]*)\b[^>]*>/gi;
+  let out = "";
+  let last = 0;
+  let skipName: string | null = null;
+  let skipDepth = 0;
+  for (const match of html.matchAll(tokenRe)) {
+    const index = match.index ?? 0;
+    const raw = match[0];
+    if (skipDepth === 0) {
+      out += html.slice(last, index);
+    }
+    last = index + raw.length;
+    if (raw.startsWith("<!--")) {
+      continue;
+    }
+    const name = match[1]!.toLowerCase();
+    const isClose = raw.startsWith("</");
+    const selfClosing = /\/\s*>$/.test(raw);
+    if (skipDepth > 0) {
+      if (!isClose && !selfClosing && name === skipName) {
+        skipDepth += 1;
+      } else if (isClose && name === skipName) {
+        skipDepth -= 1;
+        if (skipDepth === 0) {
+          skipName = null;
+        }
+      }
+      continue;
+    }
+    if (!isClose && (WHOLE_TAG_SKIP.has(name) || isHiddenOpeningTag(raw))) {
+      if (!selfClosing) {
+        skipName = name;
+        skipDepth = 1;
+      }
+      continue;
+    }
+    out += raw;
   }
+  if (skipDepth === 0) {
+    out += html.slice(last);
+  }
+  return out;
+}
+
+export function htmlToText(html: string): string {
+  let withoutBlocks = omitHiddenHtml(html);
   withoutBlocks = withoutBlocks
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n")

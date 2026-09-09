@@ -31,6 +31,14 @@ describe("htmlToText", () => {
     assert.doesNotMatch(text, /Tracking pixel/);
     assert.doesNotMatch(text, /recruiter-only/);
   });
+
+  it("drops hidden text that contains a nested same-name tag", () => {
+    const text = htmlToText(
+      '<div style="display:none">A<div>B</div>SECRET_TRACKING_TOKEN</div>visible'
+    );
+    assert.match(text, /visible/);
+    assert.doesNotMatch(text, /SECRET_TRACKING_TOKEN/);
+  });
 });
 
 describe("extractGmailJobDescription", () => {
