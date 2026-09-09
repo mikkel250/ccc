@@ -20,14 +20,11 @@ export type InboxKv = {
     value: string,
     opts?: { nx?: boolean; ex?: number }
   ) => Promise<"OK" | null>;
-  del: (key: string) => Promise<void>;
   deleteIfValue: (key: string, value: string) => Promise<boolean>;
 };
 
-export type InboxClaimOutcome = "won" | "lost" | "processed";
-
 export type ExtractUnprocessedResult =
-  | { ok: true; status: "extracted"; jobDescription: string }
+  | { ok: true; status: "extracted"; jobDescription: string; claimToken: string }
   | { ok: true; status: "skipped-processed" }
   | { ok: true; status: "skipped-claimed" }
   | { ok: false; error: string };
@@ -75,9 +72,6 @@ function kv(): InboxKv {
         result = await withTimeout(client.set(key, value), timeoutMs);
       }
       return result === "OK" ? "OK" : null;
-    },
-    del: async (key) => {
-      await withTimeout(client.del(key), timeoutMs);
     },
     deleteIfValue: async (key, value) => {
       const deleted = await withTimeout(
@@ -144,7 +138,12 @@ export async function isInboxProcessed(messageId: string): Promise<boolean> {
 
 export async function claimInboxMessage(
   messageId: string
-): Promise<{ ok: true; outcome: InboxClaimOutcome } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; outcome: "won"; token: string }
+  | { ok: true; outcome: "lost" }
+  | { ok: true; outcome: "processed" }
+  | { ok: false; error: string }
+> {
   const parsed = parseInboxMessageId(messageId);
   if (!parsed.ok) {
     return parsed;
@@ -190,10 +189,10 @@ export async function claimInboxMessage(
       }
       return { ok: true, outcome: "processed" };
     }
-    return {
-      ok: true,
-      outcome: currentClaim === token ? "won" : "lost",
-    };
+    if (currentClaim === token) {
+      return { ok: true, outcome: "won", token };
+    }
+    return { ok: true, outcome: "lost" };
   }
   if (await isInboxProcessed(parsed.messageId)) {
     return { ok: true, outcome: "processed" };
@@ -218,14 +217,15 @@ export async function markInboxProcessed(
 }
 
 export async function releaseInboxClaim(
-  messageId: string
+  messageId: string,
+  token: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const parsed = parseInboxMessageId(messageId);
   if (!parsed.ok) {
     return parsed;
   }
   try {
-    await kv().del(inboxClaimKey(parsed.messageId));
+    await kv().deleteIfValue(inboxClaimKey(parsed.messageId), token);
   } catch {
     return { ok: false, error: "Failed to release inbox claim" };
   }
@@ -254,5 +254,6 @@ export async function extractUnprocessedInboxMessage(
     ok: true,
     status: "extracted",
     jobDescription: extracted.jobDescription,
+    claimToken: claimed.token,
   };
 }

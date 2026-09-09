@@ -11,10 +11,10 @@ import {
 } from "./tailor-pipeline";
 
 export type TailorLabeledResult =
-  | { ok: true; status: "tailored"; body: TailorCoreSuccess }
+  | { ok: true; status: "tailored"; body: TailorCoreSuccess; claimToken: string }
   | { ok: true; status: "skipped-processed" }
   | { ok: true; status: "skipped-claimed" }
-  | { ok: false; error: string; status?: 422 | 503 };
+  | { ok: false; error: string; status?: 422 | 503; claimToken?: string };
 
 export async function tailorLabeledMessage(
   deps: TailorPipelineDeps,
@@ -31,20 +31,23 @@ export async function tailorLabeledMessage(
     return { ok: true, status: extracted.status };
   }
 
-  if (extracted.jobDescription.length > getTailorJdMaxChars()) {
+  const { claimToken, jobDescription } = extracted;
+
+  if (jobDescription.length > getTailorJdMaxChars()) {
     return {
       ok: false,
       error: "jobDescription exceeds configured size limit.",
       status: 422,
+      claimToken,
     };
   }
 
   const core = await runTailorCore(deps, {
-    jobDescription: extracted.jobDescription,
+    jobDescription,
     curationMode: "strict",
   });
   if (!core.ok) {
-    return core;
+    return { ...core, claimToken };
   }
-  return { ok: true, status: "tailored", body: core.body };
+  return { ok: true, status: "tailored", body: core.body, claimToken };
 }

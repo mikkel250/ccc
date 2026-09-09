@@ -51,6 +51,7 @@ async function scanOneMessage(params: {
   deps: TailorPipelineDeps;
 }): Promise<InboxScanItem> {
   const { messageId, threadId, fetchImpl, deps } = params;
+  let claimToken: string | undefined;
   try {
     if (await isInboxProcessed(messageId)) {
       return { messageId, status: "skipped-processed" };
@@ -86,12 +87,17 @@ async function scanOneMessage(params: {
       messageId,
       message: fetched.message,
     });
+    if (tailored.ok && tailored.status === "tailored") {
+      claimToken = tailored.claimToken;
+    } else if (!tailored.ok) {
+      claimToken = tailored.claimToken;
+    }
     if (tailored.ok && tailored.status !== "tailored") {
       return { messageId, status: tailored.status };
     }
     if (!tailored.ok) {
-      if (tailored.status === 503) {
-        await releaseInboxClaim(messageId);
+      if (tailored.status === 503 && claimToken) {
+        await releaseInboxClaim(messageId, claimToken);
       }
       return {
         messageId,
@@ -106,7 +112,7 @@ async function scanOneMessage(params: {
       fetchImpl,
     });
     if (!drafted.ok) {
-      await releaseInboxClaim(messageId);
+      await releaseInboxClaim(messageId, tailored.claimToken);
       return {
         messageId,
         status: "draft-failed",
@@ -120,7 +126,9 @@ async function scanOneMessage(params: {
       ...(marked.ok ? {} : { error: marked.error }),
     };
   } catch (error: unknown) {
-    await releaseInboxClaim(messageId);
+    if (claimToken) {
+      await releaseInboxClaim(messageId, claimToken);
+    }
     const errorMessage =
       error instanceof Error ? error.message : "Inbox scan item failed";
     return {

@@ -38,9 +38,6 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
       store.set(key, value);
       return "OK";
     },
-    del: async (key) => {
-      store.delete(key);
-    },
     deleteIfValue: async (key, value) => {
       if (store.get(key) !== value) {
         return false;
@@ -136,10 +133,25 @@ describe("inbox processed store", () => {
   it("releaseInboxClaim deletes the NX claim key", async () => {
     const claimed = await claimInboxMessage(ID);
     assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      assert.fail("expected a won claim");
+    }
     assert.equal(memory.store.has(inboxClaimKey(ID)), true);
-    const released = await releaseInboxClaim(ID);
+    const released = await releaseInboxClaim(ID, claimed.token);
     assert.equal(released.ok, true);
     assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+  });
+
+  it("does not delete a replacement claim on stale release", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      assert.fail("expected a won claim");
+    }
+    memory.store.set(inboxClaimKey(ID), "replacement-token");
+    const released = await releaseInboxClaim(ID, claimed.token);
+    assert.equal(released.ok, true);
+    assert.equal(memory.store.get(inboxClaimKey(ID)), "replacement-token");
   });
 
   it("returns processed when a mark lands before the claim SET commits", async () => {
