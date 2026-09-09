@@ -2,6 +2,7 @@
  * Gmail message payload → job-description string (R7).
  * Prefer text/plain; otherwise html-to-text. No JD-isolation model.
  */
+import { convert } from "html-to-text";
 
 export type GmailBodyResult =
   | { ok: true; jobDescription: string }
@@ -18,78 +19,23 @@ function decodeGmailBodyData(data: unknown): string | undefined {
   }
 }
 
-const WHOLE_TAG_SKIP = new Set(["head", "script", "style"]);
-
-function isHiddenOpeningTag(raw: string): boolean {
-  return (
-    /\bhidden\b/i.test(raw) ||
-    /style\s*=\s*(["'])[^"'<>]*display\s*:\s*none[^"'<>]*\1/i.test(raw)
-  );
-}
-
-/** Depth-aware omit of comments, head/script/style, and hidden containers. */
-function omitHiddenHtml(html: string): string {
-  const tokenRe = /<!--[\s\S]*?-->|<\/?([a-zA-Z][\w:-]*)\b[^>]*>/gi;
-  let out = "";
-  let last = 0;
-  let skipName: string | null = null;
-  let skipDepth = 0;
-  for (const match of html.matchAll(tokenRe)) {
-    const index = match.index ?? 0;
-    const raw = match[0];
-    if (skipDepth === 0) {
-      out += html.slice(last, index);
-    }
-    last = index + raw.length;
-    if (raw.startsWith("<!--")) {
-      continue;
-    }
-    const name = match[1]!.toLowerCase();
-    const isClose = raw.startsWith("</");
-    const selfClosing = /\/\s*>$/.test(raw);
-    if (skipDepth > 0) {
-      if (!isClose && !selfClosing && name === skipName) {
-        skipDepth += 1;
-      } else if (isClose && name === skipName) {
-        skipDepth -= 1;
-        if (skipDepth === 0) {
-          skipName = null;
-        }
-      }
-      continue;
-    }
-    if (!isClose && (WHOLE_TAG_SKIP.has(name) || isHiddenOpeningTag(raw))) {
-      if (!selfClosing) {
-        skipName = name;
-        skipDepth = 1;
-      }
-      continue;
-    }
-    out += raw;
-  }
-  if (skipDepth === 0) {
-    out += html.slice(last);
-  }
-  return out;
-}
-
 export function htmlToText(html: string): string {
-  let withoutBlocks = omitHiddenHtml(html);
-  withoutBlocks = withoutBlocks
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<\/div>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#(\d+);/g, (_m, digits: string) => {
-      const code = Number(digits);
-      return Number.isFinite(code) ? String.fromCharCode(code) : "";
-    });
-  return withoutBlocks.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/[ \t]{2,}/g, " ").trim();
+  return convert(html, {
+    selectors: [
+      { selector: "head", format: "skip" },
+      { selector: "script", format: "skip" },
+      { selector: "style", format: "skip" },
+      { selector: "[hidden]", format: "skip" },
+      { selector: '[style*="display:none"]', format: "skip" },
+      { selector: '[style*="display: none"]', format: "skip" },
+    ],
+    wordwrap: false,
+    preserveNewlines: false,
+  })
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 type CollectedBodies = { plain: string[]; html: string[] };

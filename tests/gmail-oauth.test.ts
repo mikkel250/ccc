@@ -15,6 +15,7 @@ import {
   exchangeGmailAuthCode,
   parseOAuthCallback,
   refreshGmailAccessToken,
+  __clearGmailAccessTokenCacheForTest,
 } from "../app/api/lib/gmail-oauth";
 
 const KEYS = [
@@ -95,6 +96,7 @@ describe("gmail-config", () => {
 
 describe("gmail-oauth", () => {
   beforeEach(() => {
+    __clearGmailAccessTokenCacheForTest();
     for (const key of KEYS) {
       saved[key] = process.env[key];
     }
@@ -219,6 +221,27 @@ describe("gmail-oauth", () => {
       assert.match(result.error, /HTTP 401/);
       assert.doesNotMatch(result.error, /secret-leak/);
     }
+  });
+
+  it("reuses a cached access token until the safety margin before expiry", async () => {
+    process.env.GMAIL_TOKEN_CACHE_SAFETY_MARGIN_MS = "1000";
+    let tokenPosts = 0;
+    const fetchImpl = async () => {
+      tokenPosts += 1;
+      return new Response(
+        JSON.stringify({ access_token: "cached-access", expires_in: 3600 }),
+        { status: 200 }
+      );
+    };
+    const first = await refreshGmailAccessToken({ fetchImpl });
+    const second = await refreshGmailAccessToken({ fetchImpl });
+    assert.equal(first.ok, true);
+    assert.equal(second.ok, true);
+    if (first.ok && second.ok) {
+      assert.equal(first.data.accessToken, "cached-access");
+      assert.equal(second.data.accessToken, "cached-access");
+    }
+    assert.equal(tokenPosts, 1);
   });
 
   it("fails closed when the token POST is aborted by the HTTP timeout", async () => {

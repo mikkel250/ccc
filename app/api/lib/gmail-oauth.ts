@@ -7,6 +7,7 @@ import {
   getGmailHttpTimeoutMs,
   getGmailOauthTokenUrl,
   getGmailRefreshToken,
+  getGmailTokenCacheSafetyMarginMs,
 } from "./gmail-config";
 
 export type FetchLike = (
@@ -22,6 +23,22 @@ export type GmailTokenSet = {
 export type GmailOauthResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string };
+
+type CachedAccessToken = {
+  accessToken: string;
+  expiresAtMs: number;
+};
+
+const accessTokenCache = new Map<string, CachedAccessToken>();
+
+export function __clearGmailAccessTokenCacheForTest(): void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error(
+      "__clearGmailAccessTokenCacheForTest is only available in the test environment"
+    );
+  }
+  accessTokenCache.clear();
+}
 
 export function buildGmailAuthUrl(params: {
   clientId: string;
@@ -60,10 +77,23 @@ export function parseOAuthCallback(
   return { ok: true, data: code };
 }
 
+function parseExpiresIn(raw: unknown): number | undefined {
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+    return raw;
+  }
+  if (typeof raw === "string" && raw.trim() !== "") {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
 function parseTokenPayload(
   raw: unknown,
   requireRefreshToken: boolean
-): GmailOauthResult<GmailTokenSet> {
+): GmailOauthResult<GmailTokenSet & { expiresInSeconds?: number }> {
   if (raw === null || typeof raw !== "object") {
     return { ok: false, error: "Gmail token response was not an object" };
   }
@@ -72,6 +102,7 @@ function parseTokenPayload(
     return { ok: false, error: "Gmail token response missing access_token" };
   }
   const refreshToken = Reflect.get(raw, "refresh_token");
+  const expiresInSeconds = parseExpiresIn(Reflect.get(raw, "expires_in"));
   if (requireRefreshToken) {
     if (typeof refreshToken !== "string" || refreshToken.trim() === "") {
       return {
@@ -84,6 +115,7 @@ function parseTokenPayload(
       data: {
         accessToken: accessToken.trim(),
         refreshToken: refreshToken.trim(),
+        ...(expiresInSeconds !== undefined ? { expiresInSeconds } : {}),
       },
     };
   }
@@ -94,6 +126,7 @@ function parseTokenPayload(
       ...(typeof refreshToken === "string" && refreshToken.trim() !== ""
         ? { refreshToken: refreshToken.trim() }
         : {}),
+      ...(expiresInSeconds !== undefined ? { expiresInSeconds } : {}),
     },
   };
 }
@@ -124,7 +157,45 @@ async function postTokenRequest(
   } catch {
     return { ok: false, error: "Gmail token response was not valid JSON" };
   }
-  return parseTokenPayload(parsed, requireRefreshToken);
+  const token = parseTokenPayload(parsed, requireRefreshToken);
+  if (!token.ok) {
+    return token;
+  }
+  return {
+    ok: true,
+    data: {
+      accessToken: token.data.accessToken,
+      ...(token.data.refreshToken !== undefined
+        ? { refreshToken: token.data.refreshToken }
+        : {}),
+    },
+  };
+}
+
+function cacheAccessToken(
+  refreshToken: string,
+  accessToken: string,
+  expiresInSeconds?: number
+): void {
+  if (expiresInSeconds === undefined) {
+    return;
+  }
+  const safetyMarginMs = getGmailTokenCacheSafetyMarginMs();
+  const expiresAtMs =
+    Date.now() + Math.max(0, expiresInSeconds * 1000 - safetyMarginMs);
+  accessTokenCache.set(refreshToken, { accessToken, expiresAtMs });
+}
+
+function readCachedAccessToken(refreshToken: string): string | undefined {
+  const cached = accessTokenCache.get(refreshToken);
+  if (cached === undefined) {
+    return undefined;
+  }
+  if (Date.now() >= cached.expiresAtMs) {
+    accessTokenCache.delete(refreshToken);
+    return undefined;
+  }
+  return cached.accessToken;
 }
 
 export async function exchangeGmailAuthCode(
@@ -154,16 +225,54 @@ export async function refreshGmailAccessToken(params?: {
   refreshToken?: string;
 }): Promise<GmailOauthResult<GmailTokenSet>> {
   const refreshToken = params?.refreshToken ?? getGmailRefreshToken();
+  const cached = readCachedAccessToken(refreshToken);
+  if (cached !== undefined) {
+    return { ok: true, data: { accessToken: cached } };
+  }
   const body = new URLSearchParams({
     grant_type: "refresh_token",
     refresh_token: refreshToken,
     client_id: getGmailClientId(),
     client_secret: getGmailClientSecret(),
   });
-  return postTokenRequest(
-    body,
-    params?.fetchImpl ?? fetch,
-    getGmailOauthTokenUrl(),
-    false
+  const fetchImpl = params?.fetchImpl ?? fetch;
+  const tokenUrl = getGmailOauthTokenUrl();
+  let response: Response;
+  try {
+    response = await fetchImpl(tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+      signal: AbortSignal.timeout(getGmailHttpTimeoutMs()),
+    });
+  } catch {
+    return { ok: false, error: "Gmail token request failed" };
+  }
+  if (!response.ok) {
+    return { ok: false, error: `Gmail token HTTP ${response.status}` };
+  }
+  let parsed: unknown;
+  try {
+    parsed = await response.json();
+  } catch {
+    return { ok: false, error: "Gmail token response was not valid JSON" };
+  }
+  const token = parseTokenPayload(parsed, false);
+  if (!token.ok) {
+    return token;
+  }
+  cacheAccessToken(
+    refreshToken,
+    token.data.accessToken,
+    token.data.expiresInSeconds
   );
+  return {
+    ok: true,
+    data: {
+      accessToken: token.data.accessToken,
+      ...(token.data.refreshToken !== undefined
+        ? { refreshToken: token.data.refreshToken }
+        : {}),
+    },
+  };
 }

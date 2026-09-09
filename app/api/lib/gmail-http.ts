@@ -17,6 +17,43 @@ export function sanitizeMimeHeaderValue(value: string): string {
   return value.split(/[\r\n]/)[0]!.trim();
 }
 
+const RFC_2047_VALUE_CHUNK_BYTES = 39;
+
+function mimeEncodedWordB(text: string): string {
+  return `=?UTF-8?B?${Buffer.from(text, "utf8").toString("base64")}?=`;
+}
+
+/** RFC 2047 B-encoding with folding for non-ASCII or long Subject values. */
+export function encodeMimeHeaderValue(value: string): string {
+  const sanitized = sanitizeMimeHeaderValue(value);
+  if (sanitized === "") {
+    return sanitized;
+  }
+  if (/^[\x20-\x7E]*$/.test(sanitized)) {
+    return sanitized;
+  }
+  const chunks: string[] = [];
+  let chunk = "";
+  let chunkBytes = 0;
+  for (const character of sanitized) {
+    const characterBytes = Buffer.byteLength(character, "utf8");
+    if (chunkBytes + characterBytes > RFC_2047_VALUE_CHUNK_BYTES) {
+      if (chunk !== "") {
+        chunks.push(chunk);
+      }
+      chunk = character;
+      chunkBytes = characterBytes;
+      continue;
+    }
+    chunk += character;
+    chunkBytes += characterBytes;
+  }
+  if (chunk !== "") {
+    chunks.push(chunk);
+  }
+  return chunks.map((part) => mimeEncodedWordB(part)).join("\r\n ");
+}
+
 export type GmailHttpResult =
   | { ok: true; body: unknown }
   | { ok: false; error: string };

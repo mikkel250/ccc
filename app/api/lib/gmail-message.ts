@@ -86,15 +86,20 @@ export function parseGmailReplyHeaders(message: unknown): GmailReplyHeadersResul
 export async function getGmailMessage(params: {
   messageId: string;
   fetchImpl?: FetchLike;
+  accessToken?: string;
 }): Promise<GmailMessageResult> {
   const parsed = parseInboxMessageId(params.messageId);
   if (!parsed.ok) {
     return parsed;
   }
   const fetchImpl = params.fetchImpl ?? fetch;
-  const token = await refreshGmailAccessToken({ fetchImpl });
-  if (!token.ok) {
-    return { ok: false, error: token.error };
+  let accessToken = params.accessToken;
+  if (accessToken === undefined) {
+    const token = await refreshGmailAccessToken({ fetchImpl });
+    if (!token.ok) {
+      return { ok: false, error: token.error };
+    }
+    accessToken = token.data.accessToken;
   }
   const base = getGmailApiBaseUrl().replace(/\/+$/, "");
   const url = new URL(
@@ -103,7 +108,7 @@ export async function getGmailMessage(params: {
   url.searchParams.set("format", "full");
   const res = await gmailFetchJson({
     url: url.toString(),
-    accessToken: token.data.accessToken,
+    accessToken,
     fetchImpl,
   });
   if (!res.ok) {

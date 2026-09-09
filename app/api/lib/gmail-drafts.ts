@@ -6,7 +6,12 @@ import {
   getGmailApiBaseUrl,
   getGmailCvAttachmentFilename,
 } from "./gmail-config";
-import { gmailFetchJson, gmailJsonObject, sanitizeMimeHeaderValue } from "./gmail-http";
+import {
+  encodeMimeHeaderValue,
+  gmailFetchJson,
+  gmailJsonObject,
+  sanitizeMimeHeaderValue,
+} from "./gmail-http";
 import {
   parseGmailReplyHeaders,
 } from "./gmail-message";
@@ -20,34 +25,8 @@ export type EnsureReplyDraftResult =
   | { ok: false; error: string };
 
 const MIME_LINE_LENGTH = 76;
-const RFC_2047_SUBJECT_CHUNK_BYTES = 39;
 const DOCX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-
-function encodeRfc2047Subject(value: string): string {
-  if (/^[\x20-\x7e]*$/.test(value)) {
-    return value;
-  }
-  const chunks: string[] = [];
-  let chunk = "";
-  let chunkBytes = 0;
-  for (const character of value) {
-    const characterBytes = Buffer.byteLength(character, "utf8");
-    if (chunkBytes + characterBytes > RFC_2047_SUBJECT_CHUNK_BYTES) {
-      chunks.push(chunk);
-      chunk = "";
-      chunkBytes = 0;
-    }
-    chunk += character;
-    chunkBytes += characterBytes;
-  }
-  if (chunk !== "") {
-    chunks.push(chunk);
-  }
-  return chunks
-    .map((part) => `=?UTF-8?B?${Buffer.from(part, "utf8").toString("base64")}?=`)
-    .join("\r\n ");
-}
 
 export function wrapMimeBase64(value: string): string {
   const compact = value.replace(/\s+/g, "");
@@ -87,9 +66,7 @@ export function buildReplyRfc822(input: {
   boundary: string;
   inReplyTo?: string;
 }): string {
-  const subject = encodeRfc2047Subject(
-    sanitizeMimeHeaderValue(input.subject)
-  );
+  const subject = encodeMimeHeaderValue(input.subject);
   const lines = [
     `To: ${sanitizeMimeHeaderValue(input.to)}`,
     `Subject: ${subject}`,
@@ -123,16 +100,21 @@ export function buildReplyRfc822(input: {
 export async function gmailThreadHasDraft(params: {
   threadId: string;
   fetchImpl?: FetchLike;
+  accessToken?: string;
 }): Promise<{ ok: true; hasDraft: boolean } | { ok: false; error: string }> {
   const fetchImpl = params.fetchImpl ?? fetch;
-  const token = await refreshGmailAccessToken({ fetchImpl });
-  if (!token.ok) {
-    return { ok: false, error: token.error };
+  let accessToken = params.accessToken;
+  if (accessToken === undefined) {
+    const token = await refreshGmailAccessToken({ fetchImpl });
+    if (!token.ok) {
+      return { ok: false, error: token.error };
+    }
+    accessToken = token.data.accessToken;
   }
   const base = getGmailApiBaseUrl().replace(/\/+$/, "");
   const threadRes = await gmailFetchJson({
     url: `${base}/users/me/threads/${encodeURIComponent(params.threadId)}`,
-    accessToken: token.data.accessToken,
+    accessToken,
     fetchImpl,
   });
   if (!threadRes.ok) {
@@ -147,6 +129,7 @@ export async function ensureReplyDraft(params: {
   docxBase64: string;
   fetchImpl?: FetchLike;
   boundary?: string;
+  accessToken?: string;
 }): Promise<EnsureReplyDraftResult> {
   const replyText = params.replyText.trim();
   if (replyText === "") {
@@ -157,15 +140,19 @@ export async function ensureReplyDraft(params: {
     return headers;
   }
   const fetchImpl = params.fetchImpl ?? fetch;
-  const token = await refreshGmailAccessToken({ fetchImpl });
-  if (!token.ok) {
-    return { ok: false, error: token.error };
+  let accessToken = params.accessToken;
+  if (accessToken === undefined) {
+    const token = await refreshGmailAccessToken({ fetchImpl });
+    if (!token.ok) {
+      return { ok: false, error: token.error };
+    }
+    accessToken = token.data.accessToken;
   }
   const base = getGmailApiBaseUrl().replace(/\/+$/, "");
   const threadUrl = `${base}/users/me/threads/${encodeURIComponent(headers.headers.threadId)}`;
   const threadRes = await gmailFetchJson({
     url: threadUrl,
-    accessToken: token.data.accessToken,
+    accessToken,
     fetchImpl,
   });
   if (!threadRes.ok) {
@@ -193,7 +180,7 @@ export async function ensureReplyDraft(params: {
   });
   const createRes = await gmailFetchJson({
     url: `${base}/users/me/drafts`,
-    accessToken: token.data.accessToken,
+    accessToken,
     fetchImpl,
     method: "POST",
     jsonBody: {

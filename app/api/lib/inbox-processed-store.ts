@@ -11,7 +11,7 @@ import {
   getInboxRedisTimeoutMs,
 } from "./inbox-config";
 import { extractGmailJobDescription } from "./gmail-body";
-import { getRedisClient } from "./redis";
+import { evalRedisScript, getRedisClient, getRedisKey, setRedisKey } from "./redis";
 
 export type InboxKv = {
   get: (key: string) => Promise<string | null>;
@@ -42,6 +42,31 @@ export function __injectInboxKvForTest(kv: InboxKv | null): void {
   injectedKv = kv;
 }
 
+function isInboxRedisTimeout(err: unknown): boolean {
+  return err instanceof Error && err.message === "Inbox Redis timed out";
+}
+
+async function withTimeout<T>(
+  run: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number
+): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      run(controller.signal),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Error("Inbox Redis timed out"));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 function kv(): InboxKv {
   if (injectedKv) {
     return injectedKv;
@@ -50,57 +75,58 @@ function kv(): InboxKv {
   const timeoutMs = getInboxRedisTimeoutMs();
   return {
     get: async (key) => {
-      const value = await withTimeout(client.get(key), timeoutMs);
+      const value = await withTimeout(
+        (signal) => getRedisKey(client, key, signal),
+        timeoutMs
+      );
       return typeof value === "string" ? value : value == null ? null : String(value);
     },
     set: async (key, value, opts) => {
       let result: unknown;
       if (opts?.nx === true) {
         result = await withTimeout(
-          client.set(key, value, {
-            nx: true,
-            ex: opts.ex ?? getInboxClaimTtlSeconds(),
-          }),
+          (signal) =>
+            setRedisKey(
+              client,
+              key,
+              value,
+              {
+                nx: true,
+                ex: opts.ex ?? getInboxClaimTtlSeconds(),
+              },
+              signal
+            ),
           timeoutMs
         );
       } else if (opts?.ex !== undefined) {
+        const ttlSeconds = opts.ex;
         result = await withTimeout(
-          client.set(key, value, { ex: opts.ex }),
+          (signal) => setRedisKey(client, key, value, { ex: ttlSeconds }, signal),
           timeoutMs
         );
       } else {
-        result = await withTimeout(client.set(key, value), timeoutMs);
+        result = await withTimeout(
+          (signal) => setRedisKey(client, key, value, undefined, signal),
+          timeoutMs
+        );
       }
       return result === "OK" ? "OK" : null;
     },
     deleteIfValue: async (key, value) => {
       const deleted = await withTimeout(
-        client.eval<[string], number>(DELETE_IF_VALUE_SCRIPT, [key], [value]),
+        (signal) =>
+          evalRedisScript(
+            client,
+            DELETE_IF_VALUE_SCRIPT,
+            key,
+            [value],
+            signal
+          ),
         timeoutMs
       );
       return deleted === 1;
     },
   };
-}
-
-function isInboxRedisTimeout(err: unknown): boolean {
-  return err instanceof Error && err.message === "Inbox Redis timed out";
-}
-
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error("Inbox Redis timed out"));
-        }, timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
 }
 
 export function inboxClaimKey(messageId: string): string {
@@ -157,6 +183,7 @@ export async function claimInboxMessage(
   let claimed = false;
   for (let attempt = 0; attempt < 2 && !claimed; attempt += 1) {
     let set: "OK" | null = null;
+    let setTimedOut = false;
     try {
       set = await store.set(claimKey, token, {
         nx: true,
@@ -166,9 +193,13 @@ export async function claimInboxMessage(
       if (!isInboxRedisTimeout(err)) {
         throw err;
       }
+      setTimedOut = true;
     }
     if (set === "OK") {
       claimed = true;
+      break;
+    }
+    if (setTimedOut) {
       break;
     }
     const existing = await store.get(claimKey);

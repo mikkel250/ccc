@@ -171,7 +171,7 @@ describe("inbox processed store", () => {
     assert.equal(memory.store.has(inboxProcessedKey(ID)), true);
   });
 
-  it("treats a timed-out SET that still committed as a won claim", async () => {
+  it("returns lost when a claim SET times out", async () => {
     const origSet = memory.set.bind(memory);
     let firstClaimSet = true;
     memory.set = async (key, value, opts) => {
@@ -185,7 +185,7 @@ describe("inbox processed store", () => {
     const result = await claimInboxMessage(ID);
     assert.equal(result.ok, true);
     if (result.ok) {
-      assert.equal(result.outcome, "won");
+      assert.equal(result.outcome, "lost");
     }
     const claimValue = memory.store.get(inboxClaimKey(ID));
     assert.equal(typeof claimValue, "string");

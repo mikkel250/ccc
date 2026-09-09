@@ -89,12 +89,17 @@ export async function runGmailAuthCli(params?: {
       const wait = new Promise<URL>((resolveWait) => {
         settle = resolveWait;
       });
+      let settled = false;
       server.on("request", (req: IncomingMessage, res: ServerResponse) => {
         const url = requestUrl(req, bindHost, address.port);
         res.statusCode = 200;
         res.setHeader("Content-Type", "text/plain; charset=utf-8");
         res.end("You can close this tab and return to the terminal.");
-        if (url.searchParams.has("code") || url.searchParams.has("error")) {
+        if (
+          !settled &&
+          (url.searchParams.has("code") || url.searchParams.has("error"))
+        ) {
+          settled = true;
           settle(url);
         }
       });

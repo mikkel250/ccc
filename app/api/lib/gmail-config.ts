@@ -16,6 +16,7 @@ const DEFAULT_CV_ATTACHMENT_FILENAME = "CV.docx";
 const CV_ATTACHMENT_FILENAME_RE = /^[A-Za-z0-9._-]+$/;
 const DEFAULT_HTTP_TIMEOUT_MS = 15_000;
 const DEFAULT_AUTH_TIMEOUT_MS = 300_000;
+const DEFAULT_TOKEN_CACHE_SAFETY_MARGIN_MS = 60_000;
 
 function requireEnv(key: string): string {
   const value = getEnvString(key);
@@ -100,4 +101,15 @@ export function getGmailHttpTimeoutMs(): number {
 /** Max wait for the gmail:auth loopback callback (default 5 minutes). */
 export function getGmailAuthTimeoutMs(): number {
   return Math.max(1, getEnvNumber("GMAIL_AUTH_TIMEOUT_MS", DEFAULT_AUTH_TIMEOUT_MS));
+}
+
+/** Refresh cached access tokens this many ms before Google expires_in (default 60s). */
+export function getGmailTokenCacheSafetyMarginMs(): number {
+  return Math.max(
+    0,
+    getEnvNumber(
+      "GMAIL_TOKEN_CACHE_SAFETY_MARGIN_MS",
+      DEFAULT_TOKEN_CACHE_SAFETY_MARGIN_MS
+    )
+  );
 }

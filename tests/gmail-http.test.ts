@@ -1,6 +1,6 @@
 import { describe, it, afterEach, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { gmailFetchJson, gmailJsonObject, sanitizeMimeHeaderValue } from "../app/api/lib/gmail-http";
+import { gmailFetchJson, gmailJsonObject, encodeMimeHeaderValue, sanitizeMimeHeaderValue } from "../app/api/lib/gmail-http";
 
 describe("gmail JSON and MIME helpers", () => {
   it("accepts plain objects and rejects arrays, null, and primitives", () => {
@@ -15,6 +15,12 @@ describe("gmail JSON and MIME helpers", () => {
       sanitizeMimeHeaderValue("recruiter@example.com\r\nBcc: evil@x.com"),
       "recruiter@example.com"
     );
+  });
+
+  it("RFC 2047-encodes non-ASCII Subject values with folding", () => {
+    const encoded = encodeMimeHeaderValue("Re: Café — Senior GM");
+    assert.match(encoded, /^=\?UTF-8\?B\?/);
+    assert.doesNotMatch(encoded, /[\r\n].*[\r\n]/);
   });
 });
 
