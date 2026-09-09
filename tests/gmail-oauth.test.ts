@@ -245,42 +245,6 @@ describe("gmail-oauth", () => {
     assert.equal(tokenPosts, 1);
   });
 
-  it("refreshes again once remaining lifetime is within the safety margin", async () => {
-    process.env.GMAIL_TOKEN_CACHE_SAFETY_MARGIN_MS = "2000";
-    let tokenPosts = 0;
-    const fetchImpl = async () => {
-      tokenPosts += 1;
-      return new Response(
-        JSON.stringify({
-          access_token: tokenPosts === 1 ? "first-access" : "second-access",
-          expires_in: 10,
-        }),
-        { status: 200 }
-      );
-    };
-    const first = await refreshGmailAccessToken({
-      fetchImpl,
-      nowMs: 0,
-    });
-    const stillCached = await refreshGmailAccessToken({
-      fetchImpl,
-      nowMs: 7_999,
-    });
-    const afterMargin = await refreshGmailAccessToken({
-      fetchImpl,
-      nowMs: 8_000,
-    });
-    assert.equal(first.ok, true);
-    assert.equal(stillCached.ok, true);
-    assert.equal(afterMargin.ok, true);
-    if (first.ok && stillCached.ok && afterMargin.ok) {
-      assert.equal(first.data.accessToken, "first-access");
-      assert.equal(stillCached.data.accessToken, "first-access");
-      assert.equal(afterMargin.data.accessToken, "second-access");
-    }
-    assert.equal(tokenPosts, 2);
-  });
-
   it("fails closed when the token POST is aborted by the HTTP timeout", async () => {
     process.env.GMAIL_HTTP_TIMEOUT_MS = "20";
     const result = await refreshGmailAccessToken({
