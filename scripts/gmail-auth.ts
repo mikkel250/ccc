@@ -94,7 +94,9 @@ export async function runGmailAuthCli(params?: {
         res.statusCode = 200;
         res.setHeader("Content-Type", "text/plain; charset=utf-8");
         res.end("You can close this tab and return to the terminal.");
-        settle(url);
+        if (url.searchParams.has("code") || url.searchParams.has("error")) {
+          settle(url);
+        }
       });
       return {
         port: address.port,

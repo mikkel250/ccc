@@ -70,6 +70,28 @@ describe("gmail draft MIME and reuse", () => {
     assert.doesNotMatch(headerBlock, /Cc: evil/);
   });
 
+  it("RFC 2047 encodes and folds a long non-ASCII subject", () => {
+    const rfc = buildReplyRfc822({
+      to: "recruiter@example.com",
+      subject: `Re: ${"Grøn lederrolle ".repeat(8)}`,
+      body: "Thanks",
+      attachmentFilename: "CV.docx",
+      docxBase64: "QQ==",
+      boundary: "ccc-test",
+    });
+    const subjectLines = rfc
+      .split("\r\n")
+      .filter((line) => line.startsWith("Subject: ") || line.startsWith(" =?UTF-8?B?"));
+    assert.equal(subjectLines.length > 1, true);
+    assert.equal(subjectLines.every((line) => line.length <= 76), true);
+    assert.equal(subjectLines.every((line) => /^(Subject: | )=\?UTF-8\?B\?.+\?=$/.test(line)), true);
+    const decoded = subjectLines
+      .map((line) => line.replace(/^(?:Subject: | )=\?UTF-8\?B\?(.+)\?=$/, "$1"))
+      .map((encoded) => Buffer.from(encoded, "base64").toString("utf8"))
+      .join("");
+    assert.equal(decoded, `Re: ${"Grøn lederrolle ".repeat(8)}`.trim());
+  });
+
   it("detects a DRAFT-labeled thread message", () => {
     assert.equal(
       threadContainsDraft({

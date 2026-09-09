@@ -21,6 +21,7 @@ export type InboxScanItemStatus =
   | "skipped-claimed"
   | "drafted"
   | "reused-draft"
+  | "fetch-failed"
   | "tailor-failed"
   | "draft-failed";
 
@@ -58,7 +59,7 @@ async function scanOneMessage(params: {
     if (!fetched.ok) {
       return {
         messageId,
-        status: "draft-failed",
+        status: "fetch-failed",
         error: fetched.error,
       };
     }

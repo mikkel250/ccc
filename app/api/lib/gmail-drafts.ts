@@ -20,8 +20,34 @@ export type EnsureReplyDraftResult =
   | { ok: false; error: string };
 
 const MIME_LINE_LENGTH = 76;
+const RFC_2047_SUBJECT_CHUNK_BYTES = 39;
 const DOCX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+function encodeRfc2047Subject(value: string): string {
+  if (/^[\x20-\x7e]*$/.test(value)) {
+    return value;
+  }
+  const chunks: string[] = [];
+  let chunk = "";
+  let chunkBytes = 0;
+  for (const character of value) {
+    const characterBytes = Buffer.byteLength(character, "utf8");
+    if (chunkBytes + characterBytes > RFC_2047_SUBJECT_CHUNK_BYTES) {
+      chunks.push(chunk);
+      chunk = "";
+      chunkBytes = 0;
+    }
+    chunk += character;
+    chunkBytes += characterBytes;
+  }
+  if (chunk !== "") {
+    chunks.push(chunk);
+  }
+  return chunks
+    .map((part) => `=?UTF-8?B?${Buffer.from(part, "utf8").toString("base64")}?=`)
+    .join("\r\n ");
+}
 
 export function wrapMimeBase64(value: string): string {
   const compact = value.replace(/\s+/g, "");
@@ -61,9 +87,12 @@ export function buildReplyRfc822(input: {
   boundary: string;
   inReplyTo?: string;
 }): string {
+  const subject = encodeRfc2047Subject(
+    sanitizeMimeHeaderValue(input.subject)
+  );
   const lines = [
     `To: ${sanitizeMimeHeaderValue(input.to)}`,
-    `Subject: ${sanitizeMimeHeaderValue(input.subject)}`,
+    `Subject: ${subject}`,
     "MIME-Version: 1.0",
     `Content-Type: multipart/mixed; boundary="${input.boundary}"`,
   ];

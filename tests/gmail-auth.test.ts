@@ -57,6 +57,45 @@ describe("gmail-auth CLI helpers", () => {
     }
   });
 
+  it("ignores unrelated listener requests before the OAuth callback", async () => {
+    const previousBind = process.env.GMAIL_AUTH_BIND_HOST;
+    process.env.GMAIL_CLIENT_ID = "client-id";
+    process.env.GMAIL_CLIENT_SECRET = "client-secret";
+    process.env.GMAIL_OAUTH_TOKEN_URL = "https://oauth.example.test/token";
+    process.env.GMAIL_AUTH_BIND_HOST = "127.0.0.1";
+    let requests: Promise<void> | undefined;
+    try {
+      const result = await runGmailAuthCli({
+        fetchImpl: async () =>
+          new Response(
+            JSON.stringify({ access_token: "a", refresh_token: "r" }),
+            { status: 200 }
+          ),
+        openUrl: (authorizeUrl) => {
+          requests = (async () => {
+            const authUrl = new URL(authorizeUrl);
+            const redirectUri = authUrl.searchParams.get("redirect_uri");
+            const state = authUrl.searchParams.get("state");
+            assert.notEqual(redirectUri, null);
+            assert.notEqual(state, null);
+            const unrelated = await fetch(`${redirectUri}/favicon.ico`);
+            assert.equal(unrelated.status, 200);
+            const callback = new URL(redirectUri!);
+            callback.searchParams.set("code", "c");
+            callback.searchParams.set("state", state!);
+            const callbackResponse = await fetch(callback);
+            assert.equal(callbackResponse.status, 200);
+          })();
+        },
+      });
+      await requests;
+      assert.equal(result.ok, true);
+    } finally {
+      if (previousBind === undefined) delete process.env.GMAIL_AUTH_BIND_HOST;
+      else process.env.GMAIL_AUTH_BIND_HOST = previousBind;
+    }
+  });
+
   it("fails closed when the auth listener wait exceeds GMAIL_AUTH_TIMEOUT_MS", async () => {
     const previousTimeout = process.env.GMAIL_AUTH_TIMEOUT_MS;
     const previousBind = process.env.GMAIL_AUTH_BIND_HOST;
