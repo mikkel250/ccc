@@ -150,7 +150,7 @@ Requires a Google Cloud Desktop OAuth client with the Gmail API enabled. Tokens 
 ```bash
 npm run gmail:auth   # loopback consent; prints GMAIL_REFRESH_TOKEN=
 npm run gmail:list   # lists { id, threadId } for GMAIL_RECRUITER_LABEL
-npm run inbox:scan   # tailor labeled mail in-process; create or reuse a Gmail reply draft
+npm run inbox:scan   # requires INBOX_SCAN_ENABLED=1; tailor labeled mail; create or reuse a Gmail reply draft
 ```
 
 `--parity` / `npm run smoke:parity` writes the same dual artifacts under `tmp/smoke/<provider>/<model>/` using the tailor response `model`, plus `tmp/smoke/parity-status.json` (filled cell and pending `SMOKE_PARITY_MODELS`). One live `TAILOR_MODEL` per process — restart `npm run dev` to fill the next cell. Default smoke without `--parity` stays flat (`tmp/smoke/<jd-slug>.*`). Pin `TAILOR_REASONING_EFFORT` for fair A/B. Catalog is env-overridable; bare aliases fail closed.

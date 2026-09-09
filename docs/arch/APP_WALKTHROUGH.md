@@ -86,7 +86,7 @@ Resolves `MASTER_CV_JSON` (preferred) or `MASTER_CV_PATH` (non-world-readable), 
 | Compile | same | `compileCuratorPrompt(promptText, masterCv)` → `{ ok, systemPrompt }` (fails closed if `{{MASTER_CV_JSON}}` missing; `$`-safe inject) |
 | User message | same | `buildCuratorUserMessage(jd)` — JD in per-request nonce-delimited data channel |
 
-Langfuse prompt name: `cv-curator-json` (fallback hardcoded; page-count / visual QA stripped).
+Langfuse prompt name: `cv-curator-json` (fallback hardcoded; used if Langfuse is unreachable or the production copy omits `reply_text`).
 
 ### 6. Curator LLM
 

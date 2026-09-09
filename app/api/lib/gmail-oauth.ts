@@ -175,23 +175,27 @@ async function postTokenRequest(
 function cacheAccessToken(
   refreshToken: string,
   accessToken: string,
-  expiresInSeconds?: number
+  expiresInSeconds: number | undefined,
+  nowMs: number
 ): void {
   if (expiresInSeconds === undefined) {
     return;
   }
   const safetyMarginMs = getGmailTokenCacheSafetyMarginMs();
   const expiresAtMs =
-    Date.now() + Math.max(0, expiresInSeconds * 1000 - safetyMarginMs);
+    nowMs + Math.max(0, expiresInSeconds * 1000 - safetyMarginMs);
   accessTokenCache.set(refreshToken, { accessToken, expiresAtMs });
 }
 
-function readCachedAccessToken(refreshToken: string): string | undefined {
+function readCachedAccessToken(
+  refreshToken: string,
+  nowMs: number
+): string | undefined {
   const cached = accessTokenCache.get(refreshToken);
   if (cached === undefined) {
     return undefined;
   }
-  if (Date.now() >= cached.expiresAtMs) {
+  if (nowMs >= cached.expiresAtMs) {
     accessTokenCache.delete(refreshToken);
     return undefined;
   }
@@ -223,9 +227,11 @@ export async function exchangeGmailAuthCode(
 export async function refreshGmailAccessToken(params?: {
   fetchImpl?: FetchLike;
   refreshToken?: string;
+  nowMs?: number;
 }): Promise<GmailOauthResult<GmailTokenSet>> {
   const refreshToken = params?.refreshToken ?? getGmailRefreshToken();
-  const cached = readCachedAccessToken(refreshToken);
+  const nowMs = params?.nowMs ?? Date.now();
+  const cached = readCachedAccessToken(refreshToken, nowMs);
   if (cached !== undefined) {
     return { ok: true, data: { accessToken: cached } };
   }
@@ -264,7 +270,8 @@ export async function refreshGmailAccessToken(params?: {
   cacheAccessToken(
     refreshToken,
     token.data.accessToken,
-    token.data.expiresInSeconds
+    token.data.expiresInSeconds,
+    nowMs
   );
   return {
     ok: true,

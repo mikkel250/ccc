@@ -31,6 +31,7 @@ const GMAIL_KEYS = [
   "GMAIL_LIST_MAX_RESULTS",
   "GMAIL_CV_ATTACHMENT_FILENAME",
   "INBOX_SCAN_BACKOFF_MS",
+  "INBOX_SCAN_ENABLED",
 ] as const;
 
 const saved: Record<string, string | undefined> = {};
@@ -161,6 +162,7 @@ describe("scanInbox", () => {
       saved[key] = process.env[key];
     }
     process.env.INBOX_SCAN_BACKOFF_MS = "0";
+    process.env.INBOX_SCAN_ENABLED = "1";
     process.env.GMAIL_CLIENT_ID = "client-id";
     process.env.GMAIL_CLIENT_SECRET = "client-secret";
     process.env.GMAIL_REFRESH_TOKEN = "refresh-token";
@@ -182,6 +184,23 @@ describe("scanInbox", () => {
         process.env[key] = previous;
       }
     }
+  });
+
+  it("does not call Gmail when INBOX_SCAN_ENABLED is off", async () => {
+    delete process.env.INBOX_SCAN_ENABLED;
+    let fetches = 0;
+    const result = await scanInbox({
+      fetchImpl: async () => {
+        fetches += 1;
+        throw new Error("must not fetch");
+      },
+      tailorDeps: tailorCvDeps,
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /INBOX_SCAN_ENABLED/);
+    }
+    assert.equal(fetches, 0);
   });
 
   it("creates a draft and marks processed after a successful tailor", async () => {

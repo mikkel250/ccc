@@ -109,4 +109,74 @@ describe("extractGmailJobDescription", () => {
       assert.match(result.error, /no usable text/);
     }
   });
+
+  it("fails on whitespace-only encoded body data", () => {
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "text/plain",
+        body: { data: "   \n" },
+      },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /no usable text/);
+    }
+  });
+
+  it("fails on invalid base64url with no html fallback", () => {
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "text/plain",
+        body: { data: "!!!" },
+      },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /no usable text/);
+    }
+  });
+
+  it("falls back to html when plain is malformed and html is usable", () => {
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "multipart/alternative",
+        parts: [
+          {
+            mimeType: "text/plain",
+            body: { data: "!!!" },
+          },
+          {
+            mimeType: "text/html",
+            body: { data: b64("<p>Hire a GM</p>") },
+          },
+        ],
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.jobDescription, "Hire a GM");
+    }
+  });
+
+  it("falls back to html when plain decodes to whitespace only", () => {
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "multipart/alternative",
+        parts: [
+          {
+            mimeType: "text/plain",
+            body: { data: b64("   \n") },
+          },
+          {
+            mimeType: "text/html",
+            body: { data: b64("<p>Need a chef</p>") },
+          },
+        ],
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.jobDescription, "Need a chef");
+    }
+  });
 });

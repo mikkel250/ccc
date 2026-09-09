@@ -3,10 +3,15 @@ import assert from "node:assert/strict";
 import {
   getInboxRedisTimeoutMs,
   getInboxScanBackoffMs,
+  isInboxScanEnabled,
 } from "../app/api/lib/inbox-config";
 
 describe("inbox-config timeouts", () => {
-  const keys = ["INBOX_REDIS_TIMEOUT_MS", "INBOX_SCAN_BACKOFF_MS"] as const;
+  const keys = [
+    "INBOX_REDIS_TIMEOUT_MS",
+    "INBOX_SCAN_BACKOFF_MS",
+    "INBOX_SCAN_ENABLED",
+  ] as const;
   const saved: Record<string, string | undefined> = {};
 
   afterEach(() => {
@@ -30,5 +35,15 @@ describe("inbox-config timeouts", () => {
     for (const key of keys) saved[key] = process.env[key];
     process.env.INBOX_SCAN_BACKOFF_MS = "0";
     assert.equal(getInboxScanBackoffMs(), 0);
+  });
+
+  it("keeps inbox scan disabled unless INBOX_SCAN_ENABLED is on", () => {
+    for (const key of keys) saved[key] = process.env[key];
+    delete process.env.INBOX_SCAN_ENABLED;
+    assert.equal(isInboxScanEnabled(), false);
+    process.env.INBOX_SCAN_ENABLED = "1";
+    assert.equal(isInboxScanEnabled(), true);
+    process.env.INBOX_SCAN_ENABLED = "false";
+    assert.equal(isInboxScanEnabled(), false);
   });
 });

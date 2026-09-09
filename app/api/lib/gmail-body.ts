@@ -13,7 +13,8 @@ function decodeGmailBodyData(data: unknown): string | undefined {
     return undefined;
   }
   try {
-    return Buffer.from(data, "base64url").toString("utf8");
+    const decoded = Buffer.from(data, "base64url").toString("utf8");
+    return decoded.trim() === "" ? undefined : decoded;
   } catch {
     return undefined;
   }

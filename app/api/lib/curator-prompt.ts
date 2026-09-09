@@ -157,6 +157,20 @@ export function getCuratorPromptFallbackText(): string {
   return FALLBACK_PROMPT;
 }
 
+/**
+ * Strict Langfuse production copy may still ask for bare CV JSON.
+ * Use the local fallback until that prompt names `reply_text`.
+ */
+export function resolveStrictCuratorSystemPrompt(
+  remotePrompt: string,
+  fallbackPrompt: string
+): { systemPrompt: string; usedFallback: boolean } {
+  if (remotePrompt.includes("reply_text")) {
+    return { systemPrompt: remotePrompt, usedFallback: false };
+  }
+  return { systemPrompt: fallbackPrompt, usedFallback: true };
+}
+
 export async function getCuratorPrompt(mode?: CurationMode): Promise<{
   systemPrompt: string;
   langfusePrompt?: { name: string; version: number; isFallback?: boolean };
@@ -186,6 +200,26 @@ export async function getCuratorPrompt(mode?: CurationMode): Promise<{
       label: "production",
       cacheTtlSeconds: CURATOR_PROMPT_CACHE_TTL_SECONDS,
     });
+
+    if (!isFlexible && typeof prompt.prompt === "string") {
+      const resolved = resolveStrictCuratorSystemPrompt(
+        prompt.prompt,
+        fallbackPrompt
+      );
+      if (resolved.usedFallback) {
+        console.warn(
+          `Langfuse prompt "${promptName}" v${prompt.version} omits reply_text; using hardcoded fallback`
+        );
+        return {
+          systemPrompt: resolved.systemPrompt,
+          langfusePrompt: {
+            name: promptName,
+            version: 0,
+            isFallback: true,
+          },
+        };
+      }
+    }
 
     return {
       systemPrompt: prompt.prompt,

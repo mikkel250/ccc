@@ -6,7 +6,7 @@ import { tailorCvDeps } from "./tailor-cv-deps";
 import { listLabeledRecruiterMail } from "./gmail-list";
 import { getGmailMessage } from "./gmail-message";
 import { ensureReplyDraft, gmailThreadHasDraft } from "./gmail-drafts";
-import { getInboxScanBackoffMs } from "./inbox-config";
+import { getInboxScanBackoffMs, isInboxScanEnabled } from "./inbox-config";
 import {
   isInboxProcessed,
   markInboxProcessed,
@@ -159,6 +159,12 @@ export async function scanInbox(params?: {
   tailorDeps?: TailorPipelineDeps;
   sleep?: (ms: number) => Promise<void>;
 }): Promise<InboxScanResult> {
+  if (!isInboxScanEnabled()) {
+    return {
+      ok: false,
+      error: "Inbox scan is disabled (set INBOX_SCAN_ENABLED=1)",
+    };
+  }
   const fetchImpl = params?.fetchImpl ?? fetch;
   const deps = params?.tailorDeps ?? tailorCvDeps;
   const sleep = params?.sleep ?? defaultSleep;
