@@ -143,14 +143,15 @@ export async function ensureReplyDraft(params: {
     return headers;
   }
   const fetchImpl = params.fetchImpl ?? fetch;
+  const prefetchedToken = params.accessToken;
   const prefetchedHasDraft = params.hasDraft;
   const reuseThreadState =
-    params.accessToken !== undefined && prefetchedHasDraft !== undefined;
+    prefetchedToken !== undefined && prefetchedHasDraft !== undefined;
 
   let accessToken: string;
   let hasDraft: boolean;
   if (reuseThreadState) {
-    accessToken = params.accessToken;
+    accessToken = prefetchedToken;
     hasDraft = prefetchedHasDraft;
   } else {
     const token = await resolveGmailAccessToken({

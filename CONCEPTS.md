@@ -35,6 +35,9 @@ Semver-like constant on the mechanical JSON→docx builder. Callers retaining cu
 ### Smoke
 Manual live-API operator path (`npm run smoke`): hits a running server with Bearer auth, asserts dual artifacts, and writes redact-by-default files under `tmp/smoke/`. Strict smoke also writes recruiter reply text when the API returns it. Flexible runs also write a cover-letter DOCX only when `writeSmokeArtifacts` produces one — non-empty cover letter that passes `isValidDocxBase64`; otherwise that file may be absent. Quality is the operator reading those files. Not part of `npm test` / CI.
 
+### Parity smoke
+Operator loop (`npm run smoke:parity` / `--parity`) that fills **one** `SMOKE_PARITY_MODELS` cell per process against the running server’s `TAILOR_MODEL`. Artifacts nest under `tmp/smoke/<provider>/<model>/`; `parity-status.json` lists filled vs pending cells. Remaining cells require a server restart — not a request-body model picker. Still no judges.
+
 ### Knowledge base
 *Avoid as the name for career truth after cutover — use Master CV.* Historically: on-disk markdown career corpus injected into every tailor request. Retained only as a legacy term for pre-cutover behavior and non-tailor prose / test JD fixtures under `knowledge-base/test-jds/`.
 

@@ -10,6 +10,8 @@ import {
   getLLMConfig,
   getTailorModel,
   getDefaultCurationMode,
+  getSmokeParityModelsCsv,
+  DEFAULT_SMOKE_PARITY_MODELS_CSV,
   truncateSafeLogDetail,
 } from "../lib/env";
 import { KNOWN_PROVIDERS as KNOWN_PROVIDERS_FROM_PROVIDERS } from "../lib/providers";
@@ -165,6 +167,25 @@ describe("getDefaultCurationMode", () => {
   it("falls back to strict when invalid", () => {
     process.env[key] = "loose";
     assert.equal(getDefaultCurationMode(), "strict");
+  });
+});
+
+describe("getSmokeParityModelsCsv", () => {
+  const original = process.env.SMOKE_PARITY_MODELS;
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.SMOKE_PARITY_MODELS;
+    else process.env.SMOKE_PARITY_MODELS = original;
+  });
+
+  it("defaults to the MODEL_SELECTION production catalog when unset", () => {
+    delete process.env.SMOKE_PARITY_MODELS;
+    assert.equal(getSmokeParityModelsCsv(), DEFAULT_SMOKE_PARITY_MODELS_CSV);
+  });
+
+  it("returns an override CSV", () => {
+    process.env.SMOKE_PARITY_MODELS = "anthropic/sonnet";
+    assert.equal(getSmokeParityModelsCsv(), "anthropic/sonnet");
   });
 });
 
