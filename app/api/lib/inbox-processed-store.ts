@@ -2,6 +2,7 @@
  * Redis claim vs processed marks for Gmail messageIds (R10, R12).
  * Claim is SET NX and is not the terminal processed mark.
  */
+import { randomBytes } from "node:crypto";
 import {
   getInboxClaimTtlSeconds,
   getInboxMessageIdMaxChars,
@@ -20,6 +21,7 @@ export type InboxKv = {
     opts?: { nx?: boolean; ex?: number }
   ) => Promise<"OK" | null>;
   del: (key: string) => Promise<void>;
+  deleteIfValue: (key: string, value: string) => Promise<boolean>;
 };
 
 export type InboxClaimOutcome = "won" | "lost" | "processed";
@@ -31,6 +33,8 @@ export type ExtractUnprocessedResult =
   | { ok: false; error: string };
 
 const MESSAGE_ID_RE = /^[A-Za-z0-9._-]+$/;
+const DELETE_IF_VALUE_SCRIPT =
+  'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end';
 
 let injectedKv: InboxKv | null = null;
 
@@ -75,7 +79,18 @@ function kv(): InboxKv {
     del: async (key) => {
       await withTimeout(client.del(key), timeoutMs);
     },
+    deleteIfValue: async (key, value) => {
+      const deleted = await withTimeout(
+        client.eval<[string], number>(DELETE_IF_VALUE_SCRIPT, [key], [value]),
+        timeoutMs
+      );
+      return deleted === 1;
+    },
   };
+}
+
+function isInboxRedisTimeout(err: unknown): boolean {
+  return err instanceof Error && err.message === "Inbox Redis timed out";
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -137,12 +152,48 @@ export async function claimInboxMessage(
   if (await isInboxProcessed(parsed.messageId)) {
     return { ok: true, outcome: "processed" };
   }
-  const set = await kv().set(inboxClaimKey(parsed.messageId), "1", {
-    nx: true,
-    ex: getInboxClaimTtlSeconds(),
-  });
-  if (set === "OK") {
-    return { ok: true, outcome: "won" };
+  const token = randomBytes(16).toString("hex");
+  const claimKey = inboxClaimKey(parsed.messageId);
+  const store = kv();
+  let claimed = false;
+  for (let attempt = 0; attempt < 2 && !claimed; attempt += 1) {
+    let set: "OK" | null = null;
+    try {
+      set = await store.set(claimKey, token, {
+        nx: true,
+        ex: getInboxClaimTtlSeconds(),
+      });
+    } catch (err) {
+      if (!isInboxRedisTimeout(err)) {
+        throw err;
+      }
+    }
+    if (set === "OK") {
+      claimed = true;
+      break;
+    }
+    const existing = await store.get(claimKey);
+    if (existing === token) {
+      claimed = true;
+      break;
+    }
+    if (existing != null) {
+      break;
+    }
+  }
+  if (claimed) {
+    const processed = await isInboxProcessed(parsed.messageId);
+    const currentClaim = await store.get(claimKey);
+    if (processed) {
+      if (currentClaim === token) {
+        await store.deleteIfValue(claimKey, token);
+      }
+      return { ok: true, outcome: "processed" };
+    }
+    return {
+      ok: true,
+      outcome: currentClaim === token ? "won" : "lost",
+    };
   }
   if (await isInboxProcessed(parsed.messageId)) {
     return { ok: true, outcome: "processed" };

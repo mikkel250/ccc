@@ -58,6 +58,13 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
     del: async (key) => {
       store.delete(key);
     },
+    deleteIfValue: async (key, value) => {
+      if (store.get(key) !== value) {
+        return false;
+      }
+      store.delete(key);
+      return true;
+    },
   };
 }
 

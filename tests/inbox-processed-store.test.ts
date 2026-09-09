@@ -41,6 +41,13 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
     del: async (key) => {
       store.delete(key);
     },
+    deleteIfValue: async (key, value) => {
+      if (store.get(key) !== value) {
+        return false;
+      }
+      store.delete(key);
+      return true;
+    },
   };
 }
 
@@ -133,5 +140,80 @@ describe("inbox processed store", () => {
     const released = await releaseInboxClaim(ID);
     assert.equal(released.ok, true);
     assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+  });
+
+  it("returns processed when a mark lands before the claim SET commits", async () => {
+    const origSet = memory.set.bind(memory);
+    memory.set = async (key, value, opts) => {
+      if (key === inboxClaimKey(ID)) {
+        await origSet(inboxProcessedKey(ID), "1");
+      }
+      return origSet(key, value, opts);
+    };
+    const result = await claimInboxMessage(ID);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.outcome, "processed");
+    }
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+    assert.equal(memory.store.has(inboxProcessedKey(ID)), true);
+  });
+
+  it("treats a timed-out SET that still committed as a won claim", async () => {
+    const origSet = memory.set.bind(memory);
+    let firstClaimSet = true;
+    memory.set = async (key, value, opts) => {
+      const result = await origSet(key, value, opts);
+      if (firstClaimSet && key === inboxClaimKey(ID)) {
+        firstClaimSet = false;
+        throw new Error("Inbox Redis timed out");
+      }
+      return result;
+    };
+    const result = await claimInboxMessage(ID);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.outcome, "won");
+    }
+    const claimValue = memory.store.get(inboxClaimKey(ID));
+    assert.equal(typeof claimValue, "string");
+    assert.notEqual(claimValue, "1");
+  });
+
+  it("returns lost when ownership changes during the processed recheck", async () => {
+    const origGet = memory.get.bind(memory);
+    memory.get = async (key) => {
+      if (
+        key === inboxProcessedKey(ID) &&
+        memory.store.has(inboxClaimKey(ID))
+      ) {
+        memory.store.set(inboxClaimKey(ID), "replacement-token");
+      }
+      return origGet(key);
+    };
+
+    const result = await claimInboxMessage(ID);
+
+    assert.deepEqual(result, { ok: true, outcome: "lost" });
+    assert.equal(memory.store.get(inboxClaimKey(ID)), "replacement-token");
+  });
+
+  it("does not delete a replacement claim when a processed mark wins", async () => {
+    const origGet = memory.get.bind(memory);
+    memory.get = async (key) => {
+      if (
+        key === inboxProcessedKey(ID) &&
+        memory.store.has(inboxClaimKey(ID))
+      ) {
+        memory.store.set(inboxClaimKey(ID), "replacement-token");
+        memory.store.set(inboxProcessedKey(ID), "1");
+      }
+      return origGet(key);
+    };
+
+    const result = await claimInboxMessage(ID);
+
+    assert.deepEqual(result, { ok: true, outcome: "processed" });
+    assert.equal(memory.store.get(inboxClaimKey(ID)), "replacement-token");
   });
 });

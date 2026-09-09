@@ -36,6 +36,13 @@ describe("detectProvider — config-lookup (provider/model namespace)", () => {
     assert.throws(() => detectProvider("gemini-2.5-pro"), /Invalid model string/);
   });
 
+  it("throws for backslash path separators", () => {
+    assert.throws(
+      () => detectProvider("anthropic/..\\..\\outside"),
+      /Invalid model string/
+    );
+  });
+
   it("throws for unknown provider prefix", () => {
     assert.throws(() => detectProvider("cohere/command-r"), /Unknown provider/);
     assert.throws(() => detectProvider("mistral/mixtral-8x7b"), /Unknown provider/);
