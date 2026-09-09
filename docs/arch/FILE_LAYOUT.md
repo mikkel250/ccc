@@ -19,7 +19,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── cv-schema.ts      # Ajv draft-2020-12 validation + size limits
 │           ├── json-docx-builder.ts # Mechanical JSON → .docx (BUILDER_VERSION)
 │           ├── tailor-auth.ts    # Bearer shared-secret gate
-│           ├── smoke-helpers.ts  # Smoke artifact redaction + writes
+│           ├── smoke-helpers.ts  # Smoke artifact redaction, parity catalog, nested paths
 │           ├── smoke-runner.ts   # verifySmokePipeline — health → tailor → artifacts
 │           ├── chat-prompt.ts    # Chat assistant system prompt (legacy, no route yet)
 │           ├── jd-prompt.ts      # Job description analysis prompt (evaluation rubric inside)
@@ -38,6 +38,9 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── gmail-config.ts   # Gmail OAuth/API env getters
 │           ├── gmail-oauth.ts    # Authorize URL, callback, token exchange/refresh
 │           ├── gmail-list.ts     # Recruiter-label resolve + messages.list
+│           ├── inbox-config.ts   # Inbox Redis prefix / claim+processed TTLs
+│           ├── inbox-processed-store.ts # SET NX claim vs terminal processed mark
+│           ├── gmail-body.ts     # Gmail payload → JD (text/plain else html-to-text)
 │           ├── rate-limit.ts     # Dual IP + secret-hash rate limiter
 │           ├── tailor-cv-validation.ts  # Request body validation
 │           ├── eval-schema.ts     # Historical eval types/prompts (markdown-era)

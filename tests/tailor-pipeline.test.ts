@@ -57,7 +57,7 @@ function mockPipelineSuccess(
   mock.method(tailorCvDeps, "chat", async () => ({
     content: JSON.stringify(curated),
     usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-    model: "anthropic/sonnet",
+    model: "claude-sonnet-4-6",
     finishReason: "stop",
   }));
   mock.method(tailorCvDeps, "isLlmServiceError", () => false);
@@ -473,6 +473,7 @@ describe("buildTailorResponse — pipeline orchestration", () => {
         assert.equal(typeof result.body.resetTime, "number");
         assert.equal(result.body.curationMode, "strict");
         assert.equal(typeof result.body.model, "string");
+        assert.equal(result.body.model, "anthropic/sonnet");
         assert.ok(result.body.usage);
       }
     });
