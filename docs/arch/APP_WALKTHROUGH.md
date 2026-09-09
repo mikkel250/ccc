@@ -33,7 +33,7 @@ app/api/tailor-cv/route.ts
           ├── validateCvJson()        app/api/lib/cv-schema.ts
           └── buildJsonDocxBase64()   app/api/lib/json-docx-builder.ts
     │
-    ▼ 200 { cv, curatedJson, builderVersion, model, usage, remaining, resetTime [, replyText] }
+    ▼ 200 { cv, curatedJson, builderVersion, model, usage, remaining, resetTime [, replyText (strict-only)] }
 ```
 
 Inbox is not this HTTP client. `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a Gmail payload, then `runTailorCore` (same curator + mechanical `.docx`; no Bearer, no public rate-limit buckets). `buildTailorResponse` remains the HTTP adapter (`NextRequest`, IP, auth, `checkRateLimit`) and attaches `remaining` / `resetTime`.
@@ -109,7 +109,7 @@ Parse/schema/builder failures → **422** with no dual artifacts. Success → `{
 
 ### 8. Response and errors
 
-**Success (200):** `{ cv, curatedJson, builderVersion, model, usage, remaining, resetTime }`
+**Success (200):** `{ cv, curatedJson, builderVersion, model, usage, remaining, resetTime [, replyText] }` — optional `replyText` is strict-only
 
 **Error mapping** (`route.ts :: mapErrorToResponse`, table-driven `ERROR_RESPONSES`):
 
@@ -188,4 +188,4 @@ Prompt files cloned from the portfolio chat bot remain for a hypothetical future
 
 ## Planned but not implemented
 
-See [PIPELINE_ENHANCEMENTS](./PIPELINE_ENHANCEMENTS.md) (two-pass, critic) and [LEARNING_SYSTEM](./LEARNING_SYSTEM.md) (SQLite feedback). Recruiter reply text + Gmail drafts: [inbox worker product contract](../plans/2026-09-05-002-feat-inbox-worker-plan.md). Still deferred: selective RAG.
+See [PIPELINE_ENHANCEMENTS](./PIPELINE_ENHANCEMENTS.md) (two-pass, critic) and [LEARNING_SYSTEM](./LEARNING_SYSTEM.md) (SQLite feedback). Still deferred: selective RAG.

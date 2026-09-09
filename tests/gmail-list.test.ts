@@ -26,6 +26,18 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function authorizationHeader(init?: RequestInit): string | undefined {
+  const headers = init?.headers;
+  if (headers instanceof Headers) {
+    return headers.get("Authorization") ?? undefined;
+  }
+  if (headers === undefined || typeof headers !== "object" || Array.isArray(headers)) {
+    return undefined;
+  }
+  const value = Reflect.get(headers, "Authorization");
+  return typeof value === "string" ? value : undefined;
+}
+
 describe("gmail-list parsers", () => {
   it("matches an exact label name", () => {
     const result = matchGmailLabelId(
@@ -103,18 +115,20 @@ describe("listLabeledRecruiterMail", () => {
   it("lists messages for the recruiter label", async () => {
     const urls: string[] = [];
     const result = await listLabeledRecruiterMail({
-      fetchImpl: async (input) => {
+      fetchImpl: async (input, init) => {
         const url = String(input);
         urls.push(url);
         if (url.includes("/token")) {
           return jsonResponse({ access_token: "access" });
         }
         if (url.endsWith("/users/me/labels")) {
+          assert.equal(authorizationHeader(init), "Bearer access");
           return jsonResponse({
             labels: [{ id: "Label_1", name: "Recruiter" }],
           });
         }
         if (url.includes("/users/me/messages")) {
+          assert.equal(authorizationHeader(init), "Bearer access");
           const parsed = new URL(url);
           assert.equal(parsed.searchParams.get("labelIds"), "Label_1");
           assert.equal(parsed.searchParams.get("maxResults"), "10");
@@ -153,12 +167,14 @@ describe("listLabeledRecruiterMail", () => {
 
   it("fails closed when a Gmail list GET is aborted by the HTTP timeout", async () => {
     process.env.GMAIL_HTTP_TIMEOUT_MS = "20";
+    let gmailApiRequested = false;
     const result = await listLabeledRecruiterMail({
       fetchImpl: async (input, init) => {
         const url = String(input);
         if (url.includes("/token")) {
           return jsonResponse({ access_token: "access" });
         }
+        gmailApiRequested = true;
         const signal = init?.signal;
         await new Promise<void>((_resolve, reject) => {
           if (signal?.aborted) {
@@ -172,9 +188,10 @@ describe("listLabeledRecruiterMail", () => {
         return jsonResponse({});
       },
     });
+    assert.equal(gmailApiRequested, true);
     assert.equal(result.ok, false);
     if (!result.ok) {
-      assert.match(result.error, /Gmail API request failed|token request failed/);
+      assert.match(result.error, /Gmail API request failed/);
     }
   });
 });
