@@ -431,7 +431,7 @@ export async function buildTailorResponse(
     curatedJson: sanitized,
     builderVersion: built.builderVersion,
     curationMode,
-    model: curatorResponse.model,
+    model: getTailorModel(),
     usage: curatorResponse.usage,
     remaining: rateLimit.remaining,
     resetTime: rateLimit.resetTime,

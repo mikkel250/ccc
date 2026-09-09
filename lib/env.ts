@@ -178,3 +178,11 @@ export function getDefaultCurationMode(): "strict" | "flexible" {
   if (raw === "strict" || raw === "flexible") return raw;
   return "strict";
 }
+
+/** Default curator catalog for `npm run smoke:parity` (strict / MODEL_SELECTION production rows). */
+export const DEFAULT_SMOKE_PARITY_MODELS_CSV =
+  "anthropic/sonnet,deepseek/deepseek-v4-pro,openrouter/openai/gpt-5.4-mini,openrouter/google/gemini-3.1-pro-preview";
+
+export function getSmokeParityModelsCsv(): string {
+  return getEnvString("SMOKE_PARITY_MODELS", DEFAULT_SMOKE_PARITY_MODELS_CSV)!;
+}

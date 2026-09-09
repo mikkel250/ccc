@@ -16,7 +16,8 @@
     "typecheck:tests": "tsc -p tsconfig.test.json --noEmit",
     "test:e2e": "playwright test",
     "regen-docx": "tsx scripts/regen-docx.ts",
-    "smoke": "tsx scripts/e2e-tailor-cv.ts"
+    "smoke": "tsx scripts/e2e-tailor-cv.ts",
+    "smoke:parity": "tsx scripts/e2e-tailor-cv.ts --parity"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.67.1",
