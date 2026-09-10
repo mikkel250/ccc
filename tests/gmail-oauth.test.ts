@@ -4,10 +4,12 @@ import { ServiceError } from "../app/api/lib/errors";
 import {
   getGmailAuthBindHost,
   getGmailAuthTimeoutMs,
+  getGmailApiBaseUrl,
   getGmailClientId,
   getGmailHttpTimeoutMs,
   getGmailListMaxResults,
   getGmailOauthScope,
+  getGmailOauthTokenUrl,
   getGmailRefreshToken,
 } from "../app/api/lib/gmail-config";
 import {
@@ -28,6 +30,7 @@ const KEYS = [
   "GMAIL_LIST_MAX_RESULTS",
   "GMAIL_LIST_MAX_RESULTS_LIMIT",
   "GMAIL_OAUTH_TOKEN_URL",
+  "GMAIL_API_BASE_URL",
   "GMAIL_HTTP_TIMEOUT_MS",
   "GMAIL_AUTH_TIMEOUT_MS",
   "GMAIL_TOKEN_CACHE_SAFETY_MARGIN_MS",
@@ -92,6 +95,43 @@ describe("gmail-config", () => {
     process.env.GMAIL_AUTH_TIMEOUT_MS = "5678";
     assert.equal(getGmailHttpTimeoutMs(), 1234);
     assert.equal(getGmailAuthTimeoutMs(), 5678);
+  });
+
+  it("preserves valid HTTPS Gmail endpoint URLs", () => {
+    process.env.GMAIL_OAUTH_TOKEN_URL = "https://oauth.example.test/custom-token";
+    process.env.GMAIL_API_BASE_URL = "https://gmail.example.test/custom/v1";
+    assert.equal(
+      getGmailOauthTokenUrl(),
+      "https://oauth.example.test/custom-token"
+    );
+    assert.equal(
+      getGmailApiBaseUrl(),
+      "https://gmail.example.test/custom/v1"
+    );
+  });
+
+  it("preserves the default Gmail endpoint URLs", () => {
+    delete process.env.GMAIL_OAUTH_TOKEN_URL;
+    delete process.env.GMAIL_API_BASE_URL;
+    assert.equal(
+      getGmailOauthTokenUrl(),
+      "https://oauth2.googleapis.com/token"
+    );
+    assert.equal(
+      getGmailApiBaseUrl(),
+      "https://gmail.googleapis.com/gmail/v1"
+    );
+  });
+
+  it("rejects malformed or non-HTTPS Gmail endpoint URLs", () => {
+    for (const value of ["not-a-url", "http://oauth.example.test/token"]) {
+      process.env.GMAIL_OAUTH_TOKEN_URL = value;
+      assert.throws(() => getGmailOauthTokenUrl(), /GMAIL_OAUTH_TOKEN_URL/);
+    }
+    for (const value of ["not-a-url", "http://gmail.example.test/gmail/v1"]) {
+      process.env.GMAIL_API_BASE_URL = value;
+      assert.throws(() => getGmailApiBaseUrl(), /GMAIL_API_BASE_URL/);
+    }
   });
 });
 
@@ -162,6 +202,7 @@ describe("gmail-oauth", () => {
       redirectUri: "http://127.0.0.1:1234",
       fetchImpl: async (_input, init) => {
         assert.equal(init?.method, "POST");
+        assert.equal(init?.redirect, "error");
         const body = String(init?.body);
         assert.match(body, /grant_type=authorization_code/);
         assert.match(body, /code=the-code/);
@@ -198,6 +239,7 @@ describe("gmail-oauth", () => {
   it("refreshes an access token without logging the secret", async () => {
     const result = await refreshGmailAccessToken({
       fetchImpl: async (_input, init) => {
+        assert.equal(init?.redirect, "error");
         const body = String(init?.body);
         assert.match(body, /grant_type=refresh_token/);
         assert.match(body, /refresh_token=refresh-token/);

@@ -2,7 +2,10 @@
  * In-process strict tailor from a labeled Gmail payload (R8).
  * Claim + extract, then runTailorCore. Does not mark processed (R10 / M8.5).
  */
-import { extractUnprocessedInboxMessage } from "./inbox-processed-store";
+import {
+  extractUnprocessedInboxMessage,
+  renewInboxClaim,
+} from "./inbox-processed-store";
 import { getTailorJdMaxChars } from "./cv-schema";
 import {
   runTailorCore,
@@ -48,6 +51,13 @@ export async function tailorLabeledMessage(
   });
   if (!core.ok) {
     return { ...core, claimToken };
+  }
+  const renewed = await renewInboxClaim(input.messageId, claimToken);
+  if (!renewed.ok) {
+    return { ...renewed, status: 503, claimToken };
+  }
+  if (!renewed.renewed) {
+    return { ok: true, status: "skipped-claimed" };
   }
   return { ok: true, status: "tailored", body: core.body, claimToken };
 }

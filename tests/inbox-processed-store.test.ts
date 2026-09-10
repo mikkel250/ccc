@@ -27,7 +27,7 @@ function plainMessage(text: string): unknown {
 
 function createMemoryKv(): InboxKv & { store: Map<string, string> } {
   const store = new Map<string, string>();
-  return {
+  const memory: InboxKv & { store: Map<string, string> } = {
     store,
     get: async (key) => store.get(key) ?? null,
     set: async (key, value, opts) => {
@@ -45,7 +45,10 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
       store.delete(key);
       return true;
     },
+    expireIfValue: async (key: string, value: string) =>
+      store.get(key) === value,
   };
+  return memory;
 }
 
 const ID = "msg123abc";

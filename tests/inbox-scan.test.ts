@@ -65,7 +65,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function createMemoryKv(): InboxKv & { store: Map<string, string> } {
   const store = new Map<string, string>();
-  return {
+  const memory: InboxKv & { store: Map<string, string> } = {
     store,
     get: async (key) => store.get(key) ?? null,
     set: async (key, value, opts) => {
@@ -83,7 +83,10 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
       store.delete(key);
       return true;
     },
+    expireIfValue: async (key: string, value: string) =>
+      store.get(key) === value,
   };
+  return memory;
 }
 
 function mockPipelineSuccess(): void {
@@ -218,6 +221,38 @@ describe("scanInbox", () => {
     }
     assert.equal(draftCreates, 1);
     assert.equal(memory.store.has(inboxProcessedKey("m1")), true);
+  });
+
+  it("does not create a draft when claim ownership is lost immediately beforehand", async () => {
+    let renewals = 0;
+    memory.expireIfValue = async (key, value) => {
+      renewals += 1;
+      if (renewals === 2) {
+        memory.store.set(key, "replacement-token");
+      }
+      return memory.store.get(key) === value;
+    };
+    let draftCreates = 0;
+
+    const result = await scanInbox({
+      fetchImpl: gmailFetch({
+        onDraftCreate: () => {
+          draftCreates += 1;
+        },
+      }),
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.deepEqual(result.items, [
+        { messageId: "m1", status: "skipped-claimed" },
+      ]);
+    }
+    assert.equal(renewals, 2);
+    assert.equal(draftCreates, 0);
+    assert.equal(memory.store.has(inboxProcessedKey("m1")), false);
   });
 
   it("reuses an existing thread draft without tailoring and still marks processed", async () => {

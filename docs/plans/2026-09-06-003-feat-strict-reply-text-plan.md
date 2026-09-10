@@ -62,13 +62,13 @@ Copied from inbox R1–R5 (do not drift):
 ### Key Technical Decisions
 
 - KTD1. **Extend `curation-mode.ts` with `isCuratedCvWrapper` + `usableReplyText`; keep `isFlexibleWrapper` for cover-letter typing.** Instantiates R1. Existing `isFlexibleWrapper` already does 80% of wrapper detection.
-- KTD2. **Strict branch in `buildTailorResponse` requires wrapper + usable reply before schema/docx.** Instantiates R1, R3, R4. Bare master-schema JSON is no longer a successful strict result.
+- KTD2. **`runTailorCore` owns strict wrapper and usable `replyText` validation before schema/docx; `buildTailorResponse` is its HTTP adapter.** Instantiates R1, R3, R4. Bare master-schema JSON is no longer a successful strict result, and inbox tailoring invokes `runTailorCore` directly so validation is neither HTTP-only nor duplicated.
 - KTD3. **Strict fallback `<output_format>` emits `{ curated_cv, reply_text }` (grounded, no invention).** Instantiates R2, R4. Langfuse production copy is operator follow-up.
 - KTD4. **`smokeArtifactPaths` adds `replyPath`; write only in strict when `replyText` is a non-empty string; runner fails strict 200s that omit it.** Instantiates R5.
 
 ### Assumptions
 
-- `buildTailorResponse` is the HTTP path and the future in-process core (M8.4 wraps it). Changing it here is enough for R1’s “in-process” clause without extracting a worker in this row.
+- `runTailorCore` is the shared in-process owner of strict wrapper, usable `replyText`, schema, and DOCX readiness validation. `buildTailorResponse` adapts that result for HTTP, while inbox-tailor calls `runTailorCore` directly to avoid HTTP-only or duplicate validation.
 - Live Langfuse prompt may still ask for bare CV JSON until the operator publishes; tests and fallback match the new contract.
 
 ### Sequencing

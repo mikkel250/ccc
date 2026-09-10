@@ -20,15 +20,44 @@ function decodeGmailBodyData(data: unknown): string | undefined {
   }
 }
 
+function displayDeclarationResolvesToNone(style: string): boolean {
+  let resolved: { value: string; important: boolean } | undefined;
+  for (const declaration of style.split(";")) {
+    const colon = declaration.indexOf(":");
+    if (colon < 0 || declaration.slice(0, colon).trim().toLowerCase() !== "display") {
+      continue;
+    }
+    let value = declaration.slice(colon + 1).trim();
+    const important = /!\s*important\s*$/i.test(value);
+    value = value.replace(/!\s*important\s*$/i, "").trim().toLowerCase();
+    if (value === "" || (resolved?.important === true && !important)) {
+      continue;
+    }
+    resolved = { value, important };
+  }
+  return resolved?.value === "none";
+}
+
+function markInlineDisplayNoneAsHidden(html: string): string {
+  return html.replace(
+    /(\s)(style\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi,
+    (attribute, leading, prefix, doubleQuoted, singleQuoted, unquoted) => {
+      const style = doubleQuoted ?? singleQuoted ?? unquoted ?? "";
+      if (!displayDeclarationResolvesToNone(style)) {
+        return attribute;
+      }
+      return `${leading}hidden ${prefix}"${style}"`;
+    }
+  );
+}
+
 export function htmlToText(html: string): string {
-  return convert(html, {
+  return convert(markInlineDisplayNoneAsHidden(html), {
     selectors: [
       { selector: "head", format: "skip" },
       { selector: "script", format: "skip" },
       { selector: "style", format: "skip" },
       { selector: "[hidden]", format: "skip" },
-      { selector: '[style*="display:none"]', format: "skip" },
-      { selector: '[style*="display: none"]', format: "skip" },
     ],
     wordwrap: false,
     preserveNewlines: false,

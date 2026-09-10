@@ -22,6 +22,21 @@ describe("gmail JSON and MIME helpers", () => {
     assert.match(encoded, /^=\?UTF-8\?B\?/);
     assert.doesNotMatch(encoded, /[\r\n].*[\r\n]/);
   });
+
+  it("keeps printable ASCII subjects direct only while the Subject line fits", () => {
+    const fitting = "A".repeat(67);
+    assert.equal(encodeMimeHeaderValue(fitting), fitting);
+
+    const tooLong = "B".repeat(68);
+    const encoded = encodeMimeHeaderValue(tooLong);
+    assert.match(encoded, /^=\?UTF-8\?B\?/);
+    const decoded = encoded
+      .split("\r\n ")
+      .map((word) => word.replace(/^=\?UTF-8\?B\?(.+)\?=$/, "$1"))
+      .map((base64) => Buffer.from(base64, "base64").toString("utf8"))
+      .join("");
+    assert.equal(decoded, tooLong);
+  });
 });
 
 describe("gmailFetchJson", () => {

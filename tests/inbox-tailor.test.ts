@@ -44,7 +44,7 @@ function plainMessage(text: string): unknown {
 
 function createMemoryKv(): InboxKv & { store: Map<string, string> } {
   const store = new Map<string, string>();
-  return {
+  const memory: InboxKv & { store: Map<string, string> } = {
     store,
     get: async (key) => store.get(key) ?? null,
     set: async (key, value, opts) => {
@@ -62,7 +62,10 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
       store.delete(key);
       return true;
     },
+    expireIfValue: async (key: string, value: string) =>
+      store.get(key) === value,
   };
+  return memory;
 }
 
 function mockPipelineSuccess(): void {
@@ -147,6 +150,26 @@ describe("tailorLabeledMessage", () => {
       assert.equal(result.status, "skipped-claimed");
     }
     assert.equal(chatSpy.mock.callCount(), 0);
+  });
+
+  it("stops when the claim expires while runTailorCore is running", async () => {
+    mock.method(tailorCvDeps, "chat", async () => {
+      memory.store.set(inboxClaimKey(ID), "replacement-token");
+      return {
+        content: strictCuratorJson(FIXTURE_CURATED),
+        usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+        model: "anthropic/sonnet",
+        finishReason: "stop",
+      };
+    });
+
+    const result = await tailorLabeledMessage(tailorCvDeps, {
+      messageId: ID,
+      message: plainMessage(JD),
+    });
+
+    assert.deepEqual(result, { ok: true, status: "skipped-claimed" });
+    assert.equal(memory.store.get(inboxClaimKey(ID)), "replacement-token");
   });
 
   it("strict-tailors an extracted JD without rate-limit, Bearer, or processed mark", async () => {

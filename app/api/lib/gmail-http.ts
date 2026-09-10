@@ -18,6 +18,8 @@ export function sanitizeMimeHeaderValue(value: string): string {
 }
 
 const RFC_2047_VALUE_CHUNK_BYTES = 39;
+const MIME_HEADER_LINE_LIMIT = 76;
+const SUBJECT_HEADER_PREFIX_LENGTH = "Subject: ".length;
 
 function mimeEncodedWordB(text: string): string {
   return `=?UTF-8?B?${Buffer.from(text, "utf8").toString("base64")}?=`;
@@ -29,7 +31,10 @@ export function encodeMimeHeaderValue(value: string): string {
   if (sanitized === "") {
     return sanitized;
   }
-  if (/^[\x20-\x7E]*$/.test(sanitized)) {
+  if (
+    /^[\x20-\x7E]*$/.test(sanitized) &&
+    sanitized.length <= MIME_HEADER_LINE_LIMIT - SUBJECT_HEADER_PREFIX_LENGTH
+  ) {
     return sanitized;
   }
   const chunks: string[] = [];

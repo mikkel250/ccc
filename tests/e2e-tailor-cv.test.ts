@@ -148,6 +148,28 @@ describe("writeSmokeArtifacts", () => {
     assert.ok(existsSync(paths.docxPath));
   });
 
+  it("removes a stale reply artifact when the current result has no reply text", async () => {
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const input = {
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "strict" as const,
+      coverLetter: undefined,
+      artifactDir: dir,
+    };
+    const first = await writeSmokeArtifacts({
+      ...input,
+      replyText: "Thanks for reaching out.",
+    });
+    assert.equal(existsSync(first.replyPath), true);
+
+    const second = await writeSmokeArtifacts(input);
+
+    assert.equal(existsSync(second.replyPath), false);
+  });
+
   it("surfaces write failures for curated JSON", async () => {
     const docx = await markdownToDocxBase64("# CV\n- bullet");
     const blocked = join(dir, "blocked");

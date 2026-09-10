@@ -39,6 +39,39 @@ describe("htmlToText", () => {
     assert.match(text, /visible/);
     assert.doesNotMatch(text, /SECRET_TRACKING_TOKEN/);
   });
+
+  it("drops inline display none declarations across spacing, case, and important variants", () => {
+    const variants = [
+      "display : none",
+      "DISPLAY: NONE",
+      "display:\tnone",
+      "color: red; display: none !important",
+      "display: block; display: NONE !IMPORTANT",
+    ];
+
+    for (const [index, style] of variants.entries()) {
+      const marker = `HIDDEN_STYLE_${index}`;
+      const text = htmlToText(
+        `<div style="${style}">${marker}<span>nested</span></div><p>visible</p>`
+      );
+      assert.doesNotMatch(text, new RegExp(marker), style);
+      assert.doesNotMatch(text, /nested/, style);
+      assert.match(text, /visible/, style);
+    }
+  });
+
+  it("keeps text when a later or important display declaration resolves visible", () => {
+    assert.match(
+      htmlToText('<div style="display:none; display:block">visible-later</div>'),
+      /visible-later/
+    );
+    assert.match(
+      htmlToText(
+        '<div style="display:none; display:block !important">visible-important</div>'
+      ),
+      /visible-important/
+    );
+  });
 });
 
 describe("extractGmailJobDescription", () => {

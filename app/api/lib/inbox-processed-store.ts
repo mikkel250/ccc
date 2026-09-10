@@ -21,6 +21,7 @@ export type InboxKv = {
     opts?: { nx?: boolean; ex?: number }
   ) => Promise<"OK" | null>;
   deleteIfValue: (key: string, value: string) => Promise<boolean>;
+  expireIfValue: (key: string, value: string, ttlSeconds: number) => Promise<boolean>;
 };
 
 export type ExtractUnprocessedResult =
@@ -32,6 +33,8 @@ export type ExtractUnprocessedResult =
 const MESSAGE_ID_RE = /^[A-Za-z0-9._-]+$/;
 const DELETE_IF_VALUE_SCRIPT =
   'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end';
+const EXPIRE_IF_VALUE_SCRIPT =
+  'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("expire", KEYS[1], ARGV[2]) else return 0 end';
 
 let injectedKv: InboxKv | null = null;
 
@@ -125,6 +128,20 @@ function kv(): InboxKv {
         timeoutMs
       );
       return deleted === 1;
+    },
+    expireIfValue: async (key, value, ttlSeconds) => {
+      const renewed = await withTimeout(
+        (signal) =>
+          evalRedisScript(
+            client,
+            EXPIRE_IF_VALUE_SCRIPT,
+            key,
+            [value, String(ttlSeconds)],
+            signal
+          ),
+        timeoutMs
+      );
+      return renewed === 1;
     },
   };
 }
@@ -261,6 +278,29 @@ export async function releaseInboxClaim(
     return { ok: false, error: "Failed to release inbox claim" };
   }
   return { ok: true };
+}
+
+export async function renewInboxClaim(
+  messageId: string,
+  token: string
+): Promise<
+  | { ok: true; renewed: boolean }
+  | { ok: false; error: string }
+> {
+  const parsed = parseInboxMessageId(messageId);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  try {
+    const renewed = await kv().expireIfValue(
+      inboxClaimKey(parsed.messageId),
+      token,
+      getInboxClaimTtlSeconds()
+    );
+    return { ok: true, renewed };
+  } catch {
+    return { ok: false, error: "Failed to renew inbox claim" };
+  }
 }
 
 export async function extractUnprocessedInboxMessage(

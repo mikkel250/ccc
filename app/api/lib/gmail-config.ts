@@ -26,6 +26,20 @@ function requireEnv(key: string): string {
   return value;
 }
 
+function requireHttpsUrl(key: string, defaultValue: string): string {
+  const value = getEnvString(key, defaultValue)!;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new ServiceError(`${key} must be a valid HTTPS URL`);
+  }
+  if (parsed.protocol !== "https:") {
+    throw new ServiceError(`${key} must use https:`);
+  }
+  return value;
+}
+
 export function getGmailClientId(): string {
   return requireEnv("GMAIL_CLIENT_ID");
 }
@@ -47,11 +61,11 @@ export function getGmailOauthAuthUrl(): string {
 }
 
 export function getGmailOauthTokenUrl(): string {
-  return getEnvString("GMAIL_OAUTH_TOKEN_URL", DEFAULT_OAUTH_TOKEN_URL)!;
+  return requireHttpsUrl("GMAIL_OAUTH_TOKEN_URL", DEFAULT_OAUTH_TOKEN_URL);
 }
 
 export function getGmailApiBaseUrl(): string {
-  return getEnvString("GMAIL_API_BASE_URL", DEFAULT_GMAIL_API_BASE_URL)!;
+  return requireHttpsUrl("GMAIL_API_BASE_URL", DEFAULT_GMAIL_API_BASE_URL);
 }
 
 export function getGmailOauthScope(): string {

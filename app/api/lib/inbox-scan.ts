@@ -11,6 +11,7 @@ import {
   isInboxProcessed,
   markInboxProcessed,
   releaseInboxClaim,
+  renewInboxClaim,
 } from "./inbox-processed-store";
 import { tailorLabeledMessage } from "./inbox-tailor";
 import type { TailorPipelineDeps } from "./tailor-pipeline";
@@ -118,6 +119,18 @@ async function scanOneMessage(params: {
         status: "tailor-failed",
         error: tailored.error,
       };
+    }
+    const renewed = await renewInboxClaim(messageId, tailored.claimToken);
+    if (!renewed.ok) {
+      await releaseInboxClaim(messageId, tailored.claimToken);
+      return {
+        messageId,
+        status: "draft-failed",
+        error: renewed.error,
+      };
+    }
+    if (!renewed.renewed) {
+      return { messageId, status: "skipped-claimed" };
     }
     const drafted = await ensureReplyDraft({
       sourceMessage: fetched.message,

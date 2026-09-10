@@ -141,6 +141,7 @@ async function postTokenRequest(
   try {
     response = await fetchImpl(tokenUrl, {
       method: "POST",
+      redirect: "error",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
       signal: AbortSignal.timeout(getGmailHttpTimeoutMs()),
@@ -247,6 +248,7 @@ export async function refreshGmailAccessToken(params?: {
   try {
     response = await fetchImpl(tokenUrl, {
       method: "POST",
+      redirect: "error",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
       signal: AbortSignal.timeout(getGmailHttpTimeoutMs()),

@@ -23,6 +23,7 @@ import {
   writeFileSync,
   readdirSync,
   realpathSync,
+  unlinkSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -166,8 +167,13 @@ export async function writeSmokeArtifacts(
   if (shouldWriteReplyText(input.curationMode, input.replyText)) {
     writeFileSync(paths.replyPath, input.replyText.trim(), "utf8");
     console.log(`Wrote ${paths.replyPath}`);
-  } else if (input.curationMode === "strict") {
-    console.warn("Reply text missing or empty for strict run, skipping reply file");
+  } else {
+    if (existsSync(paths.replyPath)) {
+      unlinkSync(paths.replyPath);
+    }
+    if (input.curationMode === "strict") {
+      console.warn("Reply text missing or empty for strict run, skipping reply file");
+    }
   }
 
   return paths;
