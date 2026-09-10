@@ -3,11 +3,13 @@ import assert from "node:assert/strict";
 import { ServiceError } from "../app/api/lib/errors";
 import {
   getGmailAuthBindHost,
+  getGmailApiBaseUrl,
   getGmailAuthTimeoutMs,
   getGmailClientId,
   getGmailHttpTimeoutMs,
   getGmailListMaxResults,
   getGmailOauthScope,
+  getGmailOauthTokenUrl,
   getGmailRefreshToken,
 } from "../app/api/lib/gmail-config";
 import {
@@ -27,6 +29,7 @@ const KEYS = [
   "GMAIL_LIST_MAX_RESULTS",
   "GMAIL_LIST_MAX_RESULTS_LIMIT",
   "GMAIL_OAUTH_TOKEN_URL",
+  "GMAIL_API_BASE_URL",
   "GMAIL_HTTP_TIMEOUT_MS",
   "GMAIL_AUTH_TIMEOUT_MS",
 ] as const;
@@ -72,6 +75,27 @@ describe("gmail-config", () => {
       getGmailOauthScope(),
       "https://www.googleapis.com/auth/gmail.modify"
     );
+  });
+
+  it("preserves the default HTTPS Gmail endpoint URLs", () => {
+    delete process.env.GMAIL_OAUTH_TOKEN_URL;
+    delete process.env.GMAIL_API_BASE_URL;
+    assert.equal(
+      getGmailOauthTokenUrl(),
+      "https://oauth2.googleapis.com/token"
+    );
+    assert.equal(
+      getGmailApiBaseUrl(),
+      "https://gmail.googleapis.com/gmail/v1"
+    );
+  });
+
+  it("rejects non-HTTPS and invalid Gmail endpoint URLs", () => {
+    process.env.GMAIL_OAUTH_TOKEN_URL = "http://oauth.example.test/token";
+    assert.throws(() => getGmailOauthTokenUrl(), /GMAIL_OAUTH_TOKEN_URL.*HTTPS/);
+
+    process.env.GMAIL_API_BASE_URL = "not a URL";
+    assert.throws(() => getGmailApiBaseUrl(), /GMAIL_API_BASE_URL.*HTTPS/);
   });
 
   it("rejects a non-loopback GMAIL_AUTH_BIND_HOST", () => {
@@ -219,6 +243,21 @@ describe("gmail-oauth", () => {
       assert.match(result.error, /HTTP 401/);
       assert.doesNotMatch(result.error, /secret-leak/);
     }
+  });
+
+  it("rejects token redirects with the normalized request error", async () => {
+    let redirect: RequestRedirect | undefined;
+    const result = await refreshGmailAccessToken({
+      fetchImpl: async (_input, init) => {
+        redirect = init?.redirect;
+        throw new TypeError("redirect rejected");
+      },
+    });
+    assert.equal(redirect, "error");
+    assert.deepEqual(result, {
+      ok: false,
+      error: "Gmail token request failed",
+    });
   });
 
   it("fails closed when the token POST is aborted by the HTTP timeout", async () => {

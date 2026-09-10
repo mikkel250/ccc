@@ -66,11 +66,17 @@ function requestUrl(req: IncomingMessage, host: string, port: number): URL {
   return new URL(req.url ?? "/", gmailAuthRedirectUri(host, port));
 }
 
+type GmailAuthListener = {
+  port: number;
+  close: () => Promise<void>;
+  wait: () => Promise<URL>;
+};
+
 /** Run the one-shot local OAuth flow and print the resulting refresh token. */
 export async function runGmailAuthCli(params?: {
   fetchImpl?: typeof fetch;
   openUrl?: (url: string) => void;
-  listen?: (host: string) => Promise<{ port: number; close: () => Promise<void>; wait: () => Promise<URL> }>;
+  listen?: (host: string) => Promise<GmailAuthListener>;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const host = getGmailAuthBindHost();
   const clientId = getGmailClientId();
@@ -82,8 +88,13 @@ export async function runGmailAuthCli(params?: {
     params?.listen ??
     (async (bindHost: string) => {
       const server = createServer();
-      await new Promise<void>((resolve) => {
-        server.listen(0, bindHost, () => resolve());
+      await new Promise<void>((resolve, reject) => {
+        const rejectStartup = (error: Error) => reject(error);
+        server.once("error", rejectStartup);
+        server.listen(0, bindHost, () => {
+          server.off("error", rejectStartup);
+          resolve();
+        });
       });
       const address = server.address();
       if (address === null || typeof address === "string") {
@@ -111,22 +122,24 @@ export async function runGmailAuthCli(params?: {
       };
     });
 
-  const listener = await waiter(host);
-  const redirectUri = gmailAuthRedirectUri(host, listener.port);
-  const authorizeUrl = buildGmailAuthUrl({
-    clientId,
-    redirectUri,
-    scope,
-    state,
-    authUrl: authUrlBase,
-  });
-  console.log("Open this URL to authorize Gmail:");
-  console.log(authorizeUrl);
-  params?.openUrl?.(authorizeUrl);
-
+  let listener: GmailAuthListener | undefined;
+  let redirectUri: string;
   let callbackUrl: URL;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    listener = await waiter(host);
+    redirectUri = gmailAuthRedirectUri(host, listener.port);
+    const authorizeUrl = buildGmailAuthUrl({
+      clientId,
+      redirectUri,
+      scope,
+      state,
+      authUrl: authUrlBase,
+    });
+    console.log("Open this URL to authorize Gmail:");
+    console.log(authorizeUrl);
+    params?.openUrl?.(authorizeUrl);
+
     callbackUrl = await Promise.race([
       listener.wait(),
       new Promise<URL>((_, reject) => {
@@ -136,7 +149,7 @@ export async function runGmailAuthCli(params?: {
       }),
     ]);
   } catch (error: unknown) {
-    await listener.close().catch(() => undefined);
+    await listener?.close().catch(() => undefined);
     const message =
       error instanceof Error ? error.message : "Gmail auth timed out";
     console.error(message);

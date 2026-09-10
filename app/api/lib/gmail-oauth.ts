@@ -114,6 +114,7 @@ async function postTokenRequest(
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
+      redirect: "error",
       signal: AbortSignal.timeout(getGmailHttpTimeoutMs()),
     });
   } catch {

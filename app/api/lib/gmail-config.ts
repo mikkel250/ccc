@@ -24,6 +24,19 @@ function requireEnv(key: string): string {
   return value;
 }
 
+/** Validate an outbound endpoint before credentials can be sent to it. */
+function requireHttpsUrl(key: string, fallback: string): string {
+  const raw = getEnvString(key, fallback)!;
+  try {
+    if (new URL(raw).protocol === "https:") {
+      return raw;
+    }
+  } catch {
+    // Use the same configuration error for invalid and insecure URLs.
+  }
+  throw new ServiceError(`${key} must be a valid HTTPS URL`);
+}
+
 /** Return the OAuth client ID configured for the Gmail integration. */
 export function getGmailClientId(): string {
   return requireEnv("GMAIL_CLIENT_ID");
@@ -51,12 +64,12 @@ export function getGmailOauthAuthUrl(): string {
 
 /** Return the token endpoint for Gmail OAuth exchanges and refreshes. */
 export function getGmailOauthTokenUrl(): string {
-  return getEnvString("GMAIL_OAUTH_TOKEN_URL", DEFAULT_OAUTH_TOKEN_URL)!;
+  return requireHttpsUrl("GMAIL_OAUTH_TOKEN_URL", DEFAULT_OAUTH_TOKEN_URL);
 }
 
 /** Return the base URL used for Gmail REST API requests. */
 export function getGmailApiBaseUrl(): string {
-  return getEnvString("GMAIL_API_BASE_URL", DEFAULT_GMAIL_API_BASE_URL)!;
+  return requireHttpsUrl("GMAIL_API_BASE_URL", DEFAULT_GMAIL_API_BASE_URL);
 }
 
 /** Return the OAuth scope requested by the local authorization flow. */

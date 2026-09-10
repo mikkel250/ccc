@@ -156,6 +156,26 @@ describe("listLabeledRecruiterMail", () => {
     }
   });
 
+  it("rejects a non-HTTPS Gmail API base before sending a bearer token", async () => {
+    process.env.GMAIL_API_BASE_URL = "http://gmail.example.test/gmail/v1";
+    let gmailRequestMade = false;
+    await assert.rejects(
+      () =>
+        listLabeledRecruiterMail({
+          fetchImpl: async (input) => {
+            const url = String(input);
+            if (url.includes("/token")) {
+              return jsonResponse({ access_token: "access" });
+            }
+            gmailRequestMade = true;
+            return jsonResponse({ labels: [] });
+          },
+        }),
+      /GMAIL_API_BASE_URL.*HTTPS/
+    );
+    assert.equal(gmailRequestMade, false);
+  });
+
   it("fails closed when a Gmail list GET is aborted by the HTTP timeout", async () => {
     process.env.GMAIL_HTTP_TIMEOUT_MS = "20";
     const result = await listLabeledRecruiterMail({

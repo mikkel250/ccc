@@ -84,6 +84,21 @@ describe("gmail-auth CLI helpers", () => {
       else process.env.GMAIL_AUTH_BIND_HOST = previousBind;
     }
   });
+
+  it("returns ok:false when the auth listener fails to start", async () => {
+    process.env.GMAIL_CLIENT_ID = "client-id";
+    process.env.GMAIL_CLIENT_SECRET = "client-secret";
+    process.env.GMAIL_AUTH_BIND_HOST = "127.0.0.1";
+    const result = await runGmailAuthCli({
+      listen: async () => {
+        throw new Error("Gmail auth listener failed to bind");
+      },
+    });
+    assert.deepEqual(result, {
+      ok: false,
+      error: "Gmail auth listener failed to bind",
+    });
+  });
 });
 
 describe("gmail-list CLI", () => {
