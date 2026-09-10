@@ -2,6 +2,7 @@ import { afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   mergeParityStatus,
+  parseParityStatusJson,
   parseSmokeParityModels,
   pendingParityModels,
   redactCuratedForArtifact,
@@ -189,5 +190,42 @@ describe("mergeParityStatus", () => {
     assert.deepEqual(pendingParityModels(catalog, status), [
       "deepseek/deepseek-v4-pro",
     ]);
+  });
+});
+
+describe("parseParityStatusJson", () => {
+  it("accepts a well-formed on-disk parity status object", () => {
+    const status = parseParityStatusJson({
+      cells: {
+        "anthropic/sonnet": { ok: true },
+        "deepseek/deepseek-v4-pro": { ok: false },
+      },
+    });
+    assert.equal(status.cells["anthropic/sonnet"]?.ok, true);
+    assert.equal(status.cells["deepseek/deepseek-v4-pro"]?.ok, false);
+  });
+
+  it("rejects non-object roots", () => {
+    assert.throws(() => parseParityStatusJson(null), /Invalid parity-status/);
+    assert.throws(() => parseParityStatusJson([]), /Invalid parity-status/);
+    assert.throws(() => parseParityStatusJson("bad"), /Invalid parity-status/);
+  });
+
+  it("rejects malformed cells containers and cell shapes", () => {
+    assert.throws(
+      () => parseParityStatusJson({ cells: "bad" }),
+      /Invalid parity-status/
+    );
+    assert.throws(
+      () => parseParityStatusJson({ cells: { "anthropic/sonnet": null } }),
+      /Invalid parity-status/
+    );
+    assert.throws(
+      () =>
+        parseParityStatusJson({
+          cells: { "anthropic/sonnet": { ok: "yes" } },
+        }),
+      /Invalid parity-status/
+    );
   });
 });
