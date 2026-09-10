@@ -109,4 +109,27 @@ describe("extractGmailJobDescription", () => {
       assert.match(result.error, /no usable text/);
     }
   });
+
+  it("rejects a non-object Gmail message", () => {
+    const result = extractGmailJobDescription("not-an-object");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /not an object/);
+    }
+  });
+
+  it("treats empty or whitespace body data as missing text", () => {
+    for (const data of ["", "   "]) {
+      const result = extractGmailJobDescription({
+        payload: {
+          mimeType: "text/plain",
+          body: { data },
+        },
+      });
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.match(result.error, /no usable text/);
+      }
+    }
+  });
 });

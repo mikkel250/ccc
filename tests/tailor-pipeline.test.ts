@@ -278,6 +278,31 @@ describe("buildTailorResponse — pipeline orchestration", () => {
     assert.equal(checkRateLimitSpy.mock.callCount(), 0);
   });
 
+  it("ignores valid IPs outside the rightmost XFF entry window", async () => {
+    const checkRateLimitSpy = mock.method(tailorCvDeps, "checkRateLimit");
+    const beyondWindow = [
+      "198.51.100.42",
+      "pad1",
+      "pad2",
+      "pad3",
+      "pad4",
+      "pad5",
+    ].join(", ");
+    const result = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(
+        VALID_BODY,
+        authHeaders({ "x-forwarded-for": beyondWindow })
+      )
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 400);
+      assert.equal(result.error, "Cannot determine client IP");
+    }
+    assert.equal(checkRateLimitSpy.mock.callCount(), 0);
+  });
+
   // --- Rate limiting ---
 
   it("returns rate limit error when RateLimitError is thrown", async () => {
