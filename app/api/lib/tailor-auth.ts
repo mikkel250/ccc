@@ -74,7 +74,7 @@ function bearerTokenEquals(presented: string, expected: string): boolean {
   return timingSafeEqual(a, b);
 }
 
-function parseBearerToken(authorizationHeader: string | null): string | null {
+export function parseBearerToken(authorizationHeader: string | null): string | null {
   if (!authorizationHeader) return null;
   const match = /^Bearer\s+(\S+)\s*$/i.exec(authorizationHeader.trim());
   return match?.[1] ?? null;
@@ -82,7 +82,8 @@ function parseBearerToken(authorizationHeader: string | null): string | null {
 
 /**
  * Authenticate a tailor request. Call before master load / LLM work that should
- * not run for anonymous callers. Rate limiting runs before this check.
+ * not run for anonymous callers. Rate limiting runs before this check; the
+ * secret bucket is keyed on the presented token, not the configured secret.
  */
 export function authenticateTailorRequest(
   authorizationHeader: string | null

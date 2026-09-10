@@ -32,7 +32,7 @@ Dual Upstash sliding-window ceilings (R21):
 | Per shared-secret hash | `RATE_LIMIT_SECRET_MAX` | `floor(RATE_LIMIT_MAX / 2)` (min 1) |
 | Window | `RATE_LIMIT_WINDOW` | `60000` ms |
 
-Success responses return the **more restrictive** `remaining` / `resetTime` of the two buckets. `sessionId` does not key rate limits.
+Success responses return the **more restrictive** `remaining` / `resetTime` of the two buckets. `sessionId` does not key rate limits. The secret bucket is keyed on a hash of the **presented** Bearer token (or a dedicated missing-auth / bypass sentinel), not the configured `TAILOR_API_KEY`, so failed auth cannot exhaust the legitimate key's quota.
 
 ```json
 HTTP 429
