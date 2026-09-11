@@ -694,4 +694,29 @@ describe("runTailorCore — in-process curator path", () => {
       else process.env.TAILOR_MODEL = previous;
     }
   });
+
+  it("fails closed when a live Langfuse strict prompt still requests bare CV JSON", async () => {
+    mock.method(tailorCvDeps, "getCuratorPrompt", async () => ({
+      systemPrompt: "Emit curated JSON only. {{MASTER_CV_JSON}}",
+      langfusePrompt: {
+        name: "cv-curator-json",
+        version: 3,
+      },
+    }));
+    const chatSpy = mock.method(tailorCvDeps, "chat", async () => {
+      throw new Error("chat must not run for a stale Langfuse prompt");
+    });
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.match(result.error, /misconfigured/i);
+    }
+    assert.equal(chatSpy.mock.callCount(), 0);
+  });
 });

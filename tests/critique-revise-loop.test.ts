@@ -49,7 +49,8 @@ describe("tailor pipeline — single curator pass", () => {
   function mockSingleCuratorPass(content: string = strictCuratorJson(FIXTURE_CURATED)) {
     mock.method(tailorCvDeps, "requireMasterCv", () => FIXTURE_CURATED);
     mock.method(tailorCvDeps, "getCuratorPrompt", async () => ({
-      systemPrompt: "Curate with {{MASTER_CV_JSON}} and {{CURATION_MODE_POLICY}}",
+      systemPrompt:
+        "Curate with {{MASTER_CV_JSON}} and {{CURATION_MODE_POLICY}} using curated_cv and reply_text",
       langfusePrompt: { name: "cv-curator-json", version: 1 },
     }));
     mock.method(tailorCvDeps, "applyCurationModePolicy", (p: string) =>

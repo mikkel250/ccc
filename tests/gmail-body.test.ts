@@ -14,6 +14,13 @@ describe("htmlToText", () => {
     assert.equal(htmlToText("<p>Need a GM &amp; chef</p>"), "Need a GM & chef");
   });
 
+  it("decodes hexadecimal and named HTML entities", () => {
+    assert.equal(
+      htmlToText("<p>Need a GM&#x2019;s chef &mdash; on-site</p>"),
+      "Need a GM\u2019s chef \u2014 on-site"
+    );
+  });
+
   it("drops comments, head, and hidden inner text", () => {
     const html = [
       "<html><head><title>Tracking pixel</title></head>",
@@ -35,6 +42,14 @@ describe("htmlToText", () => {
   it("drops hidden text that contains a nested same-name tag", () => {
     const text = htmlToText(
       '<div style="display:none">A<div>B</div>SECRET_TRACKING_TOKEN</div>visible'
+    );
+    assert.match(text, /visible/);
+    assert.doesNotMatch(text, /SECRET_TRACKING_TOKEN/);
+  });
+
+  it("drops hidden text that contains a nested differently named tag", () => {
+    const text = htmlToText(
+      '<div style="display:none">A<span>B</span><script>SECRET_TRACKING_TOKEN</script></div>visible'
     );
     assert.match(text, /visible/);
     assert.doesNotMatch(text, /SECRET_TRACKING_TOKEN/);

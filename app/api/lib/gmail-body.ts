@@ -20,6 +20,51 @@ function decodeGmailBodyData(data: unknown): string | undefined {
 
 const WHOLE_TAG_SKIP = new Set(["head", "script", "style"]);
 
+/** Named entities Gmail HTML commonly emits; numeric (dec/hex) covers the rest. */
+const NAMED_HTML_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+  mdash: "\u2014",
+  ndash: "\u2013",
+  rsquo: "\u2019",
+  lsquo: "\u2018",
+  rdquo: "\u201D",
+  ldquo: "\u201C",
+  hellip: "\u2026",
+  bull: "\u2022",
+  middot: "\u00B7",
+};
+
+function codePointToChar(code: number): string | undefined {
+  if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) {
+    return undefined;
+  }
+  if (code >= 0xd800 && code <= 0xdfff) {
+    return undefined;
+  }
+  return String.fromCodePoint(code);
+}
+
+function decodeHtmlEntities(text: string): string {
+  return text.replace(
+    /&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]+);/gi,
+    (entity, body: string) => {
+      const inner = body.toLowerCase();
+      if (inner.startsWith("#x")) {
+        return codePointToChar(Number.parseInt(inner.slice(2), 16)) ?? entity;
+      }
+      if (inner.startsWith("#")) {
+        return codePointToChar(Number(inner.slice(1))) ?? entity;
+      }
+      return NAMED_HTML_ENTITIES[inner] ?? entity;
+    }
+  );
+}
+
 function isHiddenOpeningTag(raw: string): boolean {
   return (
     /\bhidden\b/i.test(raw) ||
@@ -75,20 +120,13 @@ function omitHiddenHtml(html: string): string {
 
 export function htmlToText(html: string): string {
   let withoutBlocks = omitHiddenHtml(html);
-  withoutBlocks = withoutBlocks
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<\/div>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#(\d+);/g, (_m, digits: string) => {
-      const code = Number(digits);
-      return Number.isFinite(code) ? String.fromCharCode(code) : "";
-    });
+  withoutBlocks = decodeHtmlEntities(
+    withoutBlocks
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n")
+      .replace(/<\/div>/gi, "\n")
+      .replace(/<[^>]+>/g, " ")
+  );
   return withoutBlocks.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/[ \t]{2,}/g, " ").trim();
 }
 

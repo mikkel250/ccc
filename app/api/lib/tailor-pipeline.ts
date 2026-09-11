@@ -24,7 +24,10 @@ import {
   getTailorRequestMaxBytes,
   getTailorResponseMaxBytes,
 } from "./cv-schema";
-import { CURATOR_LANGFUSE_PROMPT_NAME } from "./curator-prompt";
+import {
+  CURATOR_LANGFUSE_PROMPT_NAME,
+  strictPromptRequestsReplyWrapper,
+} from "./curator-prompt";
 import {
   isCuratedCvWrapper,
   isFlexibleWrapper,
@@ -369,6 +372,13 @@ export async function runTailorCore(
   const masterCv = deps.requireMasterCv();
   const { systemPrompt: promptText, langfusePrompt } =
     await deps.getCuratorPrompt(curationMode);
+  if (
+    curationMode === "strict" &&
+    langfusePrompt?.isFallback !== true &&
+    !strictPromptRequestsReplyWrapper(promptText)
+  ) {
+    return { ok: false, error: "Curator prompt misconfigured", status: 503 };
+  }
   const modePrompt = deps.applyCurationModePolicy(promptText, curationMode);
   const compiled = deps.compileCuratorPrompt(modePrompt, masterCv);
   if (!compiled.ok) {

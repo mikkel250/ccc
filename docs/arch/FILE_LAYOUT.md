@@ -36,10 +36,10 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── cv-prompt.ts      # Legacy markdown tailor prompt (not hot path)
 │           ├── redis.ts          # Shared Upstash Redis client singleton
 │           ├── inbox-config.ts   # Inbox Redis prefix / claim+processed TTLs
-│           ├── inbox-processed-store.ts # SET NX claim vs terminal processed mark
+│           ├── inbox-processed-store.ts # SET NX claim vs token-owned processed mark
 │           ├── inbox-tailor.ts   # tailorLabeledMessage — claim+extract then runTailorCore
 │           ├── gmail-body.ts     # Gmail payload → JD (text/plain else html-to-text)
-│           ├── tailor-pipeline.ts # HTTP adapter + shared runTailorCore (no Bearer/rate-limit)
+│           ├── tailor-pipeline.ts # HTTP adapter (Bearer + rate-limit) + runTailorCore (no Bearer/rate-limit)
 │           ├── tailor-cv-deps.ts # Mockable pipeline dep bag
 │           ├── rate-limit.ts     # Dual IP + secret-hash rate limiter
 │           ├── tailor-cv-validation.ts  # Request body validation

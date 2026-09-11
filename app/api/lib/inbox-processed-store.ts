@@ -21,19 +21,51 @@ export type InboxKv = {
     opts?: { nx?: boolean; ex?: number }
   ) => Promise<"OK" | null>;
   deleteIfValue: (key: string, value: string) => Promise<boolean>;
+  markProcessedIfOwned: (
+    claimKey: string,
+    processedKey: string,
+    token: string,
+    ttlSeconds: number
+  ) => Promise<boolean>;
 };
 
 export type InboxClaimOutcome = "won" | "lost" | "processed";
 
+export type InboxClaimResult =
+  | { ok: true; outcome: "won"; token: string }
+  | { ok: true; outcome: "lost" }
+  | { ok: true; outcome: "processed" }
+  | { ok: false; error: string };
+
 export type ExtractUnprocessedResult =
-  | { ok: true; status: "extracted"; jobDescription: string }
+  | { ok: true; status: "extracted"; jobDescription: string; claimToken: string }
   | { ok: true; status: "skipped-processed" }
   | { ok: true; status: "skipped-claimed" }
   | { ok: false; error: string };
 
+export const INBOX_REDIS_TIMEOUT_ERROR = "Inbox Redis timed out";
+export const INBOX_REDIS_UNAVAILABLE_ERROR = "Inbox Redis unavailable";
+export const INBOX_CLAIM_TOKEN_REQUIRED_ERROR = "Inbox claim token is required";
+export const INBOX_CLAIM_LOST_ERROR = "Inbox claim is no longer owned";
+
 const MESSAGE_ID_RE = /^[A-Za-z0-9._-]+$/;
 const DELETE_IF_VALUE_SCRIPT =
   'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end';
+const MARK_PROCESSED_IF_OWNED_SCRIPT = `
+local current = redis.call("get", KEYS[1])
+if current ~= false and current ~= ARGV[1] then
+  return 0
+end
+if tonumber(ARGV[2]) > 0 then
+  redis.call("set", KEYS[2], "1", "EX", ARGV[2])
+else
+  redis.call("set", KEYS[2], "1")
+end
+if current == ARGV[1] then
+  redis.call("del", KEYS[1])
+end
+return 1
+`;
 
 let injectedKv: InboxKv | null = null;
 
@@ -82,11 +114,42 @@ function kv(): InboxKv {
       );
       return deleted === 1;
     },
+    markProcessedIfOwned: async (claimKey, processedKey, token, ttlSeconds) => {
+      const marked = await withTimeout(
+        client.eval<[string, string], number>(
+          MARK_PROCESSED_IF_OWNED_SCRIPT,
+          [claimKey, processedKey],
+          [token, String(ttlSeconds)]
+        ),
+        timeoutMs
+      );
+      return marked === 1;
+    },
   };
 }
 
 function isInboxRedisTimeout(err: unknown): boolean {
-  return err instanceof Error && err.message === "Inbox Redis timed out";
+  return err instanceof Error && err.message === INBOX_REDIS_TIMEOUT_ERROR;
+}
+
+function inboxRedisFailure(err: unknown): { ok: false; error: string } {
+  if (isInboxRedisTimeout(err)) {
+    return { ok: false, error: INBOX_REDIS_TIMEOUT_ERROR };
+  }
+  if (err instanceof Error) {
+    return { ok: false, error: INBOX_REDIS_UNAVAILABLE_ERROR };
+  }
+  throw err;
+}
+
+async function callKv<T>(
+  op: () => Promise<T>
+): Promise<{ ok: true; value: T } | { ok: false; error: string }> {
+  try {
+    return { ok: true, value: await op() };
+  } catch (err) {
+    return inboxRedisFailure(err);
+  }
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -96,7 +159,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
       promise,
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
-          reject(new Error("Inbox Redis timed out"));
+          reject(new Error(INBOX_REDIS_TIMEOUT_ERROR));
         }, timeoutMs);
       }),
     ]);
@@ -129,23 +192,32 @@ export function parseInboxMessageId(
   return { ok: true, messageId };
 }
 
-export async function isInboxProcessed(messageId: string): Promise<boolean> {
+export async function isInboxProcessed(
+  messageId: string
+): Promise<{ ok: true; processed: boolean } | { ok: false; error: string }> {
   const parsed = parseInboxMessageId(messageId);
   if (!parsed.ok) {
-    return false;
+    return { ok: true, processed: false };
   }
-  const value = await kv().get(inboxProcessedKey(parsed.messageId));
-  return value != null;
+  const got = await callKv(() => kv().get(inboxProcessedKey(parsed.messageId)));
+  if (!got.ok) {
+    return got;
+  }
+  return { ok: true, processed: got.value != null };
 }
 
 export async function claimInboxMessage(
   messageId: string
-): Promise<{ ok: true; outcome: InboxClaimOutcome } | { ok: false; error: string }> {
+): Promise<InboxClaimResult> {
   const parsed = parseInboxMessageId(messageId);
   if (!parsed.ok) {
     return parsed;
   }
-  if (await isInboxProcessed(parsed.messageId)) {
+  const already = await isInboxProcessed(parsed.messageId);
+  if (!already.ok) {
+    return already;
+  }
+  if (already.processed) {
     return { ok: true, outcome: "processed" };
   }
   const token = randomBytes(16).toString("hex");
@@ -161,54 +233,103 @@ export async function claimInboxMessage(
       });
     } catch (err) {
       if (!isInboxRedisTimeout(err)) {
-        throw err;
+        return inboxRedisFailure(err);
       }
     }
     if (set === "OK") {
       claimed = true;
       break;
     }
-    const existing = await store.get(claimKey);
-    if (existing === token) {
+    const existing = await callKv(() => store.get(claimKey));
+    if (!existing.ok) {
+      return existing;
+    }
+    if (existing.value === token) {
       claimed = true;
       break;
     }
-    if (existing != null) {
+    if (existing.value != null) {
       break;
     }
   }
   if (claimed) {
     const processed = await isInboxProcessed(parsed.messageId);
-    const currentClaim = await store.get(claimKey);
-    if (processed) {
-      if (currentClaim === token) {
-        await store.deleteIfValue(claimKey, token);
+    if (!processed.ok) {
+      return processed;
+    }
+    const currentClaim = await callKv(() => store.get(claimKey));
+    if (!currentClaim.ok) {
+      return currentClaim;
+    }
+    if (processed.processed) {
+      if (currentClaim.value === token) {
+        const released = await callKv(() => store.deleteIfValue(claimKey, token));
+        if (!released.ok) {
+          return released;
+        }
       }
       return { ok: true, outcome: "processed" };
     }
-    return {
-      ok: true,
-      outcome: currentClaim === token ? "won" : "lost",
-    };
+    if (currentClaim.value === token) {
+      return { ok: true, outcome: "won", token };
+    }
+    return { ok: true, outcome: "lost" };
   }
-  if (await isInboxProcessed(parsed.messageId)) {
+  const lateProcessed = await isInboxProcessed(parsed.messageId);
+  if (!lateProcessed.ok) {
+    return lateProcessed;
+  }
+  if (lateProcessed.processed) {
     return { ok: true, outcome: "processed" };
   }
   return { ok: true, outcome: "lost" };
 }
 
-export async function markInboxProcessed(
-  messageId: string
+export async function releaseInboxClaim(
+  messageId: string,
+  claimToken: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const parsed = parseInboxMessageId(messageId);
   if (!parsed.ok) {
     return parsed;
   }
+  if (typeof claimToken !== "string" || claimToken === "") {
+    return { ok: false, error: INBOX_CLAIM_TOKEN_REQUIRED_ERROR };
+  }
+  const released = await callKv(() =>
+    kv().deleteIfValue(inboxClaimKey(parsed.messageId), claimToken)
+  );
+  if (!released.ok) {
+    return released;
+  }
+  return { ok: true };
+}
+
+export async function markInboxProcessed(
+  messageId: string,
+  claimToken: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = parseInboxMessageId(messageId);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  if (typeof claimToken !== "string" || claimToken === "") {
+    return { ok: false, error: INBOX_CLAIM_TOKEN_REQUIRED_ERROR };
+  }
   const ttl = getInboxProcessedTtlSeconds();
-  const opts = ttl > 0 ? { ex: ttl } : undefined;
-  const set = await kv().set(inboxProcessedKey(parsed.messageId), "1", opts);
-  if (set !== "OK") {
-    return { ok: false, error: "Failed to persist processed messageId" };
+  const marked = await callKv(() =>
+    kv().markProcessedIfOwned(
+      inboxClaimKey(parsed.messageId),
+      inboxProcessedKey(parsed.messageId),
+      claimToken,
+      ttl
+    )
+  );
+  if (!marked.ok) {
+    return marked;
+  }
+  if (!marked.value) {
+    return { ok: false, error: INBOX_CLAIM_LOST_ERROR };
   }
   return { ok: true };
 }
@@ -229,11 +350,13 @@ export async function extractUnprocessedInboxMessage(
   }
   const extracted = extractGmailJobDescription(message);
   if (!extracted.ok) {
+    await releaseInboxClaim(messageId, claimed.token);
     return extracted;
   }
   return {
     ok: true,
     status: "extracted",
     jobDescription: extracted.jobDescription,
+    claimToken: claimed.token,
   };
 }

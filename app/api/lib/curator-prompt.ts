@@ -15,6 +15,12 @@ import { initLangFuse } from "./tracers/langfuse";
 export const CURATOR_LANGFUSE_PROMPT_NAME = "cv-curator-json";
 export const FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME = "cv-curator-flexible-pivot";
 export const MASTER_CV_JSON_PLACEHOLDER = "{{MASTER_CV_JSON}}";
+
+/** Live Langfuse strict prompts must request the wrapper, not bare CV JSON. */
+export function strictPromptRequestsReplyWrapper(promptText: string): boolean {
+  return promptText.includes("reply_text") && promptText.includes("curated_cv");
+}
+
 /** Langfuse prompt cache TTL (seconds). Default 300. */
 const CURATOR_PROMPT_CACHE_TTL_SECONDS = Math.max(
   0,

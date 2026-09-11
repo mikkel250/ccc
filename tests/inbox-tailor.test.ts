@@ -62,6 +62,17 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
       store.delete(key);
       return true;
     },
+    markProcessedIfOwned: async (claimKey, processedKey, token) => {
+      const current = store.get(claimKey);
+      if (current !== undefined && current !== token) {
+        return false;
+      }
+      store.set(processedKey, "1");
+      if (current === token) {
+        store.delete(claimKey);
+      }
+      return true;
+    },
   };
 }
 
@@ -109,7 +120,7 @@ describe("tailorLabeledMessage", () => {
   });
 
   it("skips a processed id without calling chat", async () => {
-    const marked = await markInboxProcessed(ID);
+    const marked = await markInboxProcessed(ID, "operator-token");
     assert.equal(marked.ok, true);
     const chatSpy = mock.method(tailorCvDeps, "chat", async () => {
       throw new Error("chat must not run for processed ids");
@@ -193,6 +204,7 @@ describe("tailorLabeledMessage", () => {
         assert.equal(result.body.curationMode, "strict");
         assert.equal("remaining" in result.body, false);
         assert.equal("resetTime" in result.body, false);
+        assert.equal(memory.store.get(inboxClaimKey(ID)), result.claimToken);
       }
     }
   });
@@ -216,6 +228,7 @@ describe("tailorLabeledMessage", () => {
       assert.match(result.error, /reply_text/);
     }
     assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
   });
 
   it("rejects a JD longer than TAILOR_JD_MAX_CHARS without calling chat", async () => {
@@ -235,10 +248,29 @@ describe("tailorLabeledMessage", () => {
         assert.match(result.error, /size limit/i);
       }
       assert.equal(chatSpy.mock.callCount(), 0);
-      assert.equal(memory.store.has(inboxClaimKey(ID)), true);
+      assert.equal(memory.store.has(inboxClaimKey(ID)), false);
     } finally {
       if (previous === undefined) delete process.env.TAILOR_JD_MAX_CHARS;
       else process.env.TAILOR_JD_MAX_CHARS = previous;
     }
+  });
+
+  it("returns 503 when inbox Redis times out during claim", async () => {
+    memory.get = async () => {
+      throw new Error("Inbox Redis timed out");
+    };
+    const chatSpy = mock.method(tailorCvDeps, "chat", async () => {
+      throw new Error("chat must not run when Redis times out");
+    });
+    const result = await tailorLabeledMessage(tailorCvDeps, {
+      messageId: ID,
+      message: plainMessage(JD),
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "Inbox Redis timed out");
+    }
+    assert.equal(chatSpy.mock.callCount(), 0);
   });
 });

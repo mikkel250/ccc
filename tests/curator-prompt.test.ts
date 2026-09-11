@@ -7,6 +7,7 @@ import {
   getCuratorPrompt,
   CURATOR_LANGFUSE_PROMPT_NAME,
   FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME,
+  strictPromptRequestsReplyWrapper,
 } from "../app/api/lib/curator-prompt";
 
 describe("curator-prompt", () => {
@@ -57,6 +58,19 @@ describe("curator-prompt", () => {
   it("compileCuratorPrompt fails closed when placeholder is missing", () => {
     const compiled = compileCuratorPrompt("no placeholder here", { name: "X" });
     assert.equal(compiled.ok, false);
+  });
+
+  it("strictPromptRequestsReplyWrapper rejects a bare-CV Langfuse prompt", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Emit curated JSON only. {{MASTER_CV_JSON}}"
+      ),
+      false
+    );
+    assert.equal(
+      strictPromptRequestsReplyWrapper(getCuratorPromptFallbackText()),
+      true
+    );
   });
 
   it("has flexible pivot Langfuse prompt name", () => {

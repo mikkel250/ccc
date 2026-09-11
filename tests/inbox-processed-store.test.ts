@@ -44,6 +44,17 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
       store.delete(key);
       return true;
     },
+    markProcessedIfOwned: async (claimKey, processedKey, token) => {
+      const current = store.get(claimKey);
+      if (current !== undefined && current !== token) {
+        return false;
+      }
+      store.set(processedKey, "1");
+      if (current === token) {
+        store.delete(claimKey);
+      }
+      return true;
+    },
   };
 }
 
@@ -90,7 +101,7 @@ describe("inbox processed store", () => {
   });
 
   it("skips extract after the processed mark", async () => {
-    const marked = await markInboxProcessed(ID);
+    const marked = await markInboxProcessed(ID, "operator-token");
     assert.equal(marked.ok, true);
     const result = await extractUnprocessedInboxMessage(ID, plainMessage("JD"));
     assert.equal(result.ok, true);
@@ -109,6 +120,8 @@ describe("inbox processed store", () => {
       assert.equal(first.status, "extracted");
       if (first.status === "extracted") {
         assert.equal(first.jobDescription, "Need a GM");
+        assert.equal(typeof first.claimToken, "string");
+        assert.equal(memory.store.get(inboxClaimKey(ID)), first.claimToken);
       }
     }
     assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
@@ -202,5 +215,65 @@ describe("inbox processed store", () => {
 
     assert.deepEqual(result, { ok: true, outcome: "processed" });
     assert.equal(memory.store.get(inboxClaimKey(ID)), "replacement-token");
+  });
+
+  it("returns a Redis error instead of throwing when processed GET times out", async () => {
+    const origGet = memory.get.bind(memory);
+    memory.get = async (key) => {
+      if (key === inboxProcessedKey(ID)) {
+        throw new Error("Inbox Redis timed out");
+      }
+      return origGet(key);
+    };
+    const result = await claimInboxMessage(ID);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error, "Inbox Redis timed out");
+    }
+  });
+
+  it("returns a Redis error when claim verification GET times out", async () => {
+    const origGet = memory.get.bind(memory);
+    memory.get = async (key) => {
+      if (key === inboxClaimKey(ID) && memory.store.has(key)) {
+        throw new Error("Inbox Redis timed out");
+      }
+      return origGet(key);
+    };
+    const result = await claimInboxMessage(ID);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error, "Inbox Redis timed out");
+    }
+  });
+
+  it("releases the claim when body extraction fails", async () => {
+    const result = await extractUnprocessedInboxMessage(ID, { payload: {} });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /no usable text/);
+    }
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+    assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
+  });
+
+  it("marks processed only while the claim token still owns the key", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+    const stolen = await markInboxProcessed(ID, "other-worker-token");
+    assert.equal(stolen.ok, false);
+    if (!stolen.ok) {
+      assert.match(stolen.error, /claim/i);
+    }
+    assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
+    assert.equal(memory.store.get(inboxClaimKey(ID)), claimed.token);
+
+    const marked = await markInboxProcessed(ID, claimed.token);
+    assert.equal(marked.ok, true);
+    assert.equal(memory.store.has(inboxProcessedKey(ID)), true);
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
   });
 });
