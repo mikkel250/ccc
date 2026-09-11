@@ -273,4 +273,24 @@ describe("tailorLabeledMessage", () => {
     }
     assert.equal(chatSpy.mock.callCount(), 0);
   });
+
+  it("returns 503 without leaking when getCuratorPrompt rejects", async () => {
+    mock.method(tailorCvDeps, "getCuratorPrompt", async () => {
+      throw new Error("LANGFUSE_SECRET_KEY is not configured");
+    });
+
+    const result = await tailorLabeledMessage(tailorCvDeps, {
+      messageId: ID,
+      message: plainMessage(JD),
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "AI service error. Please try again.");
+      assert.doesNotMatch(result.error, /LANGFUSE_SECRET_KEY/);
+    }
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+    assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
+  });
 });

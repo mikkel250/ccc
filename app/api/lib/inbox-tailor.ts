@@ -56,10 +56,20 @@ export async function tailorLabeledMessage(
     };
   }
 
-  const core = await runTailorCore(deps, {
-    jobDescription: extracted.jobDescription,
-    curationMode: "strict",
-  });
+  let core: Awaited<ReturnType<typeof runTailorCore>>;
+  try {
+    core = await runTailorCore(deps, {
+      jobDescription: extracted.jobDescription,
+      curationMode: "strict",
+    });
+  } catch {
+    await releaseInboxClaim(input.messageId, extracted.claimToken);
+    return {
+      ok: false,
+      error: "AI service error. Please try again.",
+      status: 503,
+    };
+  }
   if (!core.ok) {
     await releaseInboxClaim(input.messageId, extracted.claimToken);
     return core;
