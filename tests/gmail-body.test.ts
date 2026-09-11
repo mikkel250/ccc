@@ -54,6 +54,14 @@ describe("htmlToText", () => {
     assert.match(text, /visible/);
     assert.doesNotMatch(text, /SECRET_TRACKING_TOKEN/);
   });
+
+  it("drops text styled with visibility:hidden", () => {
+    const text = htmlToText(
+      '<div style="visibility:hidden">SECRET_TRACKING_TOKEN</div>visible'
+    );
+    assert.match(text, /visible/);
+    assert.doesNotMatch(text, /SECRET_TRACKING_TOKEN/);
+  });
 });
 
 describe("extractGmailJobDescription", () => {

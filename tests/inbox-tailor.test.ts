@@ -44,32 +44,63 @@ function plainMessage(text: string): unknown {
 
 function createMemoryKv(): InboxKv & { store: Map<string, string> } {
   const store = new Map<string, string>();
+  const expiresAt = new Map<string, number>();
+  function purge(key: string): void {
+    const exp = expiresAt.get(key);
+    if (exp !== undefined && exp <= Date.now()) {
+      store.delete(key);
+      expiresAt.delete(key);
+    }
+  }
   return {
     store,
-    get: async (key) => store.get(key) ?? null,
+    get: async (key) => {
+      purge(key);
+      return store.get(key) ?? null;
+    },
     set: async (key, value, opts) => {
       await new Promise<void>((resolve) => setImmediate(resolve));
+      purge(key);
       if (opts?.nx && store.has(key)) {
         return null;
       }
       store.set(key, value);
+      if (opts?.ex !== undefined) {
+        expiresAt.set(key, Date.now() + opts.ex * 1000);
+      } else {
+        expiresAt.delete(key);
+      }
       return "OK";
     },
     deleteIfValue: async (key, value) => {
+      purge(key);
       if (store.get(key) !== value) {
         return false;
       }
       store.delete(key);
+      expiresAt.delete(key);
+      return true;
+    },
+    expireIfOwned: async (key, value, ttlSeconds) => {
+      purge(key);
+      if (store.get(key) !== value) {
+        return false;
+      }
+      expiresAt.set(key, Date.now() + ttlSeconds * 1000);
       return true;
     },
     markProcessedIfOwned: async (claimKey, processedKey, token) => {
+      purge(claimKey);
+      purge(processedKey);
       const current = store.get(claimKey);
       if (current !== undefined && current !== token) {
         return false;
       }
       store.set(processedKey, "1");
+      expiresAt.delete(processedKey);
       if (current === token) {
         store.delete(claimKey);
+        expiresAt.delete(claimKey);
       }
       return true;
     },
@@ -292,5 +323,32 @@ describe("tailorLabeledMessage", () => {
     }
     assert.equal(memory.store.has(inboxClaimKey(ID)), false);
     assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
+  });
+
+  it("keeps claim ownership when core work outlasts the initial lease", async () => {
+    const previous = process.env.INBOX_CLAIM_TTL_SECONDS;
+    process.env.INBOX_CLAIM_TTL_SECONDS = "1";
+    mock.method(tailorCvDeps, "chat", async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      return {
+        content: strictCuratorJson(FIXTURE_CURATED),
+        usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+        model: "anthropic/sonnet",
+        finishReason: "stop",
+      };
+    });
+    try {
+      const result = await tailorLabeledMessage(tailorCvDeps, {
+        messageId: ID,
+        message: plainMessage(JD),
+      });
+      assert.equal(result.ok, true);
+      if (result.ok && result.status === "tailored") {
+        assert.equal(memory.store.get(inboxClaimKey(ID)), result.claimToken);
+      }
+    } finally {
+      if (previous === undefined) delete process.env.INBOX_CLAIM_TTL_SECONDS;
+      else process.env.INBOX_CLAIM_TTL_SECONDS = previous;
+    }
   });
 });

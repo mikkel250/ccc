@@ -21,6 +21,11 @@ export type InboxKv = {
     opts?: { nx?: boolean; ex?: number }
   ) => Promise<"OK" | null>;
   deleteIfValue: (key: string, value: string) => Promise<boolean>;
+  expireIfOwned: (
+    key: string,
+    value: string,
+    ttlSeconds: number
+  ) => Promise<boolean>;
   markProcessedIfOwned: (
     claimKey: string,
     processedKey: string,
@@ -51,6 +56,8 @@ export const INBOX_CLAIM_LOST_ERROR = "Inbox claim is no longer owned";
 const MESSAGE_ID_RE = /^[A-Za-z0-9._-]+$/;
 const DELETE_IF_VALUE_SCRIPT =
   'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end';
+const EXPIRE_IF_OWNED_SCRIPT =
+  'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("expire", KEYS[1], tonumber(ARGV[2])) else return 0 end';
 const MARK_PROCESSED_IF_OWNED_SCRIPT = `
 local current = redis.call("get", KEYS[1])
 if current ~= false and current ~= ARGV[1] then
@@ -113,6 +120,13 @@ function kv(): InboxKv {
         timeoutMs
       );
       return deleted === 1;
+    },
+    expireIfOwned: async (key, value, ttlSeconds) => {
+      const renewed = await withTimeout(
+        client.eval(EXPIRE_IF_OWNED_SCRIPT, [key], [value, String(ttlSeconds)]),
+        timeoutMs
+      );
+      return renewed === 1;
     },
     markProcessedIfOwned: async (claimKey, processedKey, token, ttlSeconds) => {
       const marked = await withTimeout(
@@ -303,6 +317,30 @@ export async function releaseInboxClaim(
     return released;
   }
   return { ok: true };
+}
+
+export async function renewInboxClaim(
+  messageId: string,
+  claimToken: string
+): Promise<{ ok: true; renewed: boolean } | { ok: false; error: string }> {
+  const parsed = parseInboxMessageId(messageId);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  if (typeof claimToken !== "string" || claimToken === "") {
+    return { ok: false, error: INBOX_CLAIM_TOKEN_REQUIRED_ERROR };
+  }
+  const renewed = await callKv(() =>
+    kv().expireIfOwned(
+      inboxClaimKey(parsed.messageId),
+      claimToken,
+      getInboxClaimTtlSeconds()
+    )
+  );
+  if (!renewed.ok) {
+    return renewed;
+  }
+  return { ok: true, renewed: renewed.value };
 }
 
 export async function markInboxProcessed(

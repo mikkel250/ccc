@@ -7,9 +7,11 @@
 import {
   extractUnprocessedInboxMessage,
   releaseInboxClaim,
+  renewInboxClaim,
   INBOX_REDIS_TIMEOUT_ERROR,
   INBOX_REDIS_UNAVAILABLE_ERROR,
 } from "./inbox-processed-store";
+import { getInboxClaimTtlSeconds } from "./inbox-config";
 import { getTailorJdMaxChars } from "./cv-schema";
 import {
   runTailorCore,
@@ -28,6 +30,24 @@ function isInboxRedisError(error: string): boolean {
     error === INBOX_REDIS_TIMEOUT_ERROR ||
     error === INBOX_REDIS_UNAVAILABLE_ERROR
   );
+}
+
+async function withClaimLease<T>(
+  messageId: string,
+  claimToken: string,
+  work: () => Promise<T>
+): Promise<T> {
+  const ttlSeconds = getInboxClaimTtlSeconds();
+  const intervalMs = Math.max(250, Math.floor((ttlSeconds * 1000) / 2));
+  await renewInboxClaim(messageId, claimToken);
+  const timer = setInterval(() => {
+    void renewInboxClaim(messageId, claimToken);
+  }, intervalMs);
+  try {
+    return await work();
+  } finally {
+    clearInterval(timer);
+  }
 }
 
 export async function tailorLabeledMessage(
@@ -58,10 +78,15 @@ export async function tailorLabeledMessage(
 
   let core: Awaited<ReturnType<typeof runTailorCore>>;
   try {
-    core = await runTailorCore(deps, {
-      jobDescription: extracted.jobDescription,
-      curationMode: "strict",
-    });
+    core = await withClaimLease(
+      input.messageId,
+      extracted.claimToken,
+      () =>
+        runTailorCore(deps, {
+          jobDescription: extracted.jobDescription,
+          curationMode: "strict",
+        })
+    );
   } catch {
     await releaseInboxClaim(input.messageId, extracted.claimToken);
     return {
