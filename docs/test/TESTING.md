@@ -98,6 +98,7 @@ Fast, no server, no API keys:
 ```bash
 npm test
 npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
+npm run lint              # eslint; production `any` and Jest/Vitest/Sinon imports are errors
 ```
 
 | File | Covers |

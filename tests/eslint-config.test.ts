@@ -46,6 +46,16 @@ describe("eslint flat config (Next.js 16)", () => {
     const content = readFileSync(configPath, "utf8");
     assert.match(content, /eslint-config-next/);
     assert.match(content, /export default/);
+    assert.match(
+      content,
+      /@typescript-eslint\/no-explicit-any/,
+      "production TypeScript must lint-ban explicit any"
+    );
+    assert.match(
+      content,
+      /no-restricted-imports/,
+      "lint must ban Jest/Vitest/Sinon imports"
+    );
   });
 
   it("npm run lint runs without ESLint config-not-found error", () => {

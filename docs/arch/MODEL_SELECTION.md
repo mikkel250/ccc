@@ -8,13 +8,13 @@ All models use the `provider/model` namespace (see [Provider/model namespace](./
 
 | Model ID | Route | Role |
 |----------|-------|------|
-| `deepseek/deepseek-v4-pro` | Direct DeepSeek API | Primary driver; default for `chat()` and `callDeepSeek()` |
-| `openrouter/openai/gpt-5.4-mini` | OpenRouter flex | Polish / alignment; default for `callOpenRouter()` |
+| `deepseek/deepseek-v4-pro` | Direct DeepSeek API | Direct DeepSeek; also used via OpenRouter without flex |
+| `openrouter/openai/gpt-5.4-mini` | OpenRouter flex | Default for `chat()` / `AI_MODEL`; `callOpenRouter()` default example |
 | `anthropic/sonnet` | Direct Anthropic API | Evergreen tier; default for `callAnthropic()` |
 | `anthropic/haiku` | Direct Anthropic API | Fast / cheap tier |
 | `anthropic/opus` | Direct Anthropic API | Max capability tier |
 | `openrouter/google/gemini-3.1-pro-preview` | OpenRouter flex | Google baseline |
-| `openrouter/deepseek/deepseek-v4-pro` | OpenRouter | Credit-fallback when direct DeepSeek quota exhausted |
+| `openrouter/deepseek/deepseek-v4-pro` | OpenRouter (no flex) | Manual prefix if calling DeepSeek via OpenRouter; `chat()` does not auto-fallback |
 
 **Complete:** Live JSON quality via `npm run smoke` (dual artifacts; operator reviews the files). Historical markdown-era composites informed the initial `TAILOR_MODEL` default.
 
@@ -22,9 +22,9 @@ All models use the `provider/model` namespace (see [Provider/model namespace](./
 
 ## Provider strategy
 
-OpenAI and Google models go through OpenRouter flex (`service_tier: flex`, overridable via `openRouterFlex: false`). DeepSeek and Anthropic use direct native APIs (`DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`). All models are namespaced `provider/model` — the provider segment determines routing; there are no special-cased bare aliases.
+The first `provider/` segment selects the transport: `openrouter/…` uses OpenRouter; `openai/…` and `google/…` call those APIs directly; `deepseek/` and `anthropic/` are always direct. OpenRouter `service_tier: flex` is attached only for `openai/*` and `google/*` model IDs on that transport (`openRouterFlex` / `OPENROUTER_FLEX_ENABLED`). Direct OpenAI/Google never receive `service_tier`. Other OpenRouter vendors (DeepSeek, Qwen, MiniMax, …) omit flex because OpenRouter treats `service_tier: flex` as “route only to flex endpoints,” not a silently ignored option.
 
-- Default `chat()` model: `deepseek/deepseek-v4-pro`
+- Default `chat()` model: `openrouter/openai/gpt-5.4-mini`
 - CV generation uses a separate model (`TAILOR_MODEL` env var)
 - Optional `TAILOR_REASONING_EFFORT` pins thinking/reasoning for tailor-cv (unset = provider defaults). OpenRouter models get `reasoning.effort`; DeepSeek direct maps to `thinking` + `reasoning_effort` (see `.env.example`). Provider defaults differ sharply (e.g. Gemini 3.1 Pro mandatory medium; GPT-5.4 reasoning off by default; DeepSeek V4 Pro thinking high by default) — pin for fair model A/B.
 - Native batch APIs (Anthropic Message Batches, DeepSeek batch) are deferred — require async poll infrastructure

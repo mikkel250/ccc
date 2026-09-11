@@ -43,6 +43,12 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── gmail-body.ts     # Gmail payload → JD (text/plain else html-to-text)
 │           ├── rate-limit.ts     # Dual IP + secret-hash rate limiter
 │           ├── tailor-cv-validation.ts  # Request body validation
+│           ├── tailor-pipeline.ts    # HTTP tailor orchestration (discriminated result)
+│           ├── tailor-cv-deps.ts     # ESM-mock seam for pipeline steps
+│           ├── errors.ts             # RateLimitError / ServiceError
+│           ├── eval-parse.ts         # extractStructuredJson (untrusted LLM text)
+│           ├── eval-defaults.ts      # Historical eval default CSV/model constants
+│           ├── eval-model-validation.ts
 │           ├── eval-schema.ts     # Historical eval types/prompts (markdown-era)
 │           ├── eval-extract.ts    # JD metadata extraction (legacy eval helpers)
 │           ├── eval-format.ts     # 8-part format compliance checker
