@@ -167,9 +167,11 @@ export async function writeSmokeArtifacts(
   if (shouldWriteReplyText(input.curationMode, input.replyText)) {
     writeFileSync(paths.replyPath, input.replyText.trim(), "utf8");
     console.log(`Wrote ${paths.replyPath}`);
-  } else if (input.curationMode === "strict") {
+  } else {
     rmSync(paths.replyPath, { force: true });
-    console.warn("Reply text missing or empty for strict run, skipping reply file");
+    if (input.curationMode === "strict") {
+      console.warn("Reply text missing or empty for strict run, skipping reply file");
+    }
   }
 
   return paths;

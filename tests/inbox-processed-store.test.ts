@@ -71,19 +71,21 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
       expiresAt.set(key, Date.now() + ttlSeconds * 1000);
       return true;
     },
-    markProcessedIfOwned: async (claimKey, processedKey, token) => {
+    markProcessedIfOwned: async (claimKey, processedKey, token, ttlSeconds) => {
       purge(claimKey);
       purge(processedKey);
       const current = store.get(claimKey);
-      if (current !== undefined && current !== token) {
+      if (current !== token) {
         return false;
       }
       store.set(processedKey, "1");
-      expiresAt.delete(processedKey);
-      if (current === token) {
-        store.delete(claimKey);
-        expiresAt.delete(claimKey);
+      if (ttlSeconds > 0) {
+        expiresAt.set(processedKey, Date.now() + ttlSeconds * 1000);
+      } else {
+        expiresAt.delete(processedKey);
       }
+      store.delete(claimKey);
+      expiresAt.delete(claimKey);
       return true;
     },
   };
@@ -132,7 +134,12 @@ describe("inbox processed store", () => {
   });
 
   it("skips extract after the processed mark", async () => {
-    const marked = await markInboxProcessed(ID, "operator-token");
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+    const marked = await markInboxProcessed(ID, claimed.token);
     assert.equal(marked.ok, true);
     const result = await extractUnprocessedInboxMessage(ID, plainMessage("JD"));
     assert.equal(result.ok, true);
@@ -305,6 +312,22 @@ describe("inbox processed store", () => {
     const marked = await markInboxProcessed(ID, claimed.token);
     assert.equal(marked.ok, true);
     assert.equal(memory.store.has(inboxProcessedKey(ID)), true);
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+  });
+
+  it("does not mark processed after the claim expires", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+    memory.store.delete(inboxClaimKey(ID));
+    const marked = await markInboxProcessed(ID, claimed.token);
+    assert.equal(marked.ok, false);
+    if (!marked.ok) {
+      assert.match(marked.error, /claim/i);
+    }
+    assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
     assert.equal(memory.store.has(inboxClaimKey(ID)), false);
   });
 });

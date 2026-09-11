@@ -16,7 +16,7 @@ Named leftover: [eval-parse unit tests](./2026-09-06-001-test-restore-eval-parse
 
 Operator focus (STRATEGY, not `/ce-work`): in-field `strict` submit bar. Lane: operator
 
-Drain order (composite pick): GitHub #38, then M7, then M8.1. Inbox product contract: [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md).
+Drain order (composite pick): GitHub #38, then M7. Inbox product contract: [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md).
 
 ## Milestones (build order)
 

@@ -76,7 +76,7 @@ Request body size capped by `TAILOR_REQUEST_MAX_BYTES` (default 65536).
 
 #### 200 OK
 
-Strict (`curationMode` omitted or `"strict"`) may include `replyText`. Flexible may include `coverLetter`. A single payload never contains both.
+Strict (`curationMode` omitted or `"strict"`) include `replyText`. Flexible may include `coverLetter`. A single payload never contains both.
 
 **Strict:**
 ```json

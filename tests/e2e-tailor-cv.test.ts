@@ -160,6 +160,33 @@ describe("writeSmokeArtifacts", () => {
     assert.equal(existsSync(second.replyPath), false);
   });
 
+  it("removes a stale reply artifact on a flexible run", async () => {
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const first = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "strict",
+      coverLetter: undefined,
+      replyText: "Thank you for reaching out.",
+      artifactDir: dir,
+    });
+    assert.ok(existsSync(first.replyPath));
+
+    const second = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "flexible",
+      coverLetter: "Dear hiring team,\n\nI am excited.",
+      artifactDir: dir,
+    });
+    assert.equal(second.replyPath, first.replyPath);
+    assert.equal(existsSync(second.replyPath), false);
+  });
+
   it("skips cover-letter DOCX in flexible mode when coverLetter is missing", async () => {
     const docx = await markdownToDocxBase64("# CV\n- bullet");
     const paths = await writeSmokeArtifacts({

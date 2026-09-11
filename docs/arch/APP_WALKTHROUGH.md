@@ -36,7 +36,7 @@ app/api/tailor-cv/route.ts
     ▼ 200 { cv, curatedJson, builderVersion, model, usage, remaining, resetTime [, replyText] }
 ```
 
-Inbox is not this HTTP client. `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a Gmail payload, then `runTailorCore` (same curator + mechanical `.docx`; no Bearer, no public rate-limit buckets). Success returns `claimToken`; the claim lease is renewed while core runs; non-crash failures release the Redis claim. `buildTailorResponse` remains the HTTP adapter (`NextRequest`, IP, auth, `checkRateLimit`) and attaches `remaining` / `resetTime`.
+Inbox is not this HTTP client. `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a Gmail payload, then `runTailorCore` (same curator + mechanical `.docx`; no Bearer, no public rate-limit buckets). Success returns `claimToken`; the claim lease is renewed while core runs, and a lost or failed renewal aborts before a processed mark; non-crash failures release the Redis claim. `buildTailorResponse` remains the HTTP adapter (`NextRequest`, IP, auth, `checkRateLimit`) and attaches `remaining` / `resetTime`.
 
 ---
 

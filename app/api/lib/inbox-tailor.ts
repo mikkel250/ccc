@@ -8,6 +8,7 @@ import {
   extractUnprocessedInboxMessage,
   releaseInboxClaim,
   renewInboxClaim,
+  INBOX_CLAIM_LOST_ERROR,
   INBOX_REDIS_TIMEOUT_ERROR,
   INBOX_REDIS_UNAVAILABLE_ERROR,
 } from "./inbox-processed-store";
@@ -32,21 +33,66 @@ function isInboxRedisError(error: string): boolean {
   );
 }
 
+function leaseRenewalFailure(
+  result: { ok: true; renewed: boolean } | { ok: false; error: string }
+): { ok: false; error: string } | null {
+  if (!result.ok) {
+    return result;
+  }
+  if (!result.renewed) {
+    return { ok: false, error: INBOX_CLAIM_LOST_ERROR };
+  }
+  return null;
+}
+
 async function withClaimLease<T>(
   messageId: string,
   claimToken: string,
   work: () => Promise<T>
-): Promise<T> {
+): Promise<
+  | { ok: true; value: T }
+  | { ok: true; status: "skipped-claimed" }
+  | { ok: false; error: string }
+> {
   const ttlSeconds = getInboxClaimTtlSeconds();
   const intervalMs = Math.max(250, Math.floor((ttlSeconds * 1000) / 2));
-  await renewInboxClaim(messageId, claimToken);
+  const initial = await renewInboxClaim(messageId, claimToken);
+  if (!initial.ok) {
+    return initial;
+  }
+  if (!initial.renewed) {
+    return { ok: true, status: "skipped-claimed" };
+  }
+
+  let finished = false;
+  let resolveLost: (result: { ok: false; error: string }) => void = () => {};
+  const leaseLost = new Promise<{ ok: false; error: string }>((resolve) => {
+    resolveLost = resolve;
+  });
   const timer = setInterval(() => {
-    void renewInboxClaim(messageId, claimToken);
+    void renewInboxClaim(messageId, claimToken)
+      .then((result) => {
+        if (finished) {
+          return;
+        }
+        const failure = leaseRenewalFailure(result);
+        if (failure) {
+          resolveLost(failure);
+        }
+      })
+      .catch(() => {
+        if (!finished) {
+          resolveLost({ ok: false, error: INBOX_REDIS_UNAVAILABLE_ERROR });
+        }
+      });
   }, intervalMs);
+  const workResult = work().then((value) => ({ ok: true as const, value }));
   try {
-    return await work();
+    return await Promise.race([workResult, leaseLost]);
   } finally {
+    finished = true;
     clearInterval(timer);
+    void workResult.catch(() => {});
   }
 }
 
@@ -78,7 +124,7 @@ export async function tailorLabeledMessage(
 
   let core: Awaited<ReturnType<typeof runTailorCore>>;
   try {
-    core = await withClaimLease(
+    const leased = await withClaimLease(
       input.messageId,
       extracted.claimToken,
       () =>
@@ -87,6 +133,15 @@ export async function tailorLabeledMessage(
           curationMode: "strict",
         })
     );
+    if (leased.ok && "status" in leased) {
+      await releaseInboxClaim(input.messageId, extracted.claimToken);
+      return { ok: true, status: "skipped-claimed" };
+    }
+    if (!leased.ok) {
+      await releaseInboxClaim(input.messageId, extracted.claimToken);
+      return { ok: false, error: leased.error, status: 503 };
+    }
+    core = leased.value;
   } catch {
     await releaseInboxClaim(input.messageId, extracted.claimToken);
     return {

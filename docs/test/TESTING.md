@@ -115,7 +115,8 @@ npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 | `tests/knowledge-base.test.ts` | Legacy KB helpers (not tailor hot path) |
 | `tests/rate-limit.test.ts` | Dual IP + secret rate limits |
 | `tests/gmail-body.test.ts` | Gmail payload → JD (`text/plain` else html-to-text) |
-| `tests/inbox-processed-store.test.ts` | Claim SET NX vs token-owned processed mark / crash recovery / Redis timeout results |
+| `tests/inbox-processed-store.test.ts` | Claim SET NX vs token-owned processed mark (missing/stolen claim cannot mark) / crash recovery / Redis timeout results |
+| `tests/inbox-tailor.test.ts` | In-process strict tailor from labeled payload; lease renewal abort on lost claim |
 | `tests/route.test.ts` | Auth, curator cutover, dual response |
 | `tests/tailor-cv-validation.test.ts` | Request body + JD size validation |
 

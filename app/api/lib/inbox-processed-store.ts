@@ -60,7 +60,7 @@ const EXPIRE_IF_OWNED_SCRIPT =
   'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("expire", KEYS[1], tonumber(ARGV[2])) else return 0 end';
 const MARK_PROCESSED_IF_OWNED_SCRIPT = `
 local current = redis.call("get", KEYS[1])
-if current ~= false and current ~= ARGV[1] then
+if current ~= ARGV[1] then
   return 0
 end
 if tonumber(ARGV[2]) > 0 then
@@ -68,9 +68,7 @@ if tonumber(ARGV[2]) > 0 then
 else
   redis.call("set", KEYS[2], "1")
 end
-if current == ARGV[1] then
-  redis.call("del", KEYS[1])
-end
+redis.call("del", KEYS[1])
 return 1
 `;
 
