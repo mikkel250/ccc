@@ -18,6 +18,7 @@ import {
 } from "../tests/helpers/rate-limit-mock";
 import { BUILDER_VERSION } from "../app/api/lib/json-docx-builder";
 import { getTailorJdMaxChars } from "../app/api/lib/cv-schema";
+import { strictCuratorJson } from "../tests/helpers/strict-curator";
 
 const TEST_API_KEY = "test-tailor-api-key";
 
@@ -100,7 +101,7 @@ function mockTailorPipelineSuccess(
     (jd: string) => `JD:\n${jd}`
   );
   mock.method(tailorCvDeps, "chat", async () => ({
-    content: JSON.stringify(curated),
+    content: strictCuratorJson(curated),
     usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
     model: "anthropic/sonnet",
     finishReason: "stop",
@@ -482,7 +483,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
   it("returns 422 when curator JSON fails schema validation", async () => {
     mockTailorPipelineSuccess();
     mock.method(tailorCvDeps, "chat", async () => ({
-      content: JSON.stringify({ name: "Only Name" }),
+      content: strictCuratorJson({ name: "Only Name" }),
       usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
       model: "anthropic/sonnet",
       finishReason: "stop",

@@ -6,7 +6,7 @@ Start-to-finish guide to how the CV Tailoring API works. For stack decisions and
 
 ## What this app does
 
-A **Next.js backend** (no product UI) that accepts a job description, curates structured CV JSON from a master JSON, mechanically renders Word, and returns both artifacts. The inbox worker in this process (planned) uses the same pipeline, attaches the `.docx` to a Gmail reply draft, and may retain curated JSON for regen.
+A **Next.js backend** (no product UI) that accepts a job description, curates structured CV JSON from a master JSON, mechanically renders Word, and returns both artifacts. The inbox worker in this process uses `tailorLabeledMessage` / `runTailorCore` (no HTTP), attaches the `.docx` to a Gmail reply draft (M8.5), and may retain curated JSON for regen.
 
 **Production entry point:** `POST /api/tailor-cv` → `app/api/tailor-cv/route.ts :: POST`
 
@@ -23,19 +23,20 @@ app/api/tailor-cv/route.ts
     ├── checkRateLimit(ip, secret)    app/api/lib/rate-limit.ts  (before auth)
     ├── authenticateTailorRequest()   app/api/lib/tailor-auth.ts
     ├── validateTailorCvBody()        app/api/lib/tailor-cv-validation.ts
-    ├── requireMasterCv()             app/api/lib/master-cv.ts
-    ├── getCuratorPrompt() + compile  app/api/lib/curator-prompt.ts
-    ├── chat()                        app/api/lib/llm.ts  (TAILOR_MODEL, source: tailor-cv-curator)
-    │     ├── dispatchProvider()
-    │     └── tracers (Langfuse content redacted)
-    ├── extractStructuredJson()       app/api/lib/eval-parse.ts
-    ├── validateCvJson()              app/api/lib/cv-schema.ts
-    └── buildJsonDocxBase64()         app/api/lib/json-docx-builder.ts
+    └── runTailorCore()               app/api/lib/tailor-pipeline.ts
+          ├── requireMasterCv()       app/api/lib/master-cv.ts
+          ├── getCuratorPrompt() + compile  app/api/lib/curator-prompt.ts
+          ├── chat()                  app/api/lib/llm.ts  (TAILOR_MODEL, source: tailor-cv-curator)
+          │     ├── dispatchProvider()
+          │     └── tracers (Langfuse content redacted)
+          ├── extractStructuredJson() app/api/lib/eval-parse.ts
+          ├── validateCvJson()        app/api/lib/cv-schema.ts
+          └── buildJsonDocxBase64()   app/api/lib/json-docx-builder.ts
     │
-    ▼ 200 { cv, curatedJson, builderVersion, model, usage, remaining, resetTime }
+    ▼ 200 { cv, curatedJson, builderVersion, model, usage, remaining, resetTime [, replyText (strict-only)] }
 ```
 
-The planned inbox worker is not this HTTP client. It calls an in-process tailor core (same curator + mechanical `.docx`; no Bearer, no public rate-limit buckets). Today's `buildTailorResponse` is the HTTP adapter (`NextRequest`, IP, auth, `checkRateLimit`); M8.4 extracts or wraps the shared core.
+Inbox is not this HTTP client. `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a Gmail payload, then `runTailorCore` (same curator + mechanical `.docx`; no Bearer, no public rate-limit buckets). `buildTailorResponse` remains the HTTP adapter (`NextRequest`, IP, auth, `checkRateLimit`) and attaches `remaining` / `resetTime`.
 
 ---
 
@@ -85,7 +86,7 @@ Resolves `MASTER_CV_JSON` (preferred) or `MASTER_CV_PATH` (non-world-readable), 
 | Compile | same | `compileCuratorPrompt(promptText, masterCv)` → `{ ok, systemPrompt }` (fails closed if `{{MASTER_CV_JSON}}` missing; `$`-safe inject) |
 | User message | same | `buildCuratorUserMessage(jd)` — JD in per-request nonce-delimited data channel |
 
-Langfuse prompt name: `cv-curator-json` (fallback hardcoded; page-count / visual QA stripped).
+Langfuse prompt name: `cv-curator-json` (fallback hardcoded; used if Langfuse is unreachable or the production copy omits `reply_text`).
 
 ### 6. Curator LLM
 
@@ -108,7 +109,7 @@ Parse/schema/builder failures → **422** with no dual artifacts. Success → `{
 
 ### 8. Response and errors
 
-**Success (200):** `{ cv, curatedJson, builderVersion, model, usage, remaining, resetTime }`
+**Success (200):** `{ cv, curatedJson, builderVersion, model, usage, remaining, resetTime [, replyText] }` — optional `replyText` is strict-only
 
 **Error mapping** (`route.ts :: mapErrorToResponse`, table-driven `ERROR_RESPONSES`):
 
@@ -187,4 +188,4 @@ Prompt files cloned from the portfolio chat bot remain for a hypothetical future
 
 ## Planned but not implemented
 
-See [PIPELINE_ENHANCEMENTS](./PIPELINE_ENHANCEMENTS.md) (two-pass, critic) and [LEARNING_SYSTEM](./LEARNING_SYSTEM.md) (SQLite feedback). Recruiter reply text + Gmail drafts: [inbox worker product contract](../plans/2026-09-05-002-feat-inbox-worker-plan.md). Still deferred: selective RAG.
+See [PIPELINE_ENHANCEMENTS](./PIPELINE_ENHANCEMENTS.md) (two-pass, critic) and [LEARNING_SYSTEM](./LEARNING_SYSTEM.md) (SQLite feedback). Still deferred: selective RAG.

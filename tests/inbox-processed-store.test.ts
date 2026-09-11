@@ -8,6 +8,7 @@ import {
   inboxProcessedKey,
   markInboxProcessed,
   parseInboxMessageId,
+  releaseInboxClaim,
   type InboxKv,
 } from "../app/api/lib/inbox-processed-store";
 
@@ -26,7 +27,7 @@ function plainMessage(text: string): unknown {
 
 function createMemoryKv(): InboxKv & { store: Map<string, string> } {
   const store = new Map<string, string>();
-  return {
+  const memory: InboxKv & { store: Map<string, string> } = {
     store,
     get: async (key) => store.get(key) ?? null,
     set: async (key, value, opts) => {
@@ -44,7 +45,10 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
       store.delete(key);
       return true;
     },
+    expireIfValue: async (key: string, value: string) =>
+      store.get(key) === value,
   };
+  return memory;
 }
 
 const ID = "msg123abc";
@@ -129,6 +133,30 @@ describe("inbox processed store", () => {
     assert.equal(memory.store.size, 0);
   });
 
+  it("releaseInboxClaim deletes the NX claim key", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      assert.fail("expected a won claim");
+    }
+    assert.equal(memory.store.has(inboxClaimKey(ID)), true);
+    const released = await releaseInboxClaim(ID, claimed.token);
+    assert.equal(released.ok, true);
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+  });
+
+  it("does not delete a replacement claim on stale release", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      assert.fail("expected a won claim");
+    }
+    memory.store.set(inboxClaimKey(ID), "replacement-token");
+    const released = await releaseInboxClaim(ID, claimed.token);
+    assert.equal(released.ok, true);
+    assert.equal(memory.store.get(inboxClaimKey(ID)), "replacement-token");
+  });
+
   it("returns processed when a mark lands before the claim SET commits", async () => {
     const origSet = memory.set.bind(memory);
     memory.set = async (key, value, opts) => {
@@ -146,7 +174,7 @@ describe("inbox processed store", () => {
     assert.equal(memory.store.has(inboxProcessedKey(ID)), true);
   });
 
-  it("treats a timed-out SET that still committed as a won claim", async () => {
+  it("returns lost when a claim SET times out", async () => {
     const origSet = memory.set.bind(memory);
     let firstClaimSet = true;
     memory.set = async (key, value, opts) => {
@@ -160,7 +188,7 @@ describe("inbox processed store", () => {
     const result = await claimInboxMessage(ID);
     assert.equal(result.ok, true);
     if (result.ok) {
-      assert.equal(result.outcome, "won");
+      assert.equal(result.outcome, "lost");
     }
     const claimValue = memory.store.get(inboxClaimKey(ID));
     assert.equal(typeof claimValue, "string");

@@ -17,6 +17,9 @@
     "test:e2e": "playwright test",
     "regen-docx": "tsx scripts/regen-docx.ts",
     "smoke": "tsx scripts/e2e-tailor-cv.ts",
+    "gmail:auth": "tsx scripts/gmail-auth.ts",
+    "gmail:list": "tsx scripts/gmail-list.ts",
+    "inbox:scan": "tsx scripts/inbox-scan.ts",
     "smoke:parity": "tsx scripts/e2e-tailor-cv.ts --parity"
   },
   "dependencies": {
@@ -31,6 +34,7 @@
     "@upstash/redis": "^1.38.0",
     "ajv": "^8.20.0",
     "docx": "^9.5.0",
+    "html-to-text": "^9.0.5",
     "langsmith": "0.6.3",
     "next": "^15.5.7",
     "openai": "^6.5.0",
@@ -41,6 +45,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
+    "@types/html-to-text": "^9.0.4",
     "@types/react": "19.2.15",
     "@types/uuid": "^10.0.0",
     "dotenv": "^17.2.3",

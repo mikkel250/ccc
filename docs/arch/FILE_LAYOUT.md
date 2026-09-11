@@ -37,7 +37,17 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── redis.ts          # Shared Upstash Redis client singleton
 │           ├── inbox-config.ts   # Inbox Redis prefix / claim+processed TTLs
 │           ├── inbox-processed-store.ts # SET NX claim vs terminal processed mark
+│           ├── inbox-tailor.ts   # tailorLabeledMessage — claim+extract then runTailorCore
+│           ├── inbox-scan.ts     # list → tailor → draft → processed (inbox:scan job)
 │           ├── gmail-body.ts     # Gmail payload → JD (text/plain else html-to-text)
+│           ├── gmail-config.ts   # Gmail OAuth/API env getters
+│           ├── gmail-oauth.ts    # Authorize URL, callback, token exchange/refresh
+│           ├── gmail-list.ts     # Recruiter-label resolve + messages.list
+│           ├── gmail-http.ts     # Injected-fetch Gmail JSON GET/POST + shared JSON/MIME helpers
+│           ├── gmail-message.ts  # messages.get + reply headers
+│           ├── gmail-drafts.ts   # RFC2822 MIME + drafts.create / thread reuse
+│           ├── tailor-pipeline.ts # HTTP adapter + shared runTailorCore (no Bearer/rate-limit)
+│           ├── tailor-cv-deps.ts # Mockable pipeline dep bag
 │           ├── rate-limit.ts     # Dual IP + secret-hash rate limiter
 │           ├── tailor-cv-validation.ts  # Request body validation
 │           ├── eval-schema.ts     # Historical eval types/prompts (markdown-era)
@@ -54,6 +64,9 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 ├── scripts/
 │   ├── create-langfuse-prompts.ts  # Upload prompts to Langfuse
 │   ├── e2e-tailor-cv.ts           # npm run smoke — live API + artifacts
+│   ├── gmail-auth.ts              # npm run gmail:auth — mint GMAIL_REFRESH_TOKEN
+│   ├── gmail-list.ts              # npm run gmail:list — labeled message ids
+│   ├── inbox-scan.ts              # npm run inbox:scan — draft replies + mark processed
 │   ├── regen-docx.ts              # npm run regen-docx — mechanical rebuild
 │   ├── seed-eval-results.ts       # Seed historical eval-results artifacts
 │   └── verify-rate-limit.ts       # Live Upstash rate-limit check
@@ -64,6 +77,10 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── smoke-helpers.test.ts              # Artifact redaction
 │   ├── master-cv.test.ts / cv-schema.test.ts
 │   ├── tailor-auth.test.ts
+│   ├── tailor-pipeline.test.ts            # HTTP adapter + runTailorCore
+│   ├── inbox-tailor.test.ts               # Labeled-message in-process entry
+│   ├── inbox-scan.test.ts                 # Scan: draft/reuse/processed/skip
+│   ├── gmail-drafts.test.ts               # MIME + draft create vs reuse
 │   ├── route.test.ts                      # Tailor route (mocked curator)
 │   ├── cv-prompt*.test.ts                 # Legacy markdown prompt tests
 │   ├── markdown-docx.test.ts              # Legacy markdown→docx

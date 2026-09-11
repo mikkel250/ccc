@@ -111,6 +111,7 @@ export function smokeArtifactPaths(
   curatedPath: string;
   docxPath: string;
   coverLetterPath: string;
+  replyPath: string;
 } {
   const slug = smokeArtifactSlug(jdPath);
   const dir = model ? smokeParityArtifactDir(smokeDir, model) : smokeDir;
@@ -119,6 +120,7 @@ export function smokeArtifactPaths(
     curatedPath: join(dir, `${slug}.curated.json`),
     docxPath: join(dir, `${slug}.docx`),
     coverLetterPath: join(dir, `${slug}.cover-letter.docx`),
+    replyPath: join(dir, `${slug}.reply.txt`),
   };
 }
 
@@ -134,6 +136,21 @@ export function shouldWriteCoverLetterDocx(
     curationMode === "flexible" &&
     typeof coverLetter === "string" &&
     coverLetter.trim().length > 0
+  );
+}
+
+/**
+ * Pure predicate: should we write the strict recruiter reply text file?
+ * True only for strict mode with a non-empty trimmed string.
+ */
+export function shouldWriteReplyText(
+  curationMode: CurationMode,
+  replyText: unknown
+): replyText is string {
+  return (
+    curationMode === "strict" &&
+    typeof replyText === "string" &&
+    replyText.trim().length > 0
   );
 }
 

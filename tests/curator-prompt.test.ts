@@ -5,6 +5,7 @@ import {
   compileCuratorPrompt,
   getCuratorPromptFallbackText,
   getCuratorPrompt,
+  resolveStrictCuratorSystemPrompt,
   CURATOR_LANGFUSE_PROMPT_NAME,
   FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME,
 } from "../app/api/lib/curator-prompt";
@@ -17,6 +18,8 @@ describe("curator-prompt", () => {
   it("fallback omits page-count and visual QA / docx operator steps", () => {
     const text = getCuratorPromptFallbackText();
     assert.match(text, /curated JSON only/i);
+    assert.match(text, /"reply_text"/);
+    assert.match(text, /"curated_cv"/);
     assert.doesNotMatch(text, /present_files/);
     assert.doesNotMatch(text, /resume_builder\.js/);
     assert.doesNotMatch(text, /render to JPEG|PDF→JPEG/i);
@@ -79,6 +82,30 @@ describe("curator-prompt", () => {
   it("getCuratorPrompt defaults to strict prompt when mode omitted", async () => {
     const result = await getCuratorPrompt();
     assert.equal(result.langfusePrompt?.name, "cv-curator-json");
+  });
+
+  it("uses a remote Langfuse prompt that already names reply_text", () => {
+    const fallback = getCuratorPromptFallbackText();
+    const remote = 'Emit { "curated_cv": {}, "reply_text": "..." }\n{{MASTER_CV_JSON}}';
+    const resolved = resolveStrictCuratorSystemPrompt(remote, fallback);
+    assert.equal(resolved.usedFallback, false);
+    assert.equal(resolved.systemPrompt, remote);
+  });
+
+  it("falls back when the production Langfuse prompt omits reply_text", () => {
+    const fallback = getCuratorPromptFallbackText();
+    const remote = "Emit curated JSON only.\n{{MASTER_CV_JSON}}";
+    const resolved = resolveStrictCuratorSystemPrompt(remote, fallback);
+    assert.equal(resolved.usedFallback, true);
+    assert.equal(resolved.systemPrompt, fallback);
+    assert.match(resolved.systemPrompt, /"reply_text"/);
+  });
+
+  it("strict user-turn requires the curated_cv + reply_text wrapper", () => {
+    const msg = buildCuratorUserMessage("GM role", "strict");
+    assert.match(msg, /curated_cv/);
+    assert.match(msg, /reply_text/);
+    assert.doesNotMatch(msg, /curated CV JSON only/i);
   });
 
   it("buildCuratorUserMessage isolates JD with a per-request nonce delimiter", () => {

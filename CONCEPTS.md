@@ -27,7 +27,7 @@ The JD-specific JSON produced by the curator LLM: same schema as the Master CV. 
 Turning a Curated CV into a `.docx` with a deterministic builder (no LLM). The attachable file is a pure function of curated JSON plus builder version.
 
 ### Tailor request
-A single `POST /api/tailor-cv` invocation that authenticates with a shared secret, validates a job description, loads the Master CV, runs the curator model, mechanically renders `.docx`, and returns the document, the Curated CV, and `builderVersion`. On the `strict` path the product also includes recruiter **reply text** (M8.1; live HTTP omits it until that row ships). Stateless per request; dual rate-limited by client IP and shared-secret hash. The inbox worker calls this pipeline in-process and must not share those HTTP rate-limit buckets.
+A single `POST /api/tailor-cv` invocation that authenticates with a shared secret, validates a job description, loads the Master CV, runs the curator model, mechanically renders `.docx`, and returns the document, the Curated CV, and `builderVersion`. On the `strict` path the product also includes recruiter **reply text** (`replyText` from curator `reply_text`). Stateless per request; dual rate-limited by client IP and shared-secret hash. The inbox worker calls this pipeline in-process and must not share those HTTP rate-limit buckets.
 
 ### Builder version
 Semver-like constant on the mechanical JSON→docx builder. Callers retaining curated JSON for regen must keep the recorded version; style-stable regen applies only when it matches the builder invoked (`npm run regen-docx`).
@@ -48,6 +48,9 @@ The recruiter-facing email body returned on a successful `strict` tailor. Curato
 
 ### Inbox scan
 On-demand or scheduled job in this process: list Gmail messages with the recruiter label, skip claimed or processed ids, strict-tailor the body in-process, create a thread reply draft with reply text and the CV `.docx`. Local `npm run inbox:scan` and Railway cron invoke the same job.
+
+### Gmail OAuth
+One-shot local CLI (`npm run gmail:auth`) that mints `GMAIL_REFRESH_TOKEN` via a Desktop-app loopback redirect. Railway and `gmail:list` use that token. Not a product OAuth UI; seekers never hold Gmail credentials.
 
 ### Processed message
 A Gmail `messageId` in its terminal Redis state: a sendable reply draft already exists, so a later scan (local or Railway) does not tailor or create another draft. The worker claims the id before drafting and writes this mark only after draft success. Overlap and crash recovery live in the inbox-worker product contract (R10, R12, F3).

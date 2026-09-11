@@ -73,10 +73,16 @@ describe("writeSmokeArtifacts", () => {
       cvBase64: docx,
       curationMode: "strict",
       coverLetter: undefined,
+      replyText: "Thank you for reaching out.",
       artifactDir: dir,
     });
     assert.ok(existsSync(paths.curatedPath));
     assert.ok(existsSync(paths.docxPath));
+    assert.ok(existsSync(paths.replyPath));
+    assert.equal(
+      readFileSync(paths.replyPath, "utf8"),
+      "Thank you for reaching out."
+    );
     const payload = JSON.parse(readFileSync(paths.curatedPath, "utf8")) as {
       redacted: boolean;
       curatedJson: { contact?: { redacted?: boolean }; summary?: string[] };
@@ -140,6 +146,28 @@ describe("writeSmokeArtifacts", () => {
     assert.equal(existsSync(paths.coverLetterPath), false);
     assert.ok(existsSync(paths.curatedPath));
     assert.ok(existsSync(paths.docxPath));
+  });
+
+  it("removes a stale reply artifact when the current result has no reply text", async () => {
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const input = {
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "strict" as const,
+      coverLetter: undefined,
+      artifactDir: dir,
+    };
+    const first = await writeSmokeArtifacts({
+      ...input,
+      replyText: "Thanks for reaching out.",
+    });
+    assert.equal(existsSync(first.replyPath), true);
+
+    const second = await writeSmokeArtifacts(input);
+
+    assert.equal(existsSync(second.replyPath), false);
   });
 
   it("surfaces write failures for curated JSON", async () => {
@@ -335,6 +363,7 @@ describe("runSmokeCli exit codes", () => {
                 curatedJson: CURATED,
                 builderVersion: "v1",
                 model: "test/model",
+                replyText: "Thank you for reaching out.",
               });
             },
           },
@@ -344,6 +373,7 @@ describe("runSmokeCli exit codes", () => {
     assert.deepEqual(exits, [0]);
     assert.ok(existsSync(join(dir, "jd.curated.json")));
     assert.ok(existsSync(join(dir, "jd.docx")));
+    assert.ok(existsSync(join(dir, "jd.reply.txt")));
   });
 
   it("exits 1 when TAILOR_API_KEY is missing", async () => {
@@ -396,6 +426,7 @@ describe("runSmokeCli exit codes", () => {
                 curatedJson: CURATED,
                 builderVersion: "v1",
                 model: "test/model",
+                replyText: "Thank you for reaching out.",
               });
             },
           },
@@ -405,6 +436,7 @@ describe("runSmokeCli exit codes", () => {
     assert.deepEqual(exits, [0]);
     assert.ok(existsSync(join(dir, "jd.curated.json")));
     assert.ok(existsSync(join(dir, "jd.docx")));
+    assert.ok(existsSync(join(dir, "jd.reply.txt")));
   });
 
   it("parity run nests artifacts by response model and records pending catalog cells", async () => {
@@ -437,6 +469,7 @@ describe("runSmokeCli exit codes", () => {
                 curatedJson: CURATED,
                 builderVersion: "v1",
                 model: "deepseek/deepseek-v4-pro",
+                replyText: "Thank you for reaching out.",
               });
             },
           },
@@ -445,6 +478,9 @@ describe("runSmokeCli exit codes", () => {
     );
     assert.deepEqual(exits, [0]);
     assert.ok(existsSync(join(dir, "deepseek", "deepseek-v4-pro", "jd.docx")));
+    assert.ok(
+      existsSync(join(dir, "deepseek", "deepseek-v4-pro", "jd.reply.txt"))
+    );
     assert.equal(existsSync(join(dir, "jd.docx")), false);
     assert.equal(existsSync(join(dir, "anthropic", "sonnet", "jd.docx")), false);
     const status = JSON.parse(
@@ -514,6 +550,7 @@ describe("runSmokeCli exit codes", () => {
                 curatedJson: CURATED,
                 builderVersion: "v1",
                 model: "claude-sonnet-4-6",
+                replyText: "Thank you for reaching out.",
               });
             },
           },
@@ -552,6 +589,7 @@ describe("runSmokeCli exit codes", () => {
                 curatedJson: CURATED,
                 builderVersion: "v1",
                 model: "deepseek/deepseek-v4-pro",
+                replyText: "Thank you for reaching out.",
               });
             },
           },

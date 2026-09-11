@@ -11,7 +11,7 @@ import {
   getInboxRedisTimeoutMs,
 } from "./inbox-config";
 import { extractGmailJobDescription } from "./gmail-body";
-import { getRedisClient } from "./redis";
+import { evalRedisScript, getRedisClient, getRedisKey, setRedisKey } from "./redis";
 
 export type InboxKv = {
   get: (key: string) => Promise<string | null>;
@@ -21,12 +21,11 @@ export type InboxKv = {
     opts?: { nx?: boolean; ex?: number }
   ) => Promise<"OK" | null>;
   deleteIfValue: (key: string, value: string) => Promise<boolean>;
+  expireIfValue: (key: string, value: string, ttlSeconds: number) => Promise<boolean>;
 };
 
-export type InboxClaimOutcome = "won" | "lost" | "processed";
-
 export type ExtractUnprocessedResult =
-  | { ok: true; status: "extracted"; jobDescription: string }
+  | { ok: true; status: "extracted"; jobDescription: string; claimToken: string }
   | { ok: true; status: "skipped-processed" }
   | { ok: true; status: "skipped-claimed" }
   | { ok: false; error: string };
@@ -34,6 +33,8 @@ export type ExtractUnprocessedResult =
 const MESSAGE_ID_RE = /^[A-Za-z0-9._-]+$/;
 const DELETE_IF_VALUE_SCRIPT =
   'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end';
+const EXPIRE_IF_VALUE_SCRIPT =
+  'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("expire", KEYS[1], ARGV[2]) else return 0 end';
 
 let injectedKv: InboxKv | null = null;
 
@@ -44,6 +45,31 @@ export function __injectInboxKvForTest(kv: InboxKv | null): void {
   injectedKv = kv;
 }
 
+function isInboxRedisTimeout(err: unknown): boolean {
+  return err instanceof Error && err.message === "Inbox Redis timed out";
+}
+
+async function withTimeout<T>(
+  run: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number
+): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      run(controller.signal),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Error("Inbox Redis timed out"));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 function kv(): InboxKv {
   if (injectedKv) {
     return injectedKv;
@@ -52,57 +78,72 @@ function kv(): InboxKv {
   const timeoutMs = getInboxRedisTimeoutMs();
   return {
     get: async (key) => {
-      const value = await withTimeout(client.get(key), timeoutMs);
+      const value = await withTimeout(
+        (signal) => getRedisKey(client, key, signal),
+        timeoutMs
+      );
       return typeof value === "string" ? value : value == null ? null : String(value);
     },
     set: async (key, value, opts) => {
       let result: unknown;
       if (opts?.nx === true) {
         result = await withTimeout(
-          client.set(key, value, {
-            nx: true,
-            ex: opts.ex ?? getInboxClaimTtlSeconds(),
-          }),
+          (signal) =>
+            setRedisKey(
+              client,
+              key,
+              value,
+              {
+                nx: true,
+                ex: opts.ex ?? getInboxClaimTtlSeconds(),
+              },
+              signal
+            ),
           timeoutMs
         );
       } else if (opts?.ex !== undefined) {
+        const ttlSeconds = opts.ex;
         result = await withTimeout(
-          client.set(key, value, { ex: opts.ex }),
+          (signal) => setRedisKey(client, key, value, { ex: ttlSeconds }, signal),
           timeoutMs
         );
       } else {
-        result = await withTimeout(client.set(key, value), timeoutMs);
+        result = await withTimeout(
+          (signal) => setRedisKey(client, key, value, undefined, signal),
+          timeoutMs
+        );
       }
       return result === "OK" ? "OK" : null;
     },
     deleteIfValue: async (key, value) => {
       const deleted = await withTimeout(
-        client.eval<[string], number>(DELETE_IF_VALUE_SCRIPT, [key], [value]),
+        (signal) =>
+          evalRedisScript(
+            client,
+            DELETE_IF_VALUE_SCRIPT,
+            key,
+            [value],
+            signal
+          ),
         timeoutMs
       );
       return deleted === 1;
     },
+    expireIfValue: async (key, value, ttlSeconds) => {
+      const renewed = await withTimeout(
+        (signal) =>
+          evalRedisScript(
+            client,
+            EXPIRE_IF_VALUE_SCRIPT,
+            key,
+            [value, String(ttlSeconds)],
+            signal
+          ),
+        timeoutMs
+      );
+      return renewed === 1;
+    },
   };
-}
-
-function isInboxRedisTimeout(err: unknown): boolean {
-  return err instanceof Error && err.message === "Inbox Redis timed out";
-}
-
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error("Inbox Redis timed out"));
-        }, timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
 }
 
 export function inboxClaimKey(messageId: string): string {
@@ -140,7 +181,12 @@ export async function isInboxProcessed(messageId: string): Promise<boolean> {
 
 export async function claimInboxMessage(
   messageId: string
-): Promise<{ ok: true; outcome: InboxClaimOutcome } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; outcome: "won"; token: string }
+  | { ok: true; outcome: "lost" }
+  | { ok: true; outcome: "processed" }
+  | { ok: false; error: string }
+> {
   const parsed = parseInboxMessageId(messageId);
   if (!parsed.ok) {
     return parsed;
@@ -154,6 +200,7 @@ export async function claimInboxMessage(
   let claimed = false;
   for (let attempt = 0; attempt < 2 && !claimed; attempt += 1) {
     let set: "OK" | null = null;
+    let setTimedOut = false;
     try {
       set = await store.set(claimKey, token, {
         nx: true,
@@ -163,9 +210,13 @@ export async function claimInboxMessage(
       if (!isInboxRedisTimeout(err)) {
         throw err;
       }
+      setTimedOut = true;
     }
     if (set === "OK") {
       claimed = true;
+      break;
+    }
+    if (setTimedOut) {
       break;
     }
     const existing = await store.get(claimKey);
@@ -186,10 +237,10 @@ export async function claimInboxMessage(
       }
       return { ok: true, outcome: "processed" };
     }
-    return {
-      ok: true,
-      outcome: currentClaim === token ? "won" : "lost",
-    };
+    if (currentClaim === token) {
+      return { ok: true, outcome: "won", token };
+    }
+    return { ok: true, outcome: "lost" };
   }
   if (await isInboxProcessed(parsed.messageId)) {
     return { ok: true, outcome: "processed" };
@@ -211,6 +262,45 @@ export async function markInboxProcessed(
     return { ok: false, error: "Failed to persist processed messageId" };
   }
   return { ok: true };
+}
+
+export async function releaseInboxClaim(
+  messageId: string,
+  token: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = parseInboxMessageId(messageId);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  try {
+    await kv().deleteIfValue(inboxClaimKey(parsed.messageId), token);
+  } catch {
+    return { ok: false, error: "Failed to release inbox claim" };
+  }
+  return { ok: true };
+}
+
+export async function renewInboxClaim(
+  messageId: string,
+  token: string
+): Promise<
+  | { ok: true; renewed: boolean }
+  | { ok: false; error: string }
+> {
+  const parsed = parseInboxMessageId(messageId);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  try {
+    const renewed = await kv().expireIfValue(
+      inboxClaimKey(parsed.messageId),
+      token,
+      getInboxClaimTtlSeconds()
+    );
+    return { ok: true, renewed };
+  } catch {
+    return { ok: false, error: "Failed to renew inbox claim" };
+  }
 }
 
 export async function extractUnprocessedInboxMessage(
@@ -235,5 +325,6 @@ export async function extractUnprocessedInboxMessage(
     ok: true,
     status: "extracted",
     jobDescription: extracted.jobDescription,
+    claimToken: claimed.token,
   };
 }

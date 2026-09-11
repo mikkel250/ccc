@@ -11,8 +11,10 @@ Required: `Authorization: Bearer <TAILOR_API_KEY>`.
 | Presenter | Notes |
 |-----------|--------|
 | Smoke CLI (`npm run smoke`) | Operator / manual live-API path |
+| `gmail:auth` / `gmail:list` | Local operator CLIs (not HTTP). Mint `GMAIL_REFRESH_TOKEN`; list messages with `GMAIL_RECRUITER_LABEL`. Seekers never hold Gmail tokens. |
+| `inbox:scan` | Local operator CLI (not HTTP). Requires `INBOX_SCAN_ENABLED=1`. Lists labeled mail, strict-tailors in-process, creates or reuses one thread draft (`replyText` + CV `.docx`), then marks processed. |
 
-The planned inbox worker is **not** an HTTP presenter: it tailors in-process (no Bearer, no `RATE_LIMIT_*` buckets). Product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`. Seekers and browsers never hold the key.
+The inbox worker is **not** an HTTP presenter: `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a labeled payload then calls `runTailorCore` (strict `cv` + `replyText`, no Bearer, no `RATE_LIMIT_*` buckets, no `remaining`/`resetTime`). Product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`. Seekers and browsers never hold the key.
 
 Missing/invalid Bearer → **401**. Unset/`TAILOR_API_KEY` misconfiguration, production bypass hard-block, or other auth-gate unavailability → **503** (fail closed; not all auth failures are 401). Deployed environments fail closed when `TAILOR_API_KEY` is unset. Local insecure bypass (`TAILOR_AUTH_INSECURE_BYPASS=1`) is hard-blocked when production markers are set.
 
@@ -80,9 +82,9 @@ Request body size capped by `TAILOR_REQUEST_MAX_BYTES` (default 65536).
 {
   "cv": "<base64-encoded .docx>",
   "curatedJson": { "name": "…", "contact": {}, "summary": [], "…": "…" },
-  "coverLetter": "…markdown cover letter (flexible mode only)…",
+  "replyText": "…recruiter reply email body (strict mode only)…",
   "builderVersion": "1.0.0",
-  "curationMode": "flexible",
+  "curationMode": "strict",
   "model": "anthropic/sonnet",
   "usage": {
     "promptTokens": 12000,
@@ -98,6 +100,7 @@ Request body size capped by `TAILOR_REQUEST_MAX_BYTES` (default 65536).
 |-------|-------------|
 | `cv` | Base64 `.docx` |
 | `coverLetter` | Markdown cover letter (flexible mode only; absent for strict mode) |
+| `replyText` | Recruiter-thread email body (strict mode only; absent for flexible). Trimmed non-empty string; missing/blank curator `reply_text` is HTTP 422. |
 | `curatedJson` | Schema-valid curated CV (caller-owned for history/regen) |
 | `builderVersion` | Mechanical builder semver; keep with JSON for style-stable regen |
 | `curationMode` | Echo of the mode used for this tailor (`strict` or `flexible`) |

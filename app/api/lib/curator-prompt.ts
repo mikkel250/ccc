@@ -116,16 +116,26 @@ cut. That produces a CV that reads like two unrelated careers stapled together, 
    the Keyword Bank. Cut anything you cannot justify this way — do not keep it "for
    completeness" or because of its position in master. Do not write the audit, Keyword Bank,
    or Alignment Snapshot into the response.
-4. Emit curated_cv.json — same schema as master, shaped per <curation_mode>.
+4. Emit a JSON wrapper { curated_cv, reply_text } — curated_cv matches the master schema
+   shaped per <curation_mode>; reply_text is a recruiter-thread email body grounded in
+   the Master CV (same no-invention rules). Not a cover letter.
 </process>
 
 <output_format>
-Return a single JSON object matching the master CV schema.
+Return a single JSON object. No markdown fences and no prose before or after the JSON.
+Shape:
+{
+  "curated_cv": { ... },
+  "reply_text": "plain-text recruiter reply email body"
+}
+
+curated_cv MUST match hard constraints in references/json-curator/master-cv.schema.json
+(keep this block synchronized with that schema — do not invent fields):
 The first non-whitespace character must be \`{\` and the last must be \`}\`.
 No Alignment Snapshot, Change Log, Keyword Bank, cut audit, markdown fences, or
 conversational filler before or after the JSON.
 Do not wrap the object in markdown fences unless required by the channel; the first
-top-level \`{\` … last \`}\` must be valid curated CV JSON.
+top-level \`{\` … last \`}\` must be valid wrapper JSON.
 </output_format>
 
 <guardrails>
@@ -145,6 +155,20 @@ ${MASTER_CV_JSON_PLACEHOLDER}
 /** Hardcoded fallback (kept in sync with Langfuse prompt cv-curator-json). */
 export function getCuratorPromptFallbackText(): string {
   return FALLBACK_PROMPT;
+}
+
+/**
+ * Strict Langfuse production copy may still ask for bare CV JSON.
+ * Use the local fallback until that prompt names `reply_text`.
+ */
+export function resolveStrictCuratorSystemPrompt(
+  remotePrompt: string,
+  fallbackPrompt: string
+): { systemPrompt: string; usedFallback: boolean } {
+  if (remotePrompt.includes("reply_text")) {
+    return { systemPrompt: remotePrompt, usedFallback: false };
+  }
+  return { systemPrompt: fallbackPrompt, usedFallback: true };
 }
 
 export async function getCuratorPrompt(mode?: CurationMode): Promise<{
@@ -176,6 +200,26 @@ export async function getCuratorPrompt(mode?: CurationMode): Promise<{
       label: "production",
       cacheTtlSeconds: CURATOR_PROMPT_CACHE_TTL_SECONDS,
     });
+
+    if (!isFlexible && typeof prompt.prompt === "string") {
+      const resolved = resolveStrictCuratorSystemPrompt(
+        prompt.prompt,
+        fallbackPrompt
+      );
+      if (resolved.usedFallback) {
+        console.warn(
+          `Langfuse prompt "${promptName}" v${prompt.version} omits reply_text; using hardcoded fallback`
+        );
+        return {
+          systemPrompt: resolved.systemPrompt,
+          langfusePrompt: {
+            name: promptName,
+            version: 0,
+            isFallback: true,
+          },
+        };
+      }
+    }
 
     return {
       systemPrompt: prompt.prompt,
@@ -274,6 +318,6 @@ export function buildCuratorUserMessage(
     "",
     curationMode === "flexible"
       ? "Respond with a JSON object containing curated_cv (the curated CV per the master schema) and cover_letter (a markdown cover letter)."
-      : "Respond with curated CV JSON only (same schema as master). The response must start with { and end with } — no prose, audit notes, or markdown fences.",
+      : "Respond with a JSON object { curated_cv, reply_text } — curated_cv matches the master schema; reply_text is the recruiter-thread email body. The response must start with { and end with } — no prose, audit notes, or markdown fences.",
   ].join("\n");
 }

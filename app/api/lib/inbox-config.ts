@@ -1,12 +1,13 @@
 /**
  * Inbox Redis / message-id tunables. Every value originates in env (.env.example).
  */
-import { getEnvNumber, getEnvString } from "../../../lib/env";
+import { getEnvBoolean, getEnvNumber, getEnvString } from "../../../lib/env";
 
 const DEFAULT_PREFIX = "inbox";
 const DEFAULT_CLAIM_TTL_SECONDS = 900;
 const DEFAULT_PROCESSED_TTL_SECONDS = 0;
 const DEFAULT_MESSAGE_ID_MAX_CHARS = 128;
+const DEFAULT_SCAN_BACKOFF_MS = 1000;
 const DEFAULT_REDIS_TIMEOUT_MS = 2000;
 
 export function getInboxRedisPrefix(): string {
@@ -24,6 +25,16 @@ export function getInboxProcessedTtlSeconds(): number {
 
 export function getInboxMessageIdMaxChars(): number {
   return Math.max(1, getEnvNumber("INBOX_MESSAGE_ID_MAX_CHARS", DEFAULT_MESSAGE_ID_MAX_CHARS));
+}
+
+/** Milliseconds to wait between scan messages (R9). 0 disables. */
+export function getInboxScanBackoffMs(): number {
+  return Math.max(0, getEnvNumber("INBOX_SCAN_BACKOFF_MS", DEFAULT_SCAN_BACKOFF_MS));
+}
+
+/** Explicit opt-in for the Gmail scan job. Default off. */
+export function isInboxScanEnabled(): boolean {
+  return getEnvBoolean("INBOX_SCAN_ENABLED", false);
 }
 
 /** Abort hung inbox Redis get/set (default 2000ms, same order as rate-limit). */
