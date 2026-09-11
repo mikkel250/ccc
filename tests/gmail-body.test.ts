@@ -21,6 +21,10 @@ describe("htmlToText", () => {
     );
   });
 
+  it("leaves prototype property names as literal entities", () => {
+    assert.equal(htmlToText("<p>&amp;toString;</p>"), "&toString;");
+  });
+
   it("rejects surrogate numeric entities instead of decoding them", () => {
     assert.equal(htmlToText("<p>&#xD800;visible</p>"), "visible");
     assert.equal(htmlToText("<p>&#55296;visible</p>"), "visible");

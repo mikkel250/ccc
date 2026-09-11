@@ -199,7 +199,7 @@ describe("listLabeledRecruiterMail", () => {
     });
     assert.equal(result.ok, false);
     if (!result.ok) {
-      assert.match(result.error, /Gmail API request failed|token request failed/);
+      assert.match(result.error, /Gmail API request failed/);
     }
   });
 });

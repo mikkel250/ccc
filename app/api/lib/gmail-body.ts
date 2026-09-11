@@ -178,7 +178,9 @@ function decodeHtmlEntities(text: string): string {
       if (body.startsWith("#")) {
         return decodeNumericEntity(body) ?? "";
       }
-      return HTML_NAMED_ENTITIES[body] ?? full;
+      return Object.hasOwn(HTML_NAMED_ENTITIES, body)
+        ? HTML_NAMED_ENTITIES[body]!
+        : full;
     }
   );
 }

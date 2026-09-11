@@ -213,7 +213,7 @@ describe("inbox processed store", () => {
         memory.store.set(inboxProcessedKey(ID), "1");
         throw new Error("Inbox Redis timed out");
       }
-      return orig(...args);
+      return outcome;
     };
 
     const result = await claimInboxMessage(ID);
@@ -232,7 +232,7 @@ describe("inbox processed store", () => {
         memory.store.set(inboxProcessedKey(ID), "1");
         throw new Error("Inbox Redis timed out");
       }
-      return orig(...args);
+      return outcome;
     };
 
     const result = await claimInboxMessage(ID);

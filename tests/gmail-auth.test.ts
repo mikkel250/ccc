@@ -19,9 +19,28 @@ const KEYS = [
   "GMAIL_RECRUITER_LABEL",
   "GMAIL_OAUTH_TOKEN_URL",
   "GMAIL_API_BASE_URL",
+  "GMAIL_AUTH_BIND_HOST",
+  "GMAIL_AUTH_TIMEOUT_MS",
 ] as const;
 
 const saved: Record<string, string | undefined> = {};
+
+beforeEach(() => {
+  for (const key of KEYS) {
+    saved[key] = process.env[key];
+  }
+});
+
+afterEach(() => {
+  for (const key of KEYS) {
+    const previous = saved[key];
+    if (previous === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = previous;
+    }
+  }
+});
 
 describe("gmail-auth CLI helpers", () => {
   it("formats a loopback redirect URI", () => {
@@ -144,30 +163,21 @@ describe("gmail-auth CLI helpers", () => {
   });
 
   it("fails closed when the auth listener wait exceeds GMAIL_AUTH_TIMEOUT_MS", async () => {
-    const previousTimeout = process.env.GMAIL_AUTH_TIMEOUT_MS;
-    const previousBind = process.env.GMAIL_AUTH_BIND_HOST;
     process.env.GMAIL_CLIENT_ID = "client-id";
     process.env.GMAIL_CLIENT_SECRET = "client-secret";
     process.env.GMAIL_OAUTH_TOKEN_URL = "https://oauth.example.test/token";
     process.env.GMAIL_AUTH_TIMEOUT_MS = "20";
     process.env.GMAIL_AUTH_BIND_HOST = "127.0.0.1";
-    try {
-      const result = await runGmailAuthCli({
-        listen: async () => ({
-          port: 9,
-          close: async () => undefined,
-          wait: () => new Promise<URL>(() => undefined),
-        }),
-      });
-      assert.equal(result.ok, false);
-      if (!result.ok) {
-        assert.match(result.error, /timed out/i);
-      }
-    } finally {
-      if (previousTimeout === undefined) delete process.env.GMAIL_AUTH_TIMEOUT_MS;
-      else process.env.GMAIL_AUTH_TIMEOUT_MS = previousTimeout;
-      if (previousBind === undefined) delete process.env.GMAIL_AUTH_BIND_HOST;
-      else process.env.GMAIL_AUTH_BIND_HOST = previousBind;
+    const result = await runGmailAuthCli({
+      listen: async () => ({
+        port: 9,
+        close: async () => undefined,
+        wait: () => new Promise<URL>(() => undefined),
+      }),
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /timed out/i);
     }
   });
 
@@ -189,26 +199,12 @@ describe("gmail-auth CLI helpers", () => {
 
 describe("gmail-list CLI", () => {
   beforeEach(() => {
-    for (const key of KEYS) {
-      saved[key] = process.env[key];
-    }
     process.env.GMAIL_CLIENT_ID = "client-id";
     process.env.GMAIL_CLIENT_SECRET = "client-secret";
     process.env.GMAIL_REFRESH_TOKEN = "refresh-token";
     process.env.GMAIL_RECRUITER_LABEL = "Recruiter";
     process.env.GMAIL_OAUTH_TOKEN_URL = "https://oauth.example.test/token";
     process.env.GMAIL_API_BASE_URL = "https://gmail.example.test/gmail/v1";
-  });
-
-  afterEach(() => {
-    for (const key of KEYS) {
-      const previous = saved[key];
-      if (previous === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = previous;
-      }
-    }
   });
 
   it("formats one JSON object per message", () => {

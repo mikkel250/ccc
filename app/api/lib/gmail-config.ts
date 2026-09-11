@@ -26,7 +26,7 @@ function requireEnv(key: string): string {
 
 /** Validate an outbound endpoint before credentials can be sent to it. */
 function requireHttpsUrl(key: string, fallback: string): string {
-  const raw = getEnvString(key, fallback)!;
+  const raw = getEnvString(key, fallback) ?? fallback;
   try {
     if (new URL(raw).protocol === "https:") {
       return raw;
@@ -74,7 +74,8 @@ export function getGmailApiBaseUrl(): string {
 
 /** Return the OAuth scope requested by the local authorization flow. */
 export function getGmailOauthScope(): string {
-  return getEnvString("GMAIL_OAUTH_SCOPE", DEFAULT_OAUTH_SCOPE)!;
+  return getEnvString("GMAIL_OAUTH_SCOPE", DEFAULT_OAUTH_SCOPE) ??
+    DEFAULT_OAUTH_SCOPE;
 }
 
 /** Return the requested Gmail page size clamped to the configured limit. */
@@ -92,7 +93,9 @@ export function getGmailListMaxResults(): number {
 
 /** Loopback bind host for gmail:auth. Non-loopback values are rejected (R16). */
 export function getGmailAuthBindHost(): string {
-  const raw = getEnvString("GMAIL_AUTH_BIND_HOST", DEFAULT_AUTH_BIND_HOST)!;
+  const raw =
+    getEnvString("GMAIL_AUTH_BIND_HOST", DEFAULT_AUTH_BIND_HOST) ??
+    DEFAULT_AUTH_BIND_HOST;
   if (raw !== "127.0.0.1" && raw !== "::1") {
     throw new ServiceError(
       "GMAIL_AUTH_BIND_HOST must be 127.0.0.1 or ::1"
