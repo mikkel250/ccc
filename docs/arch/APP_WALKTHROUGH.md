@@ -45,7 +45,7 @@ The planned inbox worker is not this HTTP client. It calls an in-process tailor 
 
 | Step | File | Function | Notes |
 |------|------|----------|-------|
-| Route handler | `app/api/tailor-cv/route.ts` | `POST` | `runtime = "nodejs"` — Railway Fluid Compute, not Edge |
+| Route handler | `app/api/tailor-cv/route.ts` | `POST` | `runtime = "nodejs"` — Railway Node process, not Edge |
 | Method guard | same | `GET` | Returns 405; only POST is supported |
 | Health check | `app/api/hello/route.ts` | `GET` | `{ service, status: "ok" }` — deploy probes and `npm run smoke` |
 
@@ -55,8 +55,8 @@ The root page (`app/page.tsx :: Home`) calls `notFound()` — there is intention
 
 | Step | File | Function |
 |------|------|----------|
-| Client identity | `route.ts` | Rightmost `x-forwarded-for` entry → `400` if unresolvable |
-| JSON body | `route.ts` | `request.json()` |
+| Client identity | `tailor-pipeline.ts` | Rightmost `x-forwarded-for` entry → `400` if unresolvable |
+| JSON body | `tailor-pipeline.ts` | Capped read (`TAILOR_REQUEST_MAX_BYTES`) then `JSON.parse` |
 | Validation | `app/api/lib/tailor-cv-validation.ts` | `validateTailorCvBody(body, fallbackSessionId)` |
 
 **Contract:** `jobDescription` required non-empty string; `sessionId` optional (defaults to IP-based id). Failures → **400**.

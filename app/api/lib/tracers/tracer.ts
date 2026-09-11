@@ -13,7 +13,11 @@ import type { LangfusePromptRef } from './langfuse';
 
 export type TraceOptions = Omit<
   ChatOptions,
-  'openaiClient' | 'openRouterClient' | 'deepseekClient' | 'anthropicClient'
+  | 'openaiClient'
+  | 'openRouterClient'
+  | 'deepseekClient'
+  | 'anthropicClient'
+  | 'googleClient'
 >;
 
 export function toTraceOptions(options: ChatOptions): TraceOptions {
@@ -22,6 +26,7 @@ export function toTraceOptions(options: ChatOptions): TraceOptions {
     openRouterClient: _openRouterClient,
     deepseekClient: _deepseekClient,
     anthropicClient: _anthropicClient,
+    googleClient: _googleClient,
     ...traceSafe
   } = options;
   return traceSafe;

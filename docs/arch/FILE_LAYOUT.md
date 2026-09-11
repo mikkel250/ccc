@@ -35,11 +35,20 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── markdown-docx.ts  # Legacy markdown → .docx (not tailor hot path)
 │           ├── cv-prompt.ts      # Legacy markdown tailor prompt (not hot path)
 │           ├── redis.ts          # Shared Upstash Redis client singleton
+│           ├── gmail-config.ts   # Gmail OAuth/API env getters
+│           ├── gmail-oauth.ts    # Authorize URL, callback, token exchange/refresh
+│           ├── gmail-list.ts     # Recruiter-label resolve + messages.list
 │           ├── inbox-config.ts   # Inbox Redis prefix / claim+processed TTLs
-│           ├── inbox-processed-store.ts # SET NX claim vs terminal processed mark
+│           ├── inbox-processed-store.ts # Lua claim vs terminal processed mark
 │           ├── gmail-body.ts     # Gmail payload → JD (text/plain else html-to-text)
 │           ├── rate-limit.ts     # Dual IP + secret-hash rate limiter
 │           ├── tailor-cv-validation.ts  # Request body validation
+│           ├── tailor-pipeline.ts    # HTTP tailor orchestration (discriminated result)
+│           ├── tailor-cv-deps.ts     # ESM-mock seam for pipeline steps
+│           ├── errors.ts             # RateLimitError / ServiceError
+│           ├── eval-parse.ts         # extractStructuredJson (untrusted LLM text)
+│           ├── eval-defaults.ts      # Historical eval default CSV/model constants
+│           ├── eval-model-validation.ts
 │           ├── eval-schema.ts     # Historical eval types/prompts (markdown-era)
 │           ├── eval-extract.ts    # JD metadata extraction (legacy eval helpers)
 │           ├── eval-format.ts     # 8-part format compliance checker
@@ -54,6 +63,8 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 ├── scripts/
 │   ├── create-langfuse-prompts.ts  # Upload prompts to Langfuse
 │   ├── e2e-tailor-cv.ts           # npm run smoke — live API + artifacts
+│   ├── gmail-auth.ts              # npm run gmail:auth — mint GMAIL_REFRESH_TOKEN
+│   ├── gmail-list.ts              # npm run gmail:list — labeled message ids
 │   ├── regen-docx.ts              # npm run regen-docx — mechanical rebuild
 │   ├── seed-eval-results.ts       # Seed historical eval-results artifacts
 │   └── verify-rate-limit.ts       # Live Upstash rate-limit check

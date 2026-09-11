@@ -11,6 +11,7 @@ Required: `Authorization: Bearer <TAILOR_API_KEY>`.
 | Presenter | Notes |
 |-----------|--------|
 | Smoke CLI (`npm run smoke`) | Operator / manual live-API path |
+| `gmail:auth` / `gmail:list` | Local operator CLIs (not HTTP). Mint `GMAIL_REFRESH_TOKEN`; list messages with `GMAIL_RECRUITER_LABEL`. Seekers never hold Gmail tokens. |
 
 The planned inbox worker is **not** an HTTP presenter: it tailors in-process (no Bearer, no `RATE_LIMIT_*` buckets). Product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`. Seekers and browsers never hold the key.
 

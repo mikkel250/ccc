@@ -49,6 +49,9 @@ The recruiter-facing email body returned on a successful `strict` tailor. Curato
 ### Inbox scan
 On-demand or scheduled job in this process: list Gmail messages with the recruiter label, skip claimed or processed ids, strict-tailor the body in-process, create a thread reply draft with reply text and the CV `.docx`. Local `npm run inbox:scan` and Railway cron invoke the same job.
 
+### Gmail OAuth
+One-shot local CLI (`npm run gmail:auth`) that mints `GMAIL_REFRESH_TOKEN` via a Desktop-app loopback redirect. Railway and `gmail:list` use that token. Not a product OAuth UI; seekers never hold Gmail credentials.
+
 ### Processed message
 A Gmail `messageId` in its terminal Redis state: a sendable reply draft already exists, so a later scan (local or Railway) does not tailor or create another draft. The worker claims the id before drafting and writes this mark only after draft success. Overlap and crash recovery live in the inbox-worker product contract (R10, R12, F3).
 

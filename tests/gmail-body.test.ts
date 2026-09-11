@@ -14,6 +14,22 @@ describe("htmlToText", () => {
     assert.equal(htmlToText("<p>Need a GM &amp; chef</p>"), "Need a GM & chef");
   });
 
+  it("decodes hexadecimal and named HTML entities", () => {
+    assert.equal(
+      htmlToText("<p>GM&#x2019;s role &mdash; hire now</p>"),
+      "GM\u2019s role \u2014 hire now"
+    );
+  });
+
+  it("leaves prototype property names as literal entities", () => {
+    assert.equal(htmlToText("<p>&amp;toString;</p>"), "&toString;");
+  });
+
+  it("rejects surrogate numeric entities instead of decoding them", () => {
+    assert.equal(htmlToText("<p>&#xD800;visible</p>"), "visible");
+    assert.equal(htmlToText("<p>&#55296;visible</p>"), "visible");
+  });
+
   it("drops comments, head, and hidden inner text", () => {
     const html = [
       "<html><head><title>Tracking pixel</title></head>",

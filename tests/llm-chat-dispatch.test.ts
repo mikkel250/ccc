@@ -269,6 +269,119 @@ describe("callOpenRouter — openRouterFlex", () => {
 
     assert.equal(capturedParams?.service_tier, undefined);
   });
+
+  it("sets service_tier flex for OpenRouter Google models", async () => {
+    let capturedParams: Record<string, unknown> | undefined;
+    const mockClient = createCapturingOpenRouterClient((params) => {
+      capturedParams = params;
+    });
+
+    await callOpenRouter(
+      [{ role: "user", content: "Hi" }],
+      "System",
+      {
+        model: "google/gemini-3.1-pro-preview",
+        openRouterClient: mockClient,
+      }
+    );
+
+    assert.equal(capturedParams?.service_tier, "flex");
+  });
+
+  it("omits service_tier for OpenRouter DeepSeek (no flex endpoints)", async () => {
+    let capturedParams: Record<string, unknown> | undefined;
+    const mockClient = createCapturingOpenRouterClient((params) => {
+      capturedParams = params;
+    });
+
+    await callOpenRouter(
+      [{ role: "user", content: "Hi" }],
+      "System",
+      {
+        model: "deepseek/deepseek-v4-pro",
+        openRouterFlex: true,
+        openRouterClient: mockClient,
+      }
+    );
+
+    assert.equal(capturedParams?.service_tier, undefined);
+  });
+
+  it("omits service_tier for other OpenRouter vendors even when flex is enabled", async () => {
+    let capturedParams: Record<string, unknown> | undefined;
+    const mockClient = createCapturingOpenRouterClient((params) => {
+      capturedParams = params;
+    });
+
+    await callOpenRouter(
+      [{ role: "user", content: "Hi" }],
+      "System",
+      {
+        model: "qwen/qwen3.7-max",
+        openRouterFlex: true,
+        openRouterClient: mockClient,
+      }
+    );
+
+    assert.equal(capturedParams?.service_tier, undefined);
+  });
+});
+
+describe("dispatchProvider — service_tier stays on OpenRouter transport", () => {
+  it("does not send service_tier on direct OpenAI even when openRouterFlex is true", async () => {
+    let capturedParams: Record<string, unknown> | undefined;
+    const mockClient = createCapturingOpenRouterClient((params) => {
+      capturedParams = params;
+    });
+
+    await dispatchProvider("openai", [{ role: "user", content: "Hi" }], "System", {
+      model: "openai/gpt-4o",
+      openRouterFlex: true,
+      openaiClient: mockClient,
+    });
+
+    assert.equal(capturedParams?.service_tier, undefined);
+  });
+
+  it("does not send service_tier on direct DeepSeek even when openRouterFlex is true", async () => {
+    let capturedParams: Record<string, unknown> | undefined;
+    const mockClient = createCapturingOpenRouterClient((params) => {
+      capturedParams = params;
+    });
+
+    await dispatchProvider(
+      "deepseek",
+      [{ role: "user", content: "Hi" }],
+      "System",
+      {
+        model: "deepseek/deepseek-v4-pro",
+        openRouterFlex: true,
+        deepseekClient: mockClient,
+      }
+    );
+
+    assert.equal(capturedParams?.service_tier, undefined);
+  });
+
+  it("sends service_tier flex through dispatchProvider for openrouter/openai", async () => {
+    let capturedParams: Record<string, unknown> | undefined;
+    const mockClient = createCapturingOpenRouterClient((params) => {
+      capturedParams = params;
+    });
+
+    await dispatchProvider(
+      "openrouter",
+      [{ role: "user", content: "Hi" }],
+      "System",
+      {
+        model: "openrouter/openai/gpt-5.4-mini",
+        openRouterClient: mockClient,
+      }
+    );
+
+    assert.equal(capturedParams?.service_tier, "flex");
+    assert.equal(capturedParams?.model, "openai/gpt-5.4-mini");
+  });
 });
 
 describe("chat — no fallback retry", () => {
