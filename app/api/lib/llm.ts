@@ -65,7 +65,12 @@ export interface ChatOptions {
   model?: string;
   source?: string;
   langfusePrompt?: LangfusePromptRef | null;
-  /** OpenRouter flex pricing tier (default true). No effect on direct providers. */
+  /**
+   * OpenRouter flex pricing. Only `callOpenRouter` reads this; other `call*`
+   * functions ignore it. Even on OpenRouter, `service_tier: flex` is attached
+   * only for openai/* and google/* model IDs — OpenRouter treats flex as
+   * "route only to flex endpoints", not as a silently ignored hint.
+   */
   openRouterFlex?: boolean;
   /**
    * Explicit reasoning effort. When set, OpenRouter gets `reasoning.effort`;
@@ -201,7 +206,9 @@ function formatMessages(
  * OpenRouter, DeepSeek) hit `client.chat.completions.create` with the same
  * body shape and normalize the same response fields. The deltas are entirely
  * (a) which client to use, (b) which label to attach to the "no response"
- * error message, and (c) whether to append `service_tier`.
+ * error message, and (c) optional extraCreateParams (OpenRouter flex/reasoning
+ * or DeepSeek thinking). Transport-specific fields must be passed in by the
+ * wrapper — this helper never reads ChatOptions.openRouterFlex itself.
  *
  * Keeping the three public functions as thin wrappers preserves their
  * external signatures (used by tests and internal dispatchers).
@@ -381,6 +388,30 @@ export function buildOpenRouterReasoningParams(
   return { reasoning: { effort } };
 }
 
+/** Vendors whose OpenRouter endpoints support `service_tier: flex`. */
+const OPENROUTER_FLEX_VENDORS = new Set(["openai", "google"]);
+
+/**
+ * First vendor segment of an OpenRouter API model id (`openai/gpt-4o`,
+ * `google/gemini-…`, `deepseek/…`). Accepts an optional `openrouter/` prefix
+ * if a caller skipped dispatch stripping.
+ */
+export function openRouterModelVendor(apiModel: string): string {
+  const parts = apiModel.split("/").filter((part) => part.length > 0);
+  if (parts[0] === "openrouter" && parts[1]) {
+    return parts[1];
+  }
+  return parts[0] ?? "";
+}
+
+/**
+ * OpenRouter `service_tier: flex` restricts routing to flex endpoints.
+ * Attach it only for vendors that actually publish those endpoints.
+ */
+export function shouldAttachOpenRouterFlex(apiModel: string): boolean {
+  return OPENROUTER_FLEX_VENDORS.has(openRouterModelVendor(apiModel));
+}
+
 /**
  * DeepSeek direct API thinking controls.
  * Direct API only supports thinking on/off + reasoning_effort high|max.
@@ -424,7 +455,9 @@ export async function callOpenRouter(
   if (!model) throw new Error('model is required for callOpenRouter');
 
   const extraCreateParams: Record<string, unknown> = {
-    ...(openRouterFlex ? { service_tier: 'flex' as const } : {}),
+    ...(openRouterFlex && shouldAttachOpenRouterFlex(model)
+      ? { service_tier: "flex" as const }
+      : {}),
     ...buildOpenRouterReasoningParams(reasoningEffort),
   };
 
