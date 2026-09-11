@@ -176,6 +176,34 @@ describe("writeSmokeArtifacts", () => {
     assert.equal(existsSync(flexiblePaths.replyPath), false);
   });
 
+  it("removes a stale reply file when a strict run has no reply text", async () => {
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const written = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "strict",
+      coverLetter: undefined,
+      replyText: "Thank you for reaching out.",
+      artifactDir: dir,
+    });
+    assert.ok(existsSync(written.replyPath));
+
+    const skipped = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "strict",
+      coverLetter: undefined,
+      artifactDir: dir,
+    });
+
+    assert.equal(skipped.replyPath, written.replyPath);
+    assert.equal(existsSync(skipped.replyPath), false);
+  });
+
   it("surfaces write failures for curated JSON", async () => {
     const docx = await markdownToDocxBase64("# CV\n- bullet");
     const blocked = join(dir, "blocked");
