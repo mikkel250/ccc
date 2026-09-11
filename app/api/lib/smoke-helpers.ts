@@ -4,7 +4,7 @@
 import { basename, join } from "node:path";
 import { getSmokeParityModelsCsv } from "../../../lib/env";
 import { parseNamespacedProvider } from "../../../lib/providers";
-import type { CurationMode } from "./curation-mode";
+import { usableReplyText, type CurationMode } from "./curation-mode";
 
 /** Safe filesystem slug from a JD path (basename without its terminal extension). */
 export function smokeArtifactSlug(jdPath: string): string {
@@ -111,6 +111,7 @@ export function smokeArtifactPaths(
   curatedPath: string;
   docxPath: string;
   coverLetterPath: string;
+  replyPath: string;
 } {
   const slug = smokeArtifactSlug(jdPath);
   const dir = model ? smokeParityArtifactDir(smokeDir, model) : smokeDir;
@@ -119,6 +120,7 @@ export function smokeArtifactPaths(
     curatedPath: join(dir, `${slug}.curated.json`),
     docxPath: join(dir, `${slug}.docx`),
     coverLetterPath: join(dir, `${slug}.cover-letter.docx`),
+    replyPath: join(dir, `${slug}.reply.txt`),
   };
 }
 
@@ -135,6 +137,17 @@ export function shouldWriteCoverLetterDocx(
     typeof coverLetter === "string" &&
     coverLetter.trim().length > 0
   );
+}
+
+/**
+ * Pure predicate: should we write the strict recruiter reply text file?
+ * True only for strict mode with a non-empty trimmed string.
+ */
+export function shouldWriteReplyText(
+  curationMode: CurationMode,
+  replyText: unknown
+): replyText is string {
+  return curationMode === "strict" && usableReplyText(replyText) !== undefined;
 }
 
 /** Strip contact + free-text bullets for default local artifact writes. */

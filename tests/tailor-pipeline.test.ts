@@ -9,6 +9,10 @@ import { createFailingMock } from "../tests/helpers/rate-limit-mock";
 import { BUILDER_VERSION } from "../app/api/lib/json-docx-builder";
 import { getTailorJdMaxChars } from "../app/api/lib/cv-schema";
 import {
+  DEFAULT_STRICT_REPLY,
+  strictCuratorJson,
+} from "../tests/helpers/strict-curator";
+import {
   getRateLimitConfig,
   hashTailorApiKeyForRateLimit,
   __injectRatelimitForTest,
@@ -33,6 +37,7 @@ const VALID_BODY = JSON.stringify({
   sessionId: "test-session",
 });
 
+/** Stub a successful strict pipeline response while leaving real validation enabled. */
 function mockPipelineSuccess(
   curated: Record<string, unknown> = FIXTURE_CURATED
 ) {
@@ -55,7 +60,7 @@ function mockPipelineSuccess(
     (jd: string) => `JD:\n${jd}`
   );
   mock.method(tailorCvDeps, "chat", async () => ({
-    content: JSON.stringify(curated),
+    content: strictCuratorJson(curated),
     usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
     model: "claude-sonnet-4-6",
     finishReason: "stop",
@@ -389,7 +394,7 @@ describe("buildTailorResponse — pipeline orchestration", () => {
   it("returns error when curator JSON fails schema validation", async () => {
     mockPipelineSuccess();
     mock.method(tailorCvDeps, "chat", async () => ({
-      content: JSON.stringify({ name: "Only Name" }),
+      content: strictCuratorJson({ name: "Only Name" }),
       usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
       model: "anthropic/sonnet",
       finishReason: "stop",
@@ -472,6 +477,8 @@ describe("buildTailorResponse — pipeline orchestration", () => {
         assert.equal(typeof result.body.remaining, "number");
         assert.equal(typeof result.body.resetTime, "number");
         assert.equal(result.body.curationMode, "strict");
+        assert.equal(result.body.replyText, DEFAULT_STRICT_REPLY);
+        assert.equal(result.body.coverLetter, undefined);
         assert.equal(typeof result.body.model, "string");
         assert.equal(result.body.model, "anthropic/sonnet");
         assert.ok(result.body.usage);
@@ -526,7 +533,7 @@ describe("buildTailorResponse — pipeline orchestration", () => {
       mock.method(tailorCvDeps, "chat", async () => {
         callOrder.push("chat");
         return {
-          content: JSON.stringify(FIXTURE_CURATED),
+          content: strictCuratorJson(FIXTURE_CURATED),
           usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
           model: "anthropic/sonnet",
           finishReason: "stop",

@@ -25,6 +25,11 @@ export type InboxKv = {
 
 export type InboxClaimOutcome = "won" | "lost" | "processed";
 
+export type InboxClaimResult =
+  | { ok: true; outcome: "won"; token: string }
+  | { ok: true; outcome: "lost" | "processed" }
+  | { ok: false; error: string };
+
 export type ExtractUnprocessedResult =
   | { ok: true; status: "extracted"; jobDescription: string }
   | { ok: true; status: "skipped-processed" }
@@ -138,9 +143,7 @@ export async function isInboxProcessed(messageId: string): Promise<boolean> {
   return value != null;
 }
 
-export async function claimInboxMessage(
-  messageId: string
-): Promise<{ ok: true; outcome: InboxClaimOutcome } | { ok: false; error: string }> {
+export async function claimInboxMessage(messageId: string): Promise<InboxClaimResult> {
   const parsed = parseInboxMessageId(messageId);
   if (!parsed.ok) {
     return parsed;
@@ -186,10 +189,10 @@ export async function claimInboxMessage(
       }
       return { ok: true, outcome: "processed" };
     }
-    return {
-      ok: true,
-      outcome: currentClaim === token ? "won" : "lost",
-    };
+    if (currentClaim === token) {
+      return { ok: true, outcome: "won", token };
+    }
+    return { ok: true, outcome: "lost" };
   }
   if (await isInboxProcessed(parsed.messageId)) {
     return { ok: true, outcome: "processed" };
@@ -221,14 +224,19 @@ export async function extractUnprocessedInboxMessage(
   if (!claimed.ok) {
     return claimed;
   }
-  if (claimed.outcome === "processed") {
-    return { ok: true, status: "skipped-processed" };
-  }
-  if (claimed.outcome === "lost") {
-    return { ok: true, status: "skipped-claimed" };
+  if (claimed.outcome !== "won") {
+    return {
+      ok: true,
+      status:
+        claimed.outcome === "processed" ? "skipped-processed" : "skipped-claimed",
+    };
   }
   const extracted = extractGmailJobDescription(message);
   if (!extracted.ok) {
+    const parsed = parseInboxMessageId(messageId);
+    if (parsed.ok) {
+      await kv().deleteIfValue(inboxClaimKey(parsed.messageId), claimed.token);
+    }
     return extracted;
   }
   return {

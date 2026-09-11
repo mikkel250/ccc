@@ -11,6 +11,7 @@ import {
   injectSlidingWindowMock,
 } from "../tests/helpers/tailor-request";
 import { buildTailorResponse } from "../app/api/lib/tailor-pipeline";
+import { strictCuratorJson } from "../tests/helpers/strict-curator";
 
 const FIXTURE_CURATED = JSON.parse(
   readFileSync(
@@ -45,7 +46,8 @@ describe("tailor pipeline — single curator pass", () => {
     sessionId: "cr-test",
   });
 
-  function mockSingleCuratorPass(content: string = JSON.stringify(FIXTURE_CURATED)) {
+  /** Stub one curator response and expose the resulting chat-call count. */
+  function mockSingleCuratorPass(content: string = strictCuratorJson(FIXTURE_CURATED)) {
     mock.method(tailorCvDeps, "requireMasterCv", () => FIXTURE_CURATED);
     mock.method(tailorCvDeps, "getCuratorPrompt", async () => ({
       systemPrompt: "Curate with {{MASTER_CV_JSON}} and {{CURATION_MODE_POLICY}}",

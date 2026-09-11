@@ -20,6 +20,7 @@ import {
   existsSync,
   readFileSync,
   mkdirSync,
+  rmSync,
   writeFileSync,
   readdirSync,
   realpathSync,
@@ -38,6 +39,7 @@ import {
   pendingParityModels,
   redactCuratedForArtifact,
   shouldWriteCoverLetterDocx,
+  shouldWriteReplyText,
   smokeArtifactPaths,
   smokeParityArtifactDir,
 } from "../app/api/lib/smoke-helpers";
@@ -95,10 +97,12 @@ export type WriteSmokeArtifactsInput = {
   cvBase64: string;
   curationMode: CurationMode;
   coverLetter: unknown;
+  replyText?: unknown;
   artifactDir?: string;
   model?: string;
 };
 
+/** Persist the CV, curated JSON, and mode-specific artifacts from a smoke run. */
 export async function writeSmokeArtifacts(
   input: WriteSmokeArtifactsInput
 ): Promise<{
@@ -106,6 +110,7 @@ export async function writeSmokeArtifacts(
   curatedPath: string;
   docxPath: string;
   coverLetterPath: string;
+  replyPath: string;
 }> {
   const dir =
     input.artifactDir ?? join(process.cwd(), "tmp", "smoke");
@@ -114,7 +119,8 @@ export async function writeSmokeArtifacts(
   if (
     existsSync(paths.curatedPath) ||
     existsSync(paths.docxPath) ||
-    existsSync(paths.coverLetterPath)
+    existsSync(paths.coverLetterPath) ||
+    existsSync(paths.replyPath)
   ) {
     console.warn(
       `Overwriting existing smoke artifacts for JD basename ${JSON.stringify(paths.slug)}`
@@ -159,6 +165,16 @@ export async function writeSmokeArtifacts(
     }
   }
 
+  if (shouldWriteReplyText(input.curationMode, input.replyText)) {
+    writeFileSync(paths.replyPath, input.replyText.trim(), "utf8");
+    console.log(`Wrote ${paths.replyPath}`);
+  } else {
+    rmSync(paths.replyPath, { force: true });
+    if (input.curationMode === "strict") {
+      console.warn("Reply text missing or empty for strict run, skipping reply file");
+    }
+  }
+
   return paths;
 }
 
@@ -171,6 +187,7 @@ export type RunSmokeCliOptions = {
   deps?: SmokePipelineDeps;
 };
 
+/** Execute one smoke request and write its validated response artifacts. */
 export async function runSmokeCli(options: RunSmokeCliOptions): Promise<void> {
   const curationMode = resolveCurationMode(options.wantFlexible);
 
@@ -236,6 +253,7 @@ export async function runSmokeCli(options: RunSmokeCliOptions): Promise<void> {
     cvBase64: result.docxBase64,
     curationMode,
     coverLetter: result.coverLetter,
+    replyText: result.replyText,
     artifactDir: smokeRoot,
     model: options.parity ? result.model : undefined,
   });

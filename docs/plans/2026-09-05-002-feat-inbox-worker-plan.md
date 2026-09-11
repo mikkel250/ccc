@@ -159,7 +159,7 @@ flowchart LR
   - **Covers R10, R12, F3.**
   - **Given:** Two overlapping scan triggers, or a crash / Redis failure after draft create and before the processed mark.
   - **When:** Scan runs (or continues).
-  - **Then:** Still one reply draft on the thread with R1 body and CV attachment; the message ends processed. Implementation tests (M8.3 / M8.5): concurrent claims (one winner) and crash before the processed mark.
+  - **Then:** Still one reply draft on the thread with R1 body and CV attachment; the message ends processed. M8.3 tests concurrent claims (one winner) and recovery after the claim key is gone. M8.5 tests existing-draft reuse after Redis mark failure; the claim store does not inspect Gmail.
 
 ### Success Criteria
 
@@ -195,7 +195,7 @@ The surrounding board is the current drain queue, not this plan's implementation
 - Cross-model parity (M7) — **Can proceed independently**. Drain takes this **second**.
 - M8.1 Strict reply text — **Depends on** this Product Contract. First inbox `/lfg`. **Enables** M8.4–M8.5.
 - M8.2 Gmail auth + list — **Can proceed independently** of M8.1. **Enables** M8.3.
-- M8.3 Body extract + processed ids — **Depends on** M8.2. **Enables** M8.4. Tests: concurrent claim (two invocations, one winner); crash before processed mark still allows recovery.
+- M8.3 Body extract + processed ids — **Depends on** M8.2. **Enables** M8.4. Tests: concurrent claim (two invocations, one winner); crash before processed mark still allows recovery after the claim key is gone (TTL or release). Existing-draft reconcile is M8.5, not the claim store.
 - M8.4 Tailor from a message — **Depends on** M8.1 and M8.3. In-process core from R8; not `POST /api/tailor-cv`.
 - M8.5 Thread draft + attach + body — **Depends on** M8.4. Tests: existing draft reused after Redis mark failure; no second draft. Local MVP complete.
 - M8.6 Railway schedule — **Depends on** M8.5. Same job, scheduled trigger.

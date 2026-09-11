@@ -73,10 +73,16 @@ describe("writeSmokeArtifacts", () => {
       cvBase64: docx,
       curationMode: "strict",
       coverLetter: undefined,
+      replyText: "Thank you for reaching out.",
       artifactDir: dir,
     });
     assert.ok(existsSync(paths.curatedPath));
     assert.ok(existsSync(paths.docxPath));
+    assert.ok(existsSync(paths.replyPath));
+    assert.equal(
+      readFileSync(paths.replyPath, "utf8"),
+      "Thank you for reaching out."
+    );
     const payload = JSON.parse(readFileSync(paths.curatedPath, "utf8")) as {
       redacted: boolean;
       curatedJson: { contact?: { redacted?: boolean }; summary?: string[] };
@@ -140,6 +146,62 @@ describe("writeSmokeArtifacts", () => {
     assert.equal(existsSync(paths.coverLetterPath), false);
     assert.ok(existsSync(paths.curatedPath));
     assert.ok(existsSync(paths.docxPath));
+  });
+
+  it("removes a stale strict reply file after a flexible run", async () => {
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const strictPaths = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "strict",
+      coverLetter: undefined,
+      replyText: "Thank you for reaching out.",
+      artifactDir: dir,
+    });
+    assert.ok(existsSync(strictPaths.replyPath));
+
+    const flexiblePaths = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "flexible",
+      coverLetter: undefined,
+      artifactDir: dir,
+    });
+
+    assert.equal(flexiblePaths.replyPath, strictPaths.replyPath);
+    assert.equal(existsSync(flexiblePaths.replyPath), false);
+  });
+
+  it("removes a stale reply file when a strict run has no reply text", async () => {
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const written = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "strict",
+      coverLetter: undefined,
+      replyText: "Thank you for reaching out.",
+      artifactDir: dir,
+    });
+    assert.ok(existsSync(written.replyPath));
+
+    const skipped = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "strict",
+      coverLetter: undefined,
+      artifactDir: dir,
+    });
+
+    assert.equal(skipped.replyPath, written.replyPath);
+    assert.equal(existsSync(skipped.replyPath), false);
   });
 
   it("surfaces write failures for curated JSON", async () => {
@@ -335,6 +397,7 @@ describe("runSmokeCli exit codes", () => {
                 curatedJson: CURATED,
                 builderVersion: "v1",
                 model: "test/model",
+                replyText: "Thank you for reaching out.",
               });
             },
           },
@@ -344,6 +407,7 @@ describe("runSmokeCli exit codes", () => {
     assert.deepEqual(exits, [0]);
     assert.ok(existsSync(join(dir, "jd.curated.json")));
     assert.ok(existsSync(join(dir, "jd.docx")));
+    assert.ok(existsSync(join(dir, "jd.reply.txt")));
   });
 
   it("exits 1 when TAILOR_API_KEY is missing", async () => {
@@ -396,6 +460,7 @@ describe("runSmokeCli exit codes", () => {
                 curatedJson: CURATED,
                 builderVersion: "v1",
                 model: "test/model",
+                replyText: "Thank you for reaching out.",
               });
             },
           },
@@ -405,6 +470,7 @@ describe("runSmokeCli exit codes", () => {
     assert.deepEqual(exits, [0]);
     assert.ok(existsSync(join(dir, "jd.curated.json")));
     assert.ok(existsSync(join(dir, "jd.docx")));
+    assert.ok(existsSync(join(dir, "jd.reply.txt")));
   });
 
   it("parity run nests artifacts by response model and records pending catalog cells", async () => {
@@ -437,6 +503,7 @@ describe("runSmokeCli exit codes", () => {
                 curatedJson: CURATED,
                 builderVersion: "v1",
                 model: "deepseek/deepseek-v4-pro",
+                replyText: "Thank you for reaching out.",
               });
             },
           },

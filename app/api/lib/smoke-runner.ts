@@ -2,7 +2,7 @@
  * Smoke pipeline library: health → tailor → docx/schema validate.
  * Script owns env loading, artifact I/O, and process.exit.
  */
-import type { CurationMode } from "./curation-mode";
+import { usableReplyText, type CurationMode } from "./curation-mode";
 import { validateCvJson } from "./cv-schema";
 import { isValidDocxBase64 } from "./markdown-docx";
 
@@ -23,6 +23,7 @@ export type VerifySmokeSuccess = {
   docxBase64: string;
   builderVersion: string;
   coverLetter?: string;
+  replyText?: string;
   model: string;
 };
 
@@ -41,6 +42,7 @@ const TAILOR_JSON_FIELDS = [
   "curatedJson",
   "builderVersion",
   "coverLetter",
+  "replyText",
   "model",
   "error",
 ] as const;
@@ -82,6 +84,7 @@ async function fetchForStage(
   }
 }
 
+/** Validate the health and tailor endpoints and normalize a successful smoke result. */
 export async function verifySmokePipeline(
   jd: string,
   options: SmokePipelineOptions
@@ -206,6 +209,16 @@ export async function verifySmokePipeline(
   }
   const curatedJson = schemaResult.data;
 
+  const replyText = usableReplyText(data.replyText);
+  if (options.curationMode === "strict" && replyText === undefined) {
+    return {
+      ok: false,
+      stage: "tailor",
+      error: "Missing replyText",
+      status: tailorRes.status,
+    };
+  }
+
   const success: VerifySmokeSuccess = {
     ok: true,
     curatedJson,
@@ -219,6 +232,10 @@ export async function verifySmokePipeline(
     typeof data.coverLetter === "string"
   ) {
     success.coverLetter = data.coverLetter;
+  }
+
+  if (options.curationMode === "strict" && replyText !== undefined) {
+    success.replyText = replyText;
   }
 
   return success;

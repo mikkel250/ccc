@@ -85,7 +85,7 @@ Resolves `MASTER_CV_JSON` (preferred) or `MASTER_CV_PATH` (non-world-readable), 
 | Compile | same | `compileCuratorPrompt(promptText, masterCv)` → `{ ok, systemPrompt }` (fails closed if `{{MASTER_CV_JSON}}` missing; `$`-safe inject) |
 | User message | same | `buildCuratorUserMessage(jd)` — JD in per-request nonce-delimited data channel |
 
-Langfuse prompt name: `cv-curator-json` (fallback hardcoded; page-count / visual QA stripped).
+Langfuse prompt name: `cv-curator-json` (label `production`). Fallback is hardcoded and used only when Langfuse is unset or fetch fails — not when a live production prompt still emits the old shape. Publish the fallback text in the same release as a contract change: `npx tsx scripts/create-langfuse-prompts.ts`.
 
 ### 6. Curator LLM
 
@@ -180,7 +180,7 @@ Prompt files cloned from the portfolio chat bot remain for a hypothetical future
 | `npm run regen-docx` | CLI | Mechanical rebuild from curated JSON |
 | `scripts/verify-rate-limit.ts` | `main()` | Live Upstash rate-limit behavior |
 | `npm run test:e2e` | Playwright | HTTP auth/validation (optional LLM gated) |
-| `scripts/create-langfuse-prompts.ts` | `main()` | Langfuse prompt upload |
+| `scripts/create-langfuse-prompts.ts` | `main()` | Publish `cv-curator-json` production from the fallback (same-release contract change) |
 | `npm test` | `tests/**/*.test.ts` | Unit + cross-file contracts |
 
 ---

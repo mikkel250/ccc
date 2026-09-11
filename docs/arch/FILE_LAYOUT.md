@@ -52,7 +52,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── providers.ts              # Provider type + KNOWN_PROVIDERS leaf registry
 │   └── formatDate.ts             # Date formatting utility
 ├── scripts/
-│   ├── create-langfuse-prompts.ts  # Upload prompts to Langfuse
+│   ├── create-langfuse-prompts.ts  # Publish cv-curator-json (production) from the fallback text
 │   ├── e2e-tailor-cv.ts           # npm run smoke — live API + artifacts
 │   ├── regen-docx.ts              # npm run regen-docx — mechanical rebuild
 │   ├── seed-eval-results.ts       # Seed historical eval-results artifacts

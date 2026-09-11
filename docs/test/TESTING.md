@@ -115,7 +115,7 @@ npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 | `tests/knowledge-base.test.ts` | Legacy KB helpers (not tailor hot path) |
 | `tests/rate-limit.test.ts` | Dual IP + secret rate limits |
 | `tests/gmail-body.test.ts` | Gmail payload → JD (`text/plain` else html-to-text) |
-| `tests/inbox-processed-store.test.ts` | Claim SET NX vs processed skip / crash recovery |
+| `tests/inbox-processed-store.test.ts` | Claim SET NX vs processed skip; extract-fail releases claim; crash recovery after claim key is gone (TTL/release). Draft reconcile is M8.5. |
 | `tests/route.test.ts` | Auth, curator cutover, dual response |
 | `tests/tailor-cv-validation.test.ts` | Request body + JD size validation |
 
@@ -135,7 +135,7 @@ npm run smoke:parity -- http://localhost:3000
 npm run smoke -- http://localhost:3000 --parity
 ```
 
-Requires a running server and `TAILOR_API_KEY`. Master CV (`MASTER_CV_JSON` / `MASTER_CV_PATH`) is the server's concern — smoke exercises it end-to-end via tailor. Asserts dual artifacts (health, tailor, schema, docx). No judge model keys and no score-based exit. Default `curationMode` is `strict`; pass `--flexible` or set `SMOKE_CURATION_MODE=flexible`. Writes `tmp/smoke/<jd-slug>.docx` and `tmp/smoke/<jd-slug>.curated.json` (JD basename; does not overwrite other JDs with distinct basenames). Flexible runs also write `tmp/smoke/<jd-slug>.cover-letter.docx` when `coverLetter` is returned (missing/empty letters warn and skip). Like CV DOCX, cover-letter DOCX is written unredacted (`SMOKE_WRITE_UNREDACTED` remains specific to `curated.json`). Reusing a basename warns before overwriting its artifacts.
+Requires a running server and `TAILOR_API_KEY`. Master CV (`MASTER_CV_JSON` / `MASTER_CV_PATH`) is the server's concern — smoke exercises it end-to-end via tailor. Asserts dual artifacts (health, tailor, schema, docx). No judge model keys and no score-based exit. Default `curationMode` is `strict`; pass `--flexible` or set `SMOKE_CURATION_MODE=flexible`. Writes `tmp/smoke/<jd-slug>.docx` and `tmp/smoke/<jd-slug>.curated.json` (JD basename; does not overwrite other JDs with distinct basenames). Strict runs also write `tmp/smoke/<jd-slug>.reply.txt` from `replyText`. Flexible runs also write `tmp/smoke/<jd-slug>.cover-letter.docx` when `coverLetter` is returned (missing/empty letters warn and skip). Like CV DOCX, cover-letter DOCX is written unredacted (`SMOKE_WRITE_UNREDACTED` remains specific to `curated.json`). Reusing a basename warns before overwriting its artifacts.
 
 `--parity` / `npm run smoke:parity` writes the same dual artifacts under `tmp/smoke/<provider>/<model>/` using the tailor response `model`, plus `tmp/smoke/parity-status.json` (filled cell and pending `SMOKE_PARITY_MODELS`). One live `TAILOR_MODEL` per process — restart `npm run dev` to fill the next cell. Default smoke without `--parity` stays flat (`tmp/smoke/<jd-slug>.*`). Pin `TAILOR_REASONING_EFFORT` for fair A/B. Catalog is env-overridable; bare aliases fail closed.
 

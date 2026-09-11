@@ -73,22 +73,58 @@ function omitHiddenHtml(html: string): string {
   return out;
 }
 
+const NAMED_HTML_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+  rsquo: "\u2019",
+  lsquo: "\u2018",
+  rdquo: "\u201d",
+  ldquo: "\u201c",
+  ndash: "\u2013",
+  mdash: "\u2014",
+  hellip: "\u2026",
+};
+
+function decodeNumericHtmlEntity(body: string): string {
+  const isHex = body[1] === "x" || body[1] === "X";
+  const code = isHex ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
+  if (!Number.isFinite(code) || code < 1 || code > 0x10ffff) {
+    return "";
+  }
+  if (code >= 0xd800 && code <= 0xdfff) {
+    return "";
+  }
+  if (code === 0xa0) {
+    return " ";
+  }
+  return String.fromCodePoint(code);
+}
+
+/** Decode named entities plus decimal and hexadecimal numeric forms (`&#x2019;`). */
+function decodeHtmlEntities(text: string): string {
+  return text.replace(
+    /&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]+);/gi,
+    (match, body: string) => {
+      if (body[0] === "#") {
+        return decodeNumericHtmlEntity(body);
+      }
+      return NAMED_HTML_ENTITIES[body.toLowerCase()] ?? match;
+    }
+  );
+}
+
 export function htmlToText(html: string): string {
   let withoutBlocks = omitHiddenHtml(html);
   withoutBlocks = withoutBlocks
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n")
     .replace(/<\/div>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#(\d+);/g, (_m, digits: string) => {
-      const code = Number(digits);
-      return Number.isFinite(code) ? String.fromCharCode(code) : "";
-    });
+    .replace(/<[^>]+>/g, " ");
+  withoutBlocks = decodeHtmlEntities(withoutBlocks);
   return withoutBlocks.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/[ \t]{2,}/g, " ").trim();
 }
 
