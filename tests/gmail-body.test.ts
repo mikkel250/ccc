@@ -14,6 +14,11 @@ describe("htmlToText", () => {
     assert.equal(htmlToText("<p>Need a GM &amp; chef</p>"), "Need a GM & chef");
   });
 
+  it("decodes hexadecimal numeric and named apostrophe entities", () => {
+    assert.equal(htmlToText("Need a GM&#x2019;s chef"), "Need a GM\u2019s chef");
+    assert.equal(htmlToText("It&apos;s a GM role"), "It's a GM role");
+  });
+
   it("drops comments, head, and hidden inner text", () => {
     const html = [
       "<html><head><title>Tracking pixel</title></head>",

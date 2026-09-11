@@ -129,6 +129,19 @@ describe("inbox processed store", () => {
     assert.equal(memory.store.size, 0);
   });
 
+  it("releases the claim when extraction fails so a retry can win", async () => {
+    const empty = { payload: { mimeType: "multipart/mixed", parts: [] } };
+    const failed = await extractUnprocessedInboxMessage(ID, empty);
+    assert.equal(failed.ok, false);
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+
+    const retry = await extractUnprocessedInboxMessage(ID, plainMessage("Need a GM"));
+    assert.equal(retry.ok, true);
+    if (retry.ok) {
+      assert.equal(retry.status, "extracted");
+    }
+  });
+
   it("returns processed when a mark lands before the claim SET commits", async () => {
     const origSet = memory.set.bind(memory);
     memory.set = async (key, value, opts) => {
@@ -183,6 +196,42 @@ describe("inbox processed store", () => {
 
     assert.deepEqual(result, { ok: true, outcome: "lost" });
     assert.equal(memory.store.get(inboxClaimKey(ID)), "replacement-token");
+  });
+
+  it("rejects when checking the processed key times out", async () => {
+    memory.get = async () => {
+      throw new Error("Inbox Redis timed out");
+    };
+    await assert.rejects(() => claimInboxMessage(ID), /Inbox Redis timed out/);
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+  });
+
+  it("rejects when reading the claim key times out after SET", async () => {
+    const origSet = memory.set.bind(memory);
+    memory.set = async (key, value, opts) => {
+      if (key === inboxClaimKey(ID)) {
+        throw new Error("Inbox Redis timed out");
+      }
+      return origSet(key, value, opts);
+    };
+    memory.get = async (key) => {
+      if (key === inboxClaimKey(ID)) {
+        throw new Error("Inbox Redis timed out");
+      }
+      return memory.store.get(key) ?? null;
+    };
+    await assert.rejects(() => claimInboxMessage(ID), /Inbox Redis timed out/);
+  });
+
+  it("rejects when marking processed times out", async () => {
+    memory.set = async (key) => {
+      if (key === inboxProcessedKey(ID)) {
+        throw new Error("Inbox Redis timed out");
+      }
+      return "OK";
+    };
+    await assert.rejects(() => markInboxProcessed(ID), /Inbox Redis timed out/);
+    assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
   });
 
   it("does not delete a replacement claim when a processed mark wins", async () => {

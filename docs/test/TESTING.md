@@ -115,7 +115,7 @@ npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 | `tests/knowledge-base.test.ts` | Legacy KB helpers (not tailor hot path) |
 | `tests/rate-limit.test.ts` | Dual IP + secret rate limits |
 | `tests/gmail-body.test.ts` | Gmail payload → JD (`text/plain` else html-to-text) |
-| `tests/inbox-processed-store.test.ts` | Claim SET NX vs processed skip / crash recovery |
+| `tests/inbox-processed-store.test.ts` | Claim SET NX vs processed skip; extract-fail releases claim; crash recovery after claim key is gone (TTL/release). Draft reconcile is M8.5. |
 | `tests/route.test.ts` | Auth, curator cutover, dual response |
 | `tests/tailor-cv-validation.test.ts` | Request body + JD size validation |
 

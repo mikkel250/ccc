@@ -1,48 +1,18 @@
 /**
- * Upload CV tailoring prompt to Langfuse Prompt Management.
+ * Publish the JSON curator prompt to Langfuse as `cv-curator-json` (label: production).
  *
  * Usage: npx tsx scripts/create-langfuse-prompts.ts
  * Requires LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_BASE_URL in env.
+ *
+ * Run this in the same release as a curator-contract change. A live production
+ * prompt that still emits bare CV JSON is served in preference to the fallback.
  */
-
 import "dotenv/config";
 import { LangfuseClient } from "@langfuse/client";
-
-const CV_PROMPT_TEXT = `# Role
-
-You are a CV tailoring assistant. Given a job description and candidate background in {CONTEXT}, produce a complete tailored CV in **strict Markdown only**.
-
-# Output format (required)
-
-Use exactly these top-level sections in this order (omit a section only if {CONTEXT} has no relevant content):
-
-1. \`# Summary\`
-2. \`## Experience\`
-3. \`## Skills\`
-4. \`## Projects\`
-
-Within sections use bullet lists (\`- item\`). Use \`###\` for employer or project names under Experience/Projects. No JSON, no code fences, no HTML, no tables.
-
-# Tailoring rules
-
-- Emphasize bullets and skills that match the job description keywords and requirements.
-- Reorder bullets within roles for JD relevance; do not reorder the four main sections.
-- Keep professional tone; metric-forward where data exists in {CONTEXT}.
-- If a section has no grounded content, omit the entire section (do not write "N/A").
-
-# Anti-hallucination (non-negotiable)
-
-- **ONLY** use facts present in {CONTEXT}. Never invent employers, titles, dates, metrics, technologies, or projects.
-- If a detail is missing, omit it or use neutral wording without fabricating specifics.
-- Do not infer years of experience beyond what {CONTEXT} states.
-- Before each claim, verify it appears in {CONTEXT}.
-
-# Job description
-
-The user message contains the job description to tailor against.`;
-
-// Convert single {CONTEXT} to double {{CONTEXT}} for Langfuse variable syntax
-const LANGFUSE_PROMPT_TEXT = CV_PROMPT_TEXT.replace(/\{CONTEXT\}/g, "{{CONTEXT}}");
+import {
+  CURATOR_LANGFUSE_PROMPT_NAME,
+  getCuratorPromptFallbackText,
+} from "../app/api/lib/curator-prompt";
 
 async function main() {
   const required = ["LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY"];
@@ -58,15 +28,17 @@ async function main() {
     baseUrl: process.env.LANGFUSE_BASE_URL || "https://cloud.langfuse.com",
   });
 
-  console.log("Creating prompt: cv-tailor-system");
+  const promptText = getCuratorPromptFallbackText();
+  console.log(`Creating prompt: ${CURATOR_LANGFUSE_PROMPT_NAME}`);
 
   const prompt = await langfuse.prompt.create({
-    name: "cv-tailor-system",
+    name: CURATOR_LANGFUSE_PROMPT_NAME,
     type: "text",
-    prompt: LANGFUSE_PROMPT_TEXT,
+    prompt: promptText,
     labels: ["production"],
     config: {
-      description: "System prompt for CV tailoring. Variable: {{CONTEXT}} = full knowledge base content.",
+      description:
+        "JSON curator system prompt. Variables: {{CURATION_MODE_POLICY}}, {{MASTER_CV_JSON}}. Strict output: { curated_cv, reply_text }.",
     },
   });
 

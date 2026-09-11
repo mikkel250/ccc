@@ -18,4 +18,14 @@ describe("inbox-config timeouts", () => {
     process.env[key] = "1500";
     assert.equal(getInboxRedisTimeoutMs(), 1500);
   });
+
+  it("clamps non-positive values to 1ms and falls back on non-numeric input", () => {
+    saved = process.env[key];
+    process.env[key] = "0";
+    assert.equal(getInboxRedisTimeoutMs(), 1);
+    process.env[key] = "-20";
+    assert.equal(getInboxRedisTimeoutMs(), 1);
+    process.env[key] = "not-a-number";
+    assert.equal(getInboxRedisTimeoutMs(), 2000);
+  });
 });
