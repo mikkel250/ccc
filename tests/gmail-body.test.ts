@@ -62,6 +62,39 @@ describe("htmlToText", () => {
     assert.match(text, /visible/);
     assert.doesNotMatch(text, /SECRET_TRACKING_TOKEN/);
   });
+
+  it("keeps text inside overflow:hidden layout wrappers", () => {
+    assert.equal(
+      htmlToText('<div style="overflow:hidden">Need a GM</div>'),
+      "Need a GM"
+    );
+    assert.equal(
+      htmlToText('<div style="overflow: hidden !important">Need a GM</div>'),
+      "Need a GM"
+    );
+  });
+
+  it("keeps text inside class names that contain hidden as a token", () => {
+    assert.equal(
+      htmlToText('<div class="hidden-sm">Need a GM</div>'),
+      "Need a GM"
+    );
+  });
+
+  it("keeps text inside aria-hidden=false", () => {
+    assert.equal(
+      htmlToText('<div aria-hidden="false">Need a GM</div>'),
+      "Need a GM"
+    );
+  });
+
+  it("drops text marked aria-hidden=true", () => {
+    const text = htmlToText(
+      '<div aria-hidden="true">SECRET_TRACKING_TOKEN</div>visible'
+    );
+    assert.match(text, /visible/);
+    assert.doesNotMatch(text, /SECRET_TRACKING_TOKEN/);
+  });
 });
 
 describe("extractGmailJobDescription", () => {
@@ -130,6 +163,19 @@ describe("extractGmailJobDescription", () => {
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.match(result.error, /no usable text/);
+    }
+  });
+
+  it("extracts html-only JD wrapped in overflow:hidden", () => {
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "text/html",
+        body: { data: b64('<div style="overflow:hidden">Need a GM</div>') },
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.jobDescription, "Need a GM");
     }
   });
 });

@@ -65,10 +65,12 @@ function decodeHtmlEntities(text: string): string {
   );
 }
 
-/** Hidden-content policy: drop `hidden`, `display:none`, and `visibility:hidden`. */
+/** Hidden-content policy: drop boolean `hidden`, `aria-hidden="true"`, `display:none`, and `visibility:hidden`. */
 function isHiddenOpeningTag(raw: string): boolean {
+  const unquoted = raw.replace(/=\s*("[^"]*"|'[^']*')/g, "");
   return (
-    /\bhidden\b/i.test(raw) ||
+    /\shidden(?=[\s=>/])/i.test(unquoted) ||
+    /\baria-hidden\s*=\s*(["']?)true\1(?=[\s/>])/i.test(raw) ||
     /style\s*=\s*(["'])[^"'<>]*display\s*:\s*none[^"'<>]*\1/i.test(raw) ||
     /style\s*=\s*(["'])[^"'<>]*visibility\s*:\s*hidden[^"'<>]*\1/i.test(raw)
   );
