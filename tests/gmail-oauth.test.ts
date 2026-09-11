@@ -16,6 +16,7 @@ import {
 import {
   buildGmailAuthUrl,
   exchangeGmailAuthCode,
+  generateGmailPkcePair,
   parseOAuthCallback,
   refreshGmailAccessToken,
 } from "../app/api/lib/gmail-oauth";
@@ -149,7 +150,8 @@ describe("gmail-oauth", () => {
     }
   });
 
-  it("builds an offline consent URL with gmail.modify", () => {
+  it("builds an offline consent URL with gmail.modify and PKCE", () => {
+    const { codeVerifier, codeChallenge } = generateGmailPkcePair();
     const url = new URL(
       buildGmailAuthUrl({
         clientId: "client-id",
@@ -157,16 +159,20 @@ describe("gmail-oauth", () => {
         scope: "https://www.googleapis.com/auth/gmail.modify",
         state: "abc",
         authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+        codeChallenge,
       })
     );
     assert.equal(url.searchParams.get("access_type"), "offline");
     assert.equal(url.searchParams.get("prompt"), "consent");
     assert.equal(url.searchParams.get("state"), "abc");
     assert.equal(url.searchParams.get("redirect_uri"), "http://127.0.0.1:1234");
+    assert.equal(url.searchParams.get("code_challenge"), codeChallenge);
+    assert.equal(url.searchParams.get("code_challenge_method"), "S256");
     assert.match(
       url.searchParams.get("scope") ?? "",
       /gmail\.modify/
     );
+    assert.ok(codeVerifier.length >= 43);
   });
 
   it("rejects a callback with a mismatched state", () => {
@@ -218,14 +224,17 @@ describe("gmail-oauth", () => {
   });
 
   it("exchanges an auth code and requires refresh_token", async () => {
+    const { codeVerifier } = generateGmailPkcePair();
     const result = await exchangeGmailAuthCode({
       code: "the-code",
       redirectUri: "http://127.0.0.1:1234",
+      codeVerifier,
       fetchImpl: async (_input, init) => {
         assert.equal(init?.method, "POST");
         const body = String(init?.body);
         assert.match(body, /grant_type=authorization_code/);
         assert.match(body, /code=the-code/);
+        assert.match(body, /code_verifier=/);
         return new Response(
           JSON.stringify({
             access_token: "access",
@@ -242,9 +251,11 @@ describe("gmail-oauth", () => {
   });
 
   it("fails closed when the auth-code grant omits refresh_token", async () => {
+    const { codeVerifier } = generateGmailPkcePair();
     const result = await exchangeGmailAuthCode({
       code: "the-code",
       redirectUri: "http://127.0.0.1:1234",
+      codeVerifier,
       fetchImpl: async () =>
         new Response(JSON.stringify({ access_token: "access" }), {
           status: 200,
@@ -297,6 +308,27 @@ describe("gmail-oauth", () => {
     assert.deepEqual(result, {
       ok: false,
       error: "Gmail token request failed",
+    });
+  });
+
+  it("fails closed when the token response is not valid JSON", async () => {
+    const { codeVerifier } = generateGmailPkcePair();
+    const result = await exchangeGmailAuthCode({
+      code: "the-code",
+      redirectUri: "http://127.0.0.1:1234",
+      codeVerifier,
+      fetchImpl: async () =>
+        ({
+          ok: true,
+          status: 200,
+          json: async () => {
+            throw new SyntaxError("Unexpected token");
+          },
+        }) as unknown as Response,
+    });
+    assert.deepEqual(result, {
+      ok: false,
+      error: "Gmail token response was not valid JSON",
     });
   });
 

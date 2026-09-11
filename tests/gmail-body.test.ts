@@ -21,6 +21,11 @@ describe("htmlToText", () => {
     );
   });
 
+  it("rejects surrogate numeric entities instead of decoding them", () => {
+    assert.equal(htmlToText("<p>&#xD800;visible</p>"), "visible");
+    assert.equal(htmlToText("<p>&#55296;visible</p>"), "visible");
+  });
+
   it("drops comments, head, and hidden inner text", () => {
     const html = [
       "<html><head><title>Tracking pixel</title></head>",

@@ -70,7 +70,7 @@ async function withTimeout<T>(
  */
 const CLAIM_IF_UNPROCESSED_SCRIPT =
   'if redis.call("exists", KEYS[1]) == 1 then ' +
-  'if redis.call("get", KEYS[2]) == ARGV[1] then return redis.call("del", KEYS[2]) end ' +
+  'if redis.call("get", KEYS[2]) == ARGV[1] then redis.call("del", KEYS[2]) end ' +
   'return "processed" end ' +
   'local existing = redis.call("get", KEYS[2]) ' +
   'if existing == false then ' +

@@ -1,10 +1,13 @@
 /**
- * One-shot local Gmail OAuth CLI (R15). Prints GMAIL_REFRESH_TOKEN for .env.
+ * One-shot local Gmail OAuth CLI (R15). Writes GMAIL_REFRESH_TOKEN to a local file.
  *
  * Usage: npm run gmail:auth
  */
 import { config as loadDotenv } from "dotenv";
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import {
@@ -17,6 +20,7 @@ import {
 import {
   buildGmailAuthUrl,
   exchangeGmailAuthCode,
+  generateGmailPkcePair,
   parseOAuthCallback,
 } from "../app/api/lib/gmail-oauth";
 
@@ -35,11 +39,23 @@ export function formatGmailRefreshTokenLine(refreshToken: string): string {
   return `GMAIL_REFRESH_TOKEN=${refreshToken}`;
 }
 
+/** Write the refresh token to a mode-0600 file and return its path. */
+export function writeGmailRefreshTokenFile(refreshToken: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "gmail-oauth-"));
+  const filePath = join(dir, "gmail-refresh-token.env");
+  writeFileSync(filePath, `${formatGmailRefreshTokenLine(refreshToken)}\n`, {
+    mode: 0o600,
+  });
+  chmodSync(filePath, 0o600);
+  return filePath;
+}
+
 /** Validate the callback and exchange its code for a required refresh token. */
 export async function completeGmailAuth(params: {
   callbackUrl: URL;
   expectedState: string;
   redirectUri: string;
+  codeVerifier: string;
   fetchImpl?: typeof fetch;
 }): Promise<{ ok: true; refreshToken: string } | { ok: false; error: string }> {
   const parsed = parseOAuthCallback(params.callbackUrl, params.expectedState);
@@ -49,6 +65,7 @@ export async function completeGmailAuth(params: {
   const tokens = await exchangeGmailAuthCode({
     code: parsed.data,
     redirectUri: params.redirectUri,
+    codeVerifier: params.codeVerifier,
     fetchImpl: params.fetchImpl,
   });
   if (!tokens.ok) {
@@ -77,80 +94,80 @@ type GmailAuthListener = {
   wait: () => Promise<URL>;
 };
 
-/** Run the one-shot local OAuth flow and print the resulting refresh token. */
+/** Run the one-shot local OAuth flow and print the refresh-token file path. */
 export async function runGmailAuthCli(params?: {
   fetchImpl?: typeof fetch;
   openUrl?: (url: string) => void;
   listen?: (host: string) => Promise<GmailAuthListener>;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  const host = getGmailAuthBindHost();
-  const clientId = getGmailClientId();
-  const scope = getGmailOauthScope();
-  const authUrlBase = getGmailOauthAuthUrl();
-  const state = randomBytes(16).toString("hex");
-
-  const waiter =
-    params?.listen ??
-    (async (bindHost: string) => {
-      const server = createServer();
-      await new Promise<void>((resolve, reject) => {
-        const rejectStartup = (error: Error) => reject(error);
-        server.once("error", rejectStartup);
-        server.listen(0, bindHost, () => {
-          server.off("error", rejectStartup);
-          resolve();
-        });
-      });
-      const address = server.address();
-      if (address === null || typeof address === "string") {
-        server.close();
-        throw new Error("Gmail auth listener failed to bind");
-      }
-      let settle: (url: URL) => void;
-      const wait = new Promise<URL>((resolveWait) => {
-        settle = resolveWait;
-      });
-      server.on("request", (req: IncomingMessage, res: ServerResponse) => {
-        const url = requestUrl(req, bindHost, address.port);
-        if (!isGmailOauthLoopbackCallback(url)) {
-          res.statusCode = 204;
-          res.end();
-          return;
-        }
-        res.statusCode = 200;
-        res.setHeader("Content-Type", "text/plain; charset=utf-8");
-        res.end("You can close this tab and return to the terminal.");
-        settle(url);
-      });
-      return {
-        port: address.port,
-        close: () =>
-          new Promise<void>((resolveClose, rejectClose) => {
-            server.close((err) => (err ? rejectClose(err) : resolveClose()));
-          }),
-        wait: () => wait,
-      };
-    });
-
   let listener: GmailAuthListener | undefined;
-  let redirectUri: string;
-  let callbackUrl: URL;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    const host = getGmailAuthBindHost();
+    const clientId = getGmailClientId();
+    const scope = getGmailOauthScope();
+    const authUrlBase = getGmailOauthAuthUrl();
+    const state = randomBytes(16).toString("hex");
+    const { codeVerifier, codeChallenge } = generateGmailPkcePair();
+
+    const waiter =
+      params?.listen ??
+      (async (bindHost: string) => {
+        const server = createServer();
+        await new Promise<void>((resolve, reject) => {
+          const rejectStartup = (error: Error) => reject(error);
+          server.once("error", rejectStartup);
+          server.listen(0, bindHost, () => {
+            server.off("error", rejectStartup);
+            resolve();
+          });
+        });
+        const address = server.address();
+        if (address === null || typeof address === "string") {
+          server.close();
+          throw new Error("Gmail auth listener failed to bind");
+        }
+        let settle: (url: URL) => void;
+        const wait = new Promise<URL>((resolveWait) => {
+          settle = resolveWait;
+        });
+        server.on("request", (req: IncomingMessage, res: ServerResponse) => {
+          const url = requestUrl(req, bindHost, address.port);
+          if (!isGmailOauthLoopbackCallback(url)) {
+            res.statusCode = 204;
+            res.end();
+            return;
+          }
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "text/plain; charset=utf-8");
+          res.end("You can close this tab and return to the terminal.");
+          settle(url);
+        });
+        return {
+          port: address.port,
+          close: () =>
+            new Promise<void>((resolveClose, rejectClose) => {
+              server.close((err) => (err ? rejectClose(err) : resolveClose()));
+            }),
+          wait: () => wait,
+        };
+      });
+
     listener = await waiter(host);
-    redirectUri = gmailAuthRedirectUri(host, listener.port);
+    const redirectUri = gmailAuthRedirectUri(host, listener.port);
     const authorizeUrl = buildGmailAuthUrl({
       clientId,
       redirectUri,
       scope,
       state,
       authUrl: authUrlBase,
+      codeChallenge,
     });
     console.log("Open this URL to authorize Gmail:");
     console.log(authorizeUrl);
     params?.openUrl?.(authorizeUrl);
 
-    callbackUrl = await Promise.race([
+    const callbackUrl = await Promise.race([
       listener.wait(),
       new Promise<URL>((_, reject) => {
         timer = setTimeout(() => {
@@ -158,29 +175,31 @@ export async function runGmailAuthCli(params?: {
         }, getGmailAuthTimeoutMs());
       }),
     ]);
+
+    const result = await completeGmailAuth({
+      callbackUrl,
+      expectedState: state,
+      redirectUri,
+      codeVerifier,
+      fetchImpl: params?.fetchImpl,
+    });
+    if (!result.ok) {
+      console.error(result.error);
+      return result;
+    }
+    const tokenPath = writeGmailRefreshTokenFile(result.refreshToken);
+    console.log("Paste from this file into .env / Railway (do not commit it):");
+    console.log(tokenPath);
+    return { ok: true };
   } catch (error: unknown) {
-    await listener?.close().catch(() => undefined);
     const message =
       error instanceof Error ? error.message : "Gmail auth timed out";
     console.error(message);
     return { ok: false, error: message };
   } finally {
     if (timer !== undefined) clearTimeout(timer);
+    await listener?.close().catch(() => undefined);
   }
-  const result = await completeGmailAuth({
-    callbackUrl,
-    expectedState: state,
-    redirectUri,
-    fetchImpl: params?.fetchImpl,
-  });
-  await listener.close();
-  if (!result.ok) {
-    console.error(result.error);
-    return result;
-  }
-  console.log("Paste this into .env / Railway (do not commit it):");
-  console.log(formatGmailRefreshTokenLine(result.refreshToken));
-  return { ok: true };
 }
 
 /** Execute the Gmail authorization CLI and map failure to its process exit code. */

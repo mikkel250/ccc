@@ -152,7 +152,12 @@ function decodeNumericEntity(body: string): string | undefined {
   const hex = body[1] === "x" || body[1] === "X";
   const digits = hex ? body.slice(2) : body.slice(1);
   const code = Number.parseInt(digits, hex ? 16 : 10);
-  if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) {
+  if (
+    !Number.isFinite(code) ||
+    code < 0 ||
+    code > 0x10ffff ||
+    (code >= 0xd800 && code <= 0xdfff)
+  ) {
     return undefined;
   }
   if (code === 160) {

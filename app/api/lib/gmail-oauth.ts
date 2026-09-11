@@ -1,6 +1,7 @@
 /**
  * Gmail OAuth helpers: authorize URL, callback parse, token exchange/refresh.
  */
+import { createHash, randomBytes } from "node:crypto";
 import {
   getGmailClientId,
   getGmailClientSecret,
@@ -23,6 +24,20 @@ export type GmailOauthResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string };
 
+export type GmailPkcePair = {
+  codeVerifier: string;
+  codeChallenge: string;
+};
+
+/** One PKCE verifier/challenge pair per desktop OAuth attempt (S256). */
+export function generateGmailPkcePair(): GmailPkcePair {
+  const codeVerifier = randomBytes(32).toString("base64url");
+  const codeChallenge = createHash("sha256")
+    .update(codeVerifier)
+    .digest("base64url");
+  return { codeVerifier, codeChallenge };
+}
+
 /** Build the state-protected Google OAuth URL for offline Gmail consent. */
 export function buildGmailAuthUrl(params: {
   clientId: string;
@@ -30,6 +45,7 @@ export function buildGmailAuthUrl(params: {
   scope: string;
   state: string;
   authUrl: string;
+  codeChallenge: string;
 }): string {
   const url = new URL(params.authUrl);
   url.searchParams.set("client_id", params.clientId);
@@ -39,6 +55,8 @@ export function buildGmailAuthUrl(params: {
   url.searchParams.set("access_type", "offline");
   url.searchParams.set("prompt", "consent");
   url.searchParams.set("state", params.state);
+  url.searchParams.set("code_challenge", params.codeChallenge);
+  url.searchParams.set("code_challenge_method", "S256");
   return url.toString();
 }
 
@@ -137,6 +155,7 @@ export async function exchangeGmailAuthCode(
   params: {
     code: string;
     redirectUri: string;
+    codeVerifier: string;
     fetchImpl?: FetchLike;
   }
 ): Promise<GmailOauthResult<GmailTokenSet>> {
@@ -146,6 +165,7 @@ export async function exchangeGmailAuthCode(
     client_id: getGmailClientId(),
     client_secret: getGmailClientSecret(),
     redirect_uri: params.redirectUri,
+    code_verifier: params.codeVerifier,
   });
   return postTokenRequest(
     body,
