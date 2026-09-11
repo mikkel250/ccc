@@ -19,12 +19,47 @@ function decodeGmailBodyData(data: unknown): string | undefined {
 }
 
 const WHOLE_TAG_SKIP = new Set(["head", "script", "style"]);
+const BLOCK_TAG_OPEN_RE = /<(?:p|div|h[1-6]|li|td|th|blockquote)\b[^>]*>/i;
 
 function isHiddenOpeningTag(raw: string): boolean {
   return (
     /\bhidden\b/i.test(raw) ||
     /style\s*=\s*(["'])[^"'<>]*display\s*:\s*none[^"'<>]*\1/i.test(raw)
   );
+}
+
+function normalizeTextWhitespace(text: string): string {
+  return text
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function stripHtmlMarkup(html: string): string {
+  const withoutTags = html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#(\d+);/g, (_m, digits: string) => {
+      const code = Number(digits);
+      return Number.isFinite(code) ? String.fromCharCode(code) : "";
+    });
+  return normalizeTextWhitespace(withoutTags);
+}
+
+/** Recover visible copy after broken tracking HTML with an unclosed hidden opener. */
+function recoverUnclosedHiddenTail(html: string, afterOpenIndex: number): string {
+  const tail = html.slice(afterOpenIndex);
+  const blockMatch = BLOCK_TAG_OPEN_RE.exec(tail);
+  const fromBlock = blockMatch ? tail.slice(blockMatch.index) : tail;
+  return stripHtmlMarkup(fromBlock);
 }
 
 /** Depth-aware omit of comments, head/script/style, and hidden containers. */
@@ -34,6 +69,7 @@ function omitHiddenHtml(html: string): string {
   let last = 0;
   let skipName: string | null = null;
   let skipDepth = 0;
+  let unclosedHiddenStart: number | null = null;
   for (const match of html.matchAll(tokenRe)) {
     const index = match.index ?? 0;
     const raw = match[0];
@@ -54,6 +90,7 @@ function omitHiddenHtml(html: string): string {
         skipDepth -= 1;
         if (skipDepth === 0) {
           skipName = null;
+          unclosedHiddenStart = null;
         }
       }
       continue;
@@ -62,6 +99,7 @@ function omitHiddenHtml(html: string): string {
       if (!selfClosing) {
         skipName = name;
         skipDepth = 1;
+        unclosedHiddenStart = isHiddenOpeningTag(raw) ? index + raw.length : null;
       }
       continue;
     }
@@ -69,27 +107,16 @@ function omitHiddenHtml(html: string): string {
   }
   if (skipDepth === 0) {
     out += html.slice(last);
+  } else if (unclosedHiddenStart !== null) {
+    out += recoverUnclosedHiddenTail(html, unclosedHiddenStart);
+  } else {
+    out += html.slice(last);
   }
   return out;
 }
 
 export function htmlToText(html: string): string {
-  let withoutBlocks = omitHiddenHtml(html);
-  withoutBlocks = withoutBlocks
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<\/div>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#(\d+);/g, (_m, digits: string) => {
-      const code = Number(digits);
-      return Number.isFinite(code) ? String.fromCharCode(code) : "";
-    });
-  return withoutBlocks.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/[ \t]{2,}/g, " ").trim();
+  return stripHtmlMarkup(omitHiddenHtml(html));
 }
 
 type CollectedBodies = { plain: string[]; html: string[] };

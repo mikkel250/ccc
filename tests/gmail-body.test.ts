@@ -39,6 +39,14 @@ describe("htmlToText", () => {
     assert.match(text, /visible/);
     assert.doesNotMatch(text, /SECRET_TRACKING_TOKEN/);
   });
+
+  it("preserves visible text after an unclosed hidden container", () => {
+    const html =
+      '<div style="display:none">utm_pixel<p>General Manager role — requirements</p>';
+    const text = htmlToText(html);
+    assert.match(text, /General Manager role/);
+    assert.doesNotMatch(text, /utm_pixel/);
+  });
 });
 
 describe("extractGmailJobDescription", () => {
@@ -107,6 +115,21 @@ describe("extractGmailJobDescription", () => {
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.match(result.error, /no usable text/);
+    }
+  });
+
+  it("extracts JD from html-only mail with unclosed hidden tracking div", () => {
+    const html =
+      '<div style="display:none">utm_pixel<p>General Manager role — requirements</p>';
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "text/html",
+        body: { data: b64(html) },
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.match(result.jobDescription, /General Manager role/);
     }
   });
 });
