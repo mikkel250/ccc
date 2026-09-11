@@ -1,24 +1,403 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# Canonical CodeRabbit config (repo file = backup / paste source for the UI).
+# Scoped to the Free plan. Do not add paid-only keys — the UI will reject or
+# ignore them.
+#
+# Free GitHub PRs are summarization-only. Full reviews run in the VS Code
+# extension and CLI (path_instructions apply there). Mechanical gates remain
+# npm test, npm run lint, npm run typecheck:tests.
+#
+# Omitted on purpose (paid): pre-merge checks, linter/SAST tools,
+# knowledge-base mappings, MCP, code_generation (test-gen path instructions).
+# Finishing touches are listed only to force their defaults off — several
+# default to true and the UI then refuses to save on Free.
+# Slop detection stays — public repos get it on all plans.
+#
+# Do not treat docs/arch/PIPELINE_ENHANCEMENTS.md, LEARNING_SYSTEM.md, or
+# missing docs/arch/CODE_CONVENTIONS.md as current runtime architecture.
+
+language: en-US
+enable_free_tier: true
+tone_instructions: >
+  Terse and evidence-first. Cite file and function. Do not restate ESLint or
+  tsc findings. No filler praise. Prefer one high-confidence issue over five
+  speculative nits.
 
 reviews:
-  profile: chill
+  profile: assertive
+  request_changes_workflow: false
   high_level_summary: true
+  high_level_summary_in_walkthrough: false
+  high_level_summary_instructions: >
+    Summarize architectural, security, cost, and contract risks only. Skip
+    style and optional refactors. Explicitly call out any new LLM call,
+    retry/fallback, auth bypass, tracing-redaction change, or extra
+    service_tier/flex behavior. If the PR is docs-only, say so in one line.
+
+  poem: false
+  in_progress_fortune: false
+  review_status: true
+  review_details: true
+  enable_prompt_for_ai_agents: true
+  collapse_walkthrough: true
+  changed_files_summary: true
+  sequence_diagrams: true
+  estimate_code_review_effort: false
+  assess_linked_issues: false
+  related_issues: false
+  related_prs: false
+  abort_on_close: true
+
+  slop_detection:
+    enabled: true
+    # Default skips repo owners; this repo is primarily LLM-authored by the owner.
+    include_all_authors: true
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 0
+    drafts: false
+
+  finishing_touches:
+    unit_tests:
+      enabled: false
+    docstrings:
+      enabled: false
+    autofix:
+      enabled: false
+    simplify:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false
+
+  path_filters:
+    - "!**/package-lock.json"
+    - "!**/.next/**"
+    - "!**/node_modules/**"
+    - "!**/coverage/**"
+    - "!**/eval-results/**"
+    - "!**/tmp/**"
+    - "!**/.pi-subagents/**"
+    - "!**/knowledge-base/**"
+    - "!**/next-env.d.ts"
+    - "!**/*.docx"
+    - "!todos/**"
+
   path_instructions:
-    - path: "**/*"
+
+    - path: "**/*.{ts,tsx,mjs,js}"
       instructions: |
-        Focus on:
-        - logic errors
-        - security issues
-        - race conditions
-        - architectural inconsistencies
+        Assertive gate for a primarily LLM-generated TypeScript API. Prefer
+        fewer high-confidence findings over speculative style nits.
 
-        Ignore:
-        - formatting
-        - stylistic nitpicks
-        - lint-level concerns
+        This is Next.js 15 App Router, API-only (`app/api/**`). There is no
+        product UI, Pages Router, or component architecture. Do not review as
+        a React frontend. `app/page.tsx` returning notFound() and metadata-only
+        `app/layout.tsx` are intentional.
 
-        Prioritize:
-        - React state correctness
-        - auth/security boundaries
-        - async correctness
-        - API contract mismatches
+        REAL MODULES (use these names; do not invent layers):
+        - Routing/config: `lib/providers.ts` (`KNOWN_PROVIDERS`,
+          `parseNamespacedProvider`), `lib/env.ts` getters, `.env.example`
+        - LLM: `app/api/lib/llm.ts` (`chat`, `detectProvider`, `dispatchProvider`)
+        - Tailor: `tailor-pipeline.ts`, `tailor-cv-deps.ts`, `curator-prompt.ts`,
+          `cv-schema.ts` (Ajv), `eval-parse.ts` (`extractStructuredJson`),
+          `json-docx-builder.ts`
+        - Tracing: `app/api/lib/tracers/*` + `langfuse-otel.ts`
+        - Auth/limits: `tailor-auth.ts`, `rate-limit.ts`, `redis.ts`
+        - Inbox: `gmail-*.ts`, `inbox-*.ts` (list/extract/processed-id;
+          draft/attach is not shipped)
+
+        VIBECODING FAILURES TO PRIORITIZE
+        - Plausible but incomplete implementations; TODOs/stubs in production
+        - Swallowed errors, empty catch, ignored promises, generic success/500
+        - Duplicate logic next to an existing helper (80% overlap → extend)
+        - Accidental complexity, unused extension points, speculative frameworks
+        - Tests that assert "does not throw" or mock away the behavior under test
+        - Unbounded retries, fan-out, buffering, or new provider fallbacks
+        - Cost explosions (extra LLM calls, regeneration of valid results)
+        - Incorrect assumptions about OpenAI/Anthropic/Google/DeepSeek/OpenRouter APIs
+
+        TYPESCRIPT (second line of defense)
+        `strict` lives in tsconfig; `@typescript-eslint/no-explicit-any` and
+        `no-restricted-imports` (no Jest/Vitest/Sinon) live in eslint.config.mjs.
+        Do not restate those as primary findings. Flag remaining fake type
+        safety ESLint cannot see: `as SomeType` / `as unknown as` on external
+        JSON (request bodies, provider/Gmail payloads, env) instead of a
+        validator; non-null `!` used to silence the compiler.
+
+        Prefer discriminated unions (`{ ok: true, data } | { ok: false, error }`).
+        HTTP status mapping belongs in `app/api/tailor-cv/route.ts` and
+        `buildTailorResponse` — do not add new HTTP-shaped objects in unrelated
+        lib modules.
+
+        SECURITY / PII
+        Never hardcode or log secrets, bearer tokens, Gmail refresh tokens, or
+        Authorization headers. Master CV and job descriptions are career PII.
+        Do not put them in traces, error messages to clients, or committed files.
+        `__*ForTest` helpers must remain test-only (throw outside NODE_ENV=test).
+
+        ASYNC
+        Bound every network/LLM/Redis call (timeout/AbortSignal). Do not retry
+        auth, validation, or permanent provider errors. There is currently NO
+        production provider fallback chain in `chat()` — it traces and rethrows.
+        Flag newly added fallback/retry loops. Railway is a normal Node process
+        (`runtime = "nodejs"`); do not add Edge Function constraints or assume
+        a Vercel timeout ceiling.
+
+        CONFIG
+        New tunables go through `lib/env.ts` (`getEnvNumber` / `getEnvString` /
+        `getEnvBoolean`) and must be catalogued in `.env.example`. Do not
+        hardcode model IDs inside provider integrations; callers pass the model.
+
+    - path: "app/api/**/route.ts"
+      instructions: |
+        Production HTTP handlers. Today: POST `/api/tailor-cv` (nodejs runtime)
+        and GET `/api/hello` healthcheck.
+
+        - Validate/authenticate before master-CV load, LLM, or docx work.
+        - Rate limiting BEFORE auth is intentional (failed credential guesses
+          consume quota). Do not "fix" that order.
+        - `POST /api/tailor-cv` requires `Authorization: Bearer <TAILOR_API_KEY>`
+          unless `TAILOR_AUTH_INSECURE_BYPASS` is set in non-production.
+          Bypass is fatal at startup in production-like deploys
+          (`ensureSecureStartup` from `instrumentation.ts`).
+        - Auth failures: generic 401 "Unauthorized" or 503 "Service unavailable".
+          Do not reveal whether the secret exists.
+        - Parse Authorization robustly (missing, empty, wrong prefix, extra
+          whitespace). Compare secrets with `timingSafeEqual`.
+        - Cap request bytes (`TAILOR_REQUEST_MAX_BYTES`) before JSON parse.
+        - Do not leak stacks, provider errors, prompts, or CV PII to clients.
+        - Keep `Cache-Control: no-store` on tailor responses.
+        - Do not add GET/POST aliases that skip auth on tailor-cv.
+        - Route.ts stays a thin mapper; pipeline logic lives in
+          `buildTailorResponse` + `tailorCvDeps`.
+
+    - path: "{app/api/lib/llm.ts,lib/providers.ts,lib/env.ts,config/anthropic-models.json,tests/llm-*.ts}"
+      instructions: |
+        Provider routing is config-driven. Model IDs are `provider/model`.
+        First `/` segment must be in `KNOWN_PROVIDERS`
+        (openai|anthropic|google|openrouter|deepseek). Bare aliases (`sonnet`,
+        `gpt-4o`) are invalid. `anthropic/sonnet` (family alias AFTER the
+        provider prefix) is valid and resolved in `callAnthropic` via
+        `config/anthropic-models.json` + Models API cache.
+
+        ALLOWED: `dispatchProvider`'s provider `switch` — that is integration
+        dispatch (message shape / SDK), not routing. Do not request replacing
+        it with a registry of functions unless a new provider cannot fit the
+        existing seam.
+
+        REJECT:
+        - Routing if/else outside `detectProvider` / `parseNamespacedProvider`
+        - Inferring provider from model-name conventions
+        - Threading `openRouterFlex` / `service_tier` through
+          `callOpenAICompatible` or any non-OpenRouter wrapper
+        - Attaching `service_tier: flex` to OpenRouter models whose vendor is
+          not `openai` or `google` (OpenRouter flex **restricts** routing to
+          flex endpoints; it is not silently ignored)
+        - Sending `reasoning.effort` to direct OpenAI/Google/Anthropic/DeepSeek
+          or DeepSeek `thinking` to OpenRouter
+        - Using OpenRouter for Anthropic Message Batches (deferred; if ever
+          added it must be direct Anthropic, not inside the Next.js route)
+        - Silent fallback from TAILOR_MODEL to AI_MODEL on the tailor path
+        - Hardcoded model strings inside `callOpenAI` / `callAnthropic` / etc.
+        - New LLM completions that bypass `chat()` (skips dual tracing)
+
+        `chat()` defaults to `getDefaultLlmModel()` (AI_MODEL). Tailor must
+        pass `getTailorModel()` explicitly.
+
+        FLEX CONTRACT (owned by tests/llm-chat-dispatch.test.ts)
+        `ChatOptions.openRouterFlex` is a shared flag that only `callOpenRouter`
+        reads. Direct transports omit `service_tier` even when the flag is true.
+        On OpenRouter, attach flex only for `openai/*` and `google/*` API model
+        IDs (`shouldAttachOpenRouterFlex`). Do not "fix" this by sending flex
+        everywhere and hoping unsupported vendors ignore it.
+
+        OpenAI-compatible providers share `callOpenAICompatible`. Preserve
+        guards for 200-shaped bodies that lack `choices`. Do not assume SDK
+        types match the wire JSON.
+
+        `toTraceOptions` must strip every injectable client, including
+        `googleClient`. Contract: `tests/tracer.test.ts`.
+
+    - path: "{app/api/lib/tailor-pipeline.ts,app/api/lib/tailor-cv-deps.ts,app/api/lib/curator-prompt.ts,app/api/lib/curation-mode.ts,app/api/lib/cv-schema.ts,app/api/lib/eval-parse.ts,app/api/lib/json-docx-builder.ts,app/api/lib/master-cv.ts,app/api/lib/tailor-cv-validation.ts,app/api/tailor-cv/route.ts}"
+      instructions: |
+        Tailor is a SINGLE curator `chat()` pass. Do not add critique/revise,
+        LLM-as-judge, hidden regeneration, or agent loops. Flexible
+        `coverLetter` is parsed from the same JSON wrapper, not a second call.
+        `CRITIQUE_REVISE_ENABLED` must not return as a production gate.
+
+        Pipeline order (do not scramble): IP → rate limit → auth → capped body
+        → validateTailorCvBody → master CV → Langfuse curator prompt
+        (`cv-curator-json`, label `production`, hardcoded fallback) → one
+        `chat({ model: getTailorModel() })` → `extractStructuredJson` →
+        `validateCvJson` (Ajv) → size cap → sanitize → in-memory docx →
+        response byte cap.
+
+        MODEL OUTPUT
+        Never trust curator JSON because it matches a TypeScript interface.
+        `extractStructuredJson` only slices/parses; Ajv is the contract
+        (`references/json-curator/master-cv.schema.json`). Handle empty,
+        truncated, fenced, or non-object output with 422. Do not fabricate
+        missing fields. Client-facing schema errors must not include instance
+        values (PII).
+
+        DOCX
+        Generate in memory (`Packer.toBuffer` → base64). Do not write CVs to
+        disk on the request path. Flag extra Buffer/base64 copies.
+        `sanitizeCvJson` + hyperlink allowlist (`https?`/`mailto`) must run
+        before OOXML emission. Treat model text as untrusted.
+
+        MASTER CV
+        `MASTER_CV_JSON` / `MASTER_CV_PATH` only. Fail closed if missing or
+        invalid. Request path uses preload cache (`requireMasterCv`); do not
+        reintroduce sync disk I/O in the handler. Path must refuse
+        world-readable files and symlinks.
+
+        LANGFUSE PROMPTS
+        Use `production` label, not `latest`. Keep the hardcoded fallback in
+        `curator-prompt.ts` in sync when the prompt changes. Link generations
+        via `langfusePrompt`. Do not ship prompt edits only in git and skip
+        Langfuse.
+
+        SQLite / learning-system storage is NOT on this path. Do not add a
+        database to tailor. `tailorCvDeps` is a test-mock seam for ESM, not a
+        general DI container — do not grow it into one.
+
+    - path: "app/api/lib/tracers/**"
+      instructions: |
+        Dual tracing is mandatory for `chat()`: LangSmith fire-and-forget,
+        Langfuse awaited on success AND error. Do not collapse that asymmetry
+        and do not add a third tracing abstraction.
+
+        Content (messages, system prompt, response body) is redacted to
+        `[REDACTED]` in BOTH adapters before export. Usage/model/duration stay.
+        Do not log raw TracePayload bodies on adapter failure.
+        Bound Langfuse `forceFlush` with `LANGFUSE_FLUSH_TIMEOUT_MS`; timeout
+        must not fail the LLM call.
+
+        Flag tracing that ships CV/JD/prompt text, API keys, or injectable
+        clients. `options` in trace payloads must not include secrets.
+        `toTraceOptions` must omit every `*Client` field including googleClient.
+
+    - path: "app/api/lib/langfuse-*.ts"
+      instructions: |
+        Same dual-tracer contract as `app/api/lib/tracers/**`: Langfuse awaited
+        with bounded flush; content redacted; `production` prompt label not
+        `latest`. `langfuse-prompts.ts` is legacy portfolio-chat helpers, not
+        the tailor curator path (`curator-prompt.ts` is).
+
+    - path: "{app/api/lib/tailor-auth.ts,app/api/lib/rate-limit.ts,app/api/lib/redis.ts,app/api/lib/errors.ts,instrumentation.ts,instrumentation.node.ts}"
+      instructions: |
+        Dual fail-closed rate limits (per-IP + per-secret hash) via Upstash.
+        Time out Redis (`RATE_LIMIT_TIMEOUT_MS`); fail closed to 503, do not
+        fail open. Never store the raw API key; hash for Redis keys.
+
+        `TAILOR_AUTH_INSECURE_BYPASS` is local/dev only. Production markers:
+        `NODE_ENV=production`, `RAILWAY_ENVIRONMENT=production`,
+        `VERCEL_ENV=production`. Startup must remain fatal on bypass+prod
+        (`ensureSecureStartup`). Do not weaken timing-safe compares.
+
+        X-Forwarded-For parsing is bounded (`TAILOR_MAX_XFF_ENTRIES` /
+        `TAILOR_MAX_XFF_HEADER_CHARS`); unknown IP is 400, not a bypass.
+
+    - path: "{app/api/lib/gmail-*.ts,app/api/lib/inbox-*.ts,scripts/gmail-*.ts}"
+      instructions: |
+        Gmail/inbox is labeled-mail list + body extract + processed-id store.
+        Draft/attach/schedule are not implemented — do not assume they exist
+        and do not silently add them in the same change without the plan.
+
+        - All Gmail tunables via `gmail-config.ts` / `inbox-config.ts` +
+          `.env.example`. HTTPS-only token/API URLs. Loopback-only bind host
+          for `gmail:auth` (`127.0.0.1` or `::1`).
+        - Bound HTTP with `AbortSignal.timeout(getGmailHttpTimeoutMs())`.
+        - OAuth: CSRF `state`, do not log codes/tokens, validate token JSON
+          as unknown (require `access_token`; refresh token when required).
+        - List: resolve label name → id (exact match preferred), cap
+          `maxResults`.
+        - Body: text/plain else html-to-text. No JD-isolation LLM.
+        - Processed store: claim (SET NX + TTL) is NOT the terminal processed
+          mark. Ownership must stay one Redis EVAL. Time out Redis.
+        - Gmail JSON is untrusted; narrow with helpers, no `as` on payloads.
+        - Do not persist mail bodies or tokens beyond the operation.
+
+    - path: "{tests,scripts}/**"
+      instructions: |
+        Tests are in review scope. Review them as verification, not filler.
+
+        UNIT (`npm test`)
+        - `node:test` + `node:assert/strict` only. ESLint
+          `no-restricted-imports` is the first-line ban on Jest/Vitest/Sinon;
+          review remaining mock-away / false-confidence tests.
+        - Test-only injection: optional function params or `mock.method` on
+          `tailorCvDeps` — not a DI framework.
+        - Assert behavior (status, union fields, side effects), not markdown
+          headings or function existence.
+        - Cover failure paths: auth, validation, malformed provider JSON,
+          schema 422, timeouts. Reject tests that only prove "does not throw".
+        - Await async work. No sleep-based assertions.
+        - Do not call real LLM APIs in `npm test`.
+
+        E2E
+        - Playwright HTTP API tests in `tests/e2e/` (`request` fixture). No
+          browser/UI tests. Full live LLM e2e stays gated by
+          `RUN_E2E_LLM_TESTS=true`.
+        - `npm run smoke` (`scripts/e2e-tailor-cv.ts`) is NOT CI; do not fold
+          it into `npm test`.
+
+        SCRIPTS
+        Same secret/PII rules as production. Do not print tokens, master CV,
+        or unredacted traces. Use env getters, not ad-hoc `process.env` sprawl
+        for new tunables.
+
+    - path: "{package.json,.nvmrc,tsconfig.json,tsconfig.test.json,next.config.*,railway.toml,eslint.config.mjs,playwright.config.ts}"
+      instructions: |
+        Deployment-critical. Node ≥22 (`.nvmrc` 22), npm, TypeScript strict,
+        Next 15 App Router API-only, Railway Nixpacks (`railway.toml`, not
+        `railway.json`). Healthcheck is `/api/hello`.
+
+        Do not add Edge runtime for tailor, Pages Router, UI pages, or swap
+        `node:test`. Flag config that only works locally. `react` in
+        package.json is a Next remainder — do not grow a frontend from it.
+        Do not silently change `test` / `lint` / `start` scripts.
+
+    - path: "{.env.example,lib/env.ts,app/api/lib/*config.ts,config/**}"
+      instructions: |
+        `.env.example` is the env catalog. New vars need a comment + default.
+        Production secrets must fail closed when missing — no fake default
+        API keys. Provider credentials stay provider-specific (do not send
+        OPENAI_API_KEY to OpenRouter or ANTHROPIC_API_KEY through OpenRouter).
+
+        `TAILOR_MODEL` is independent of `AI_MODEL`. `OPENROUTER_FLEX_ENABLED`
+        only affects OpenRouter, and even then only openai/google model IDs.
+        Inspect call sites; prefer `lib/env.ts` over stale comments.
+
+    - path: "references/json-curator/**"
+      instructions: |
+        Port references, not runtime — except `master-cv.schema.json`, which
+        Ajv loads on the tailor path. Treat schema edits as API-contract
+        changes (422 behavior, PII in error text, size limits).
+        `resume_builder.js` is the JS port source; production builder is
+        `app/api/lib/json-docx-builder.ts`. Do not wire the reference JS into
+        the request path.
+
+    - path: "{docs/**/*.md,AGENTS.md,CLAUDE.md,STRATEGY.md}"
+      instructions: |
+        Flag documentation that contradicts runtime code (defaults, pipeline
+        steps, provider routing, tracing, auth). Prefer `lib/env.ts`,
+        `app/api/lib/**`, and `.env.example` over stale arch notes.
+
+        Two-pass pipelines, LLM judges, critique-revise, SQLite learning
+        system, and frontend/multi-tenant vision are not current tailor
+        behavior — do not reintroduce them via "docs say so".
+        `docs/arch/CODE_CONVENTIONS.md` is referenced by AGENTS.md but does
+        not exist; do not fail reviews for its absence.
+        Skip grammar/style nits. Do not treat AGENTS.md Drain/CE workflow
+        as product architecture.
+
+chat:
+  art: false
+  auto_reply: true
