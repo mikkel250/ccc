@@ -8,6 +8,7 @@ import {
   getGmailClientId,
   getGmailHttpTimeoutMs,
   getGmailListMaxResults,
+  getGmailOauthAuthUrl,
   getGmailOauthScope,
   getGmailOauthTokenUrl,
   getGmailRefreshToken,
@@ -28,6 +29,7 @@ const KEYS = [
   "GMAIL_AUTH_BIND_HOST",
   "GMAIL_LIST_MAX_RESULTS",
   "GMAIL_LIST_MAX_RESULTS_LIMIT",
+  "GMAIL_OAUTH_AUTH_URL",
   "GMAIL_OAUTH_TOKEN_URL",
   "GMAIL_API_BASE_URL",
   "GMAIL_HTTP_TIMEOUT_MS",
@@ -78,8 +80,13 @@ describe("gmail-config", () => {
   });
 
   it("preserves the default HTTPS Gmail endpoint URLs", () => {
+    delete process.env.GMAIL_OAUTH_AUTH_URL;
     delete process.env.GMAIL_OAUTH_TOKEN_URL;
     delete process.env.GMAIL_API_BASE_URL;
+    assert.equal(
+      getGmailOauthAuthUrl(),
+      "https://accounts.google.com/o/oauth2/v2/auth"
+    );
     assert.equal(
       getGmailOauthTokenUrl(),
       "https://oauth2.googleapis.com/token"
@@ -91,6 +98,9 @@ describe("gmail-config", () => {
   });
 
   it("rejects non-HTTPS and invalid Gmail endpoint URLs", () => {
+    process.env.GMAIL_OAUTH_AUTH_URL = "http://accounts.example.test/auth";
+    assert.throws(() => getGmailOauthAuthUrl(), /GMAIL_OAUTH_AUTH_URL.*HTTPS/);
+
     process.env.GMAIL_OAUTH_TOKEN_URL = "http://oauth.example.test/token";
     assert.throws(() => getGmailOauthTokenUrl(), /GMAIL_OAUTH_TOKEN_URL.*HTTPS/);
 
@@ -174,6 +184,36 @@ describe("gmail-oauth", () => {
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.equal(result.data, "the-code");
+    }
+  });
+
+  it("rejects a callback with error=access_denied", () => {
+    const url = new URL(
+      "http://127.0.0.1:1234/?error=access_denied&state=s"
+    );
+    const result = parseOAuthCallback(url, "s");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /authorization failed/);
+      assert.doesNotMatch(result.error, /access_denied/);
+    }
+  });
+
+  it("rejects a matching state with a missing code", () => {
+    const url = new URL("http://127.0.0.1:1234/?state=s");
+    const result = parseOAuthCallback(url, "s");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /missing authorization code/);
+    }
+  });
+
+  it("rejects a matching state with a blank code", () => {
+    const url = new URL("http://127.0.0.1:1234/?code=%20&state=s");
+    const result = parseOAuthCallback(url, "s");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /missing authorization code/);
     }
   });
 

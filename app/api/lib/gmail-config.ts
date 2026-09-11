@@ -59,7 +59,7 @@ export function getGmailRecruiterLabel(): string {
 
 /** Return the authorization endpoint for the Gmail OAuth flow. */
 export function getGmailOauthAuthUrl(): string {
-  return getEnvString("GMAIL_OAUTH_AUTH_URL", DEFAULT_OAUTH_AUTH_URL)!;
+  return requireHttpsUrl("GMAIL_OAUTH_AUTH_URL", DEFAULT_OAUTH_AUTH_URL);
 }
 
 /** Return the token endpoint for Gmail OAuth exchanges and refreshes. */

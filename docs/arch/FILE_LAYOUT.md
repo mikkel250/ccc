@@ -39,7 +39,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── gmail-oauth.ts    # Authorize URL, callback, token exchange/refresh
 │           ├── gmail-list.ts     # Recruiter-label resolve + messages.list
 │           ├── inbox-config.ts   # Inbox Redis prefix / claim+processed TTLs
-│           ├── inbox-processed-store.ts # SET NX claim vs terminal processed mark
+│           ├── inbox-processed-store.ts # Lua claim vs terminal processed mark
 │           ├── gmail-body.ts     # Gmail payload → JD (text/plain else html-to-text)
 │           ├── rate-limit.ts     # Dual IP + secret-hash rate limiter
 │           ├── tailor-cv-validation.ts  # Request body validation

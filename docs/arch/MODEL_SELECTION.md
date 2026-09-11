@@ -44,7 +44,7 @@ Artifacts: `<jd-slug>.docx` + `<jd-slug>.curated.json` named from the JD basenam
 
 ### Cross-model parity (`npm run smoke:parity`)
 
-Server `TAILOR_MODEL` stays the only selector (no client model field). A parity run fills **one matrix cell** against the running server, then writes artifacts under `tmp/smoke/<provider>/<model>/` using the response `model` and updates `tmp/smoke/parity-status.json` (filled cell + pending catalog). Remaining cells need a restart with the next `TAILOR_MODEL`. Catalog: `SMOKE_PARITY_MODELS` (default: `anthropic/sonnet`, `deepseek/deepseek-v4-pro`, `openrouter/openai/gpt-5.4-mini`, `openrouter/google/gemini-3.1-pro-preview`). Pin `TAILOR_REASONING_EFFORT` so provider defaults do not skew the A/B. Quality is still operator read of the files — no judges.
+Server `TAILOR_MODEL` stays the only selector (no client model field). A parity run fills **one matrix cell** against the running server, then writes artifacts under `tmp/smoke/<provider>/<model>/` using the response `model` and updates `tmp/smoke/parity-status.json` (filled cell + pending catalog). Remaining cells need a restart with the next `TAILOR_MODEL`. Catalog: `SMOKE_PARITY_MODELS` (default: `anthropic/sonnet`, `deepseek/deepseek-v4-pro`, `openrouter/openai/gpt-5.4-mini`, `openrouter/google/gemini-3.1-pro-preview`). Pin `TAILOR_REASONING_EFFORT` so provider defaults do not skew the A/B. Quality is still based on operator review of the files — no judges.
 
 ### Historical model-selection eval (markdown era)
 

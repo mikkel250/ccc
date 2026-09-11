@@ -4,6 +4,7 @@ import {
   completeGmailAuth,
   formatGmailRefreshTokenLine,
   gmailAuthRedirectUri,
+  isGmailOauthLoopbackCallback,
   runGmailAuthCli,
 } from "../scripts/gmail-auth";
 import { formatListedMessageLine, runGmailListCli } from "../scripts/gmail-list";
@@ -24,6 +25,35 @@ describe("gmail-auth CLI helpers", () => {
     assert.equal(
       gmailAuthRedirectUri("127.0.0.1", 4242),
       "http://127.0.0.1:4242"
+    );
+  });
+
+  it("settles the OAuth wait only for code or error callbacks", () => {
+    assert.equal(
+      isGmailOauthLoopbackCallback(new URL("http://127.0.0.1:9/")),
+      false
+    );
+    assert.equal(
+      isGmailOauthLoopbackCallback(
+        new URL("http://127.0.0.1:9/favicon.ico")
+      ),
+      false
+    );
+    assert.equal(
+      isGmailOauthLoopbackCallback(new URL("http://127.0.0.1:9/?state=s")),
+      false
+    );
+    assert.equal(
+      isGmailOauthLoopbackCallback(
+        new URL("http://127.0.0.1:9/?code=c&state=s")
+      ),
+      true
+    );
+    assert.equal(
+      isGmailOauthLoopbackCallback(
+        new URL("http://127.0.0.1:9/?error=access_denied&state=s")
+      ),
+      true
     );
   });
 

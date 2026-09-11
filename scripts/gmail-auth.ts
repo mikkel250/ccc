@@ -66,6 +66,11 @@ function requestUrl(req: IncomingMessage, host: string, port: number): URL {
   return new URL(req.url ?? "/", gmailAuthRedirectUri(host, port));
 }
 
+/** True when the loopback request is an OAuth redirect, not a probe or favicon. */
+export function isGmailOauthLoopbackCallback(url: URL): boolean {
+  return url.searchParams.has("code") || url.searchParams.has("error");
+}
+
 type GmailAuthListener = {
   port: number;
   close: () => Promise<void>;
@@ -107,6 +112,11 @@ export async function runGmailAuthCli(params?: {
       });
       server.on("request", (req: IncomingMessage, res: ServerResponse) => {
         const url = requestUrl(req, bindHost, address.port);
+        if (!isGmailOauthLoopbackCallback(url)) {
+          res.statusCode = 204;
+          res.end();
+          return;
+        }
         res.statusCode = 200;
         res.setHeader("Content-Type", "text/plain; charset=utf-8");
         res.end("You can close this tab and return to the terminal.");

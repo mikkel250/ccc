@@ -118,7 +118,7 @@ npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 | `tests/gmail-list.test.ts` | Recruiter-label resolve + `messages.list` |
 | `tests/gmail-auth.test.ts` | `gmail:auth` / `gmail:list` CLI helpers |
 | `tests/gmail-body.test.ts` | Gmail payload → JD (`text/plain` else html-to-text) |
-| `tests/inbox-processed-store.test.ts` | Claim SET NX vs processed skip / crash recovery |
+| `tests/inbox-processed-store.test.ts` | Atomic Lua claim vs processed skip / crash recovery |
 | `tests/route.test.ts` | Auth, curator cutover, dual response |
 | `tests/tailor-cv-validation.test.ts` | Request body + JD size validation |
 
