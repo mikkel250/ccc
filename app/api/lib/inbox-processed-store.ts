@@ -164,6 +164,13 @@ async function callKv<T>(
   }
 }
 
+/**
+ * Client-side deadline only — does not cancel the Upstash REST request (@upstash/redis
+ * has no AbortSignal). A late response may still mutate Redis after we reject.
+ * Callers reconcile: claim SET timeouts GET the key (token match → won; empty → 503);
+ * token-gated delete/expire/markProcessed ignore stale callers. Orphan claims expire
+ * via INBOX_CLAIM_TTL_SECONDS. See docs/solutions/upstash-redis-inbox-timeout-race.md.
+ */
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
