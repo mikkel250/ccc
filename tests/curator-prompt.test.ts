@@ -7,6 +7,7 @@ import {
   getCuratorPrompt,
   CURATOR_LANGFUSE_PROMPT_NAME,
   FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME,
+  strictPromptRequestsReplyWrapper,
 } from "../app/api/lib/curator-prompt";
 
 describe("curator-prompt", () => {
@@ -17,6 +18,8 @@ describe("curator-prompt", () => {
   it("fallback omits page-count and visual QA / docx operator steps", () => {
     const text = getCuratorPromptFallbackText();
     assert.match(text, /curated JSON only/i);
+    assert.match(text, /"reply_text"/);
+    assert.match(text, /"curated_cv"/);
     assert.doesNotMatch(text, /present_files/);
     assert.doesNotMatch(text, /resume_builder\.js/);
     assert.doesNotMatch(text, /render to JPEG|PDF→JPEG/i);
@@ -57,6 +60,19 @@ describe("curator-prompt", () => {
     assert.equal(compiled.ok, false);
   });
 
+  it("strictPromptRequestsReplyWrapper rejects a bare-CV Langfuse prompt", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Emit curated JSON only. {{MASTER_CV_JSON}}"
+      ),
+      false
+    );
+    assert.equal(
+      strictPromptRequestsReplyWrapper(getCuratorPromptFallbackText()),
+      true
+    );
+  });
+
   it("has flexible pivot Langfuse prompt name", () => {
     assert.equal(FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME, "cv-curator-flexible-pivot");
   });
@@ -79,6 +95,13 @@ describe("curator-prompt", () => {
   it("getCuratorPrompt defaults to strict prompt when mode omitted", async () => {
     const result = await getCuratorPrompt();
     assert.equal(result.langfusePrompt?.name, "cv-curator-json");
+  });
+
+  it("strict user-turn requires the curated_cv + reply_text wrapper", () => {
+    const msg = buildCuratorUserMessage("GM role", "strict");
+    assert.match(msg, /curated_cv/);
+    assert.match(msg, /reply_text/);
+    assert.doesNotMatch(msg, /curated CV JSON only/i);
   });
 
   it("buildCuratorUserMessage isolates JD with a per-request nonce delimiter", () => {

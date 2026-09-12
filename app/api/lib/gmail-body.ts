@@ -20,10 +20,79 @@ function decodeGmailBodyData(data: unknown): string | undefined {
 
 const WHOLE_TAG_SKIP = new Set(["head", "script", "style"]);
 
-function isHiddenOpeningTag(raw: string): boolean {
+/** Named entities Gmail HTML commonly emits; numeric (dec/hex) covers the rest. */
+const NAMED_HTML_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+  mdash: "\u2014",
+  ndash: "\u2013",
+  rsquo: "\u2019",
+  lsquo: "\u2018",
+  rdquo: "\u201D",
+  ldquo: "\u201C",
+  hellip: "\u2026",
+  bull: "\u2022",
+  middot: "\u00B7",
+};
+
+function codePointToChar(code: number): string | undefined {
+  if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) {
+    return undefined;
+  }
+  if (code >= 0xd800 && code <= 0xdfff) {
+    return undefined;
+  }
+  return String.fromCodePoint(code);
+}
+
+function decodeHtmlEntities(text: string): string {
+  return text.replace(
+    /&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]+);/gi,
+    (entity, body: string) => {
+      const inner = body.toLowerCase();
+      if (inner.startsWith("#x")) {
+        return codePointToChar(Number.parseInt(inner.slice(2), 16)) ?? entity;
+      }
+      if (inner.startsWith("#")) {
+        return codePointToChar(Number(inner.slice(1))) ?? entity;
+      }
+      return NAMED_HTML_ENTITIES[inner] ?? entity;
+    }
+  );
+}
+
+function styleDeclaresHidden(style: string): boolean {
   return (
-    /\bhidden\b/i.test(raw) ||
-    /style\s*=\s*(["'])[^"'<>]*display\s*:\s*none[^"'<>]*\1/i.test(raw)
+    /display\s*:\s*none/i.test(style) ||
+    /visibility\s*:\s*hidden/i.test(style) ||
+    /opacity\s*:\s*0(?:\.0*)?(?=\s|;|$)/i.test(style) ||
+    /font-size\s*:\s*0(?:px|em|rem|%)?(?=\s|;|$)/i.test(style) ||
+    /max-height\s*:\s*0(?:px|em|rem|%)?(?=\s|;|$)/i.test(style)
+  );
+}
+
+function hiddenStyleInTag(raw: string): boolean {
+  const decoded = decodeHtmlEntities(raw);
+  const quoted = decoded.match(/style\s*=\s*(["'])([^"']*)\1/i);
+  if (quoted && styleDeclaresHidden(quoted[2]!)) {
+    return true;
+  }
+  const unquoted = decoded.match(/style\s*=\s*([^>\s]+)/i);
+  return unquoted != null && styleDeclaresHidden(unquoted[1]!);
+}
+
+/** Hidden-content policy: drop boolean `hidden`, `aria-hidden="true"`, and hidden inline styles. */
+function isHiddenOpeningTag(raw: string): boolean {
+  const decoded = decodeHtmlEntities(raw);
+  const attrsWithoutValues = decoded.replace(/=\s*("[^"]*"|'[^']*')/g, "");
+  return (
+    /\shidden(?=[\s=>/])/i.test(attrsWithoutValues) ||
+    /\baria-hidden\s*=\s*(["']?)true\1(?=[\s/>])/i.test(decoded) ||
+    hiddenStyleInTag(raw)
   );
 }
 
@@ -34,6 +103,7 @@ function omitHiddenHtml(html: string): string {
   let last = 0;
   let skipName: string | null = null;
   let skipDepth = 0;
+  let skipTailStart = 0;
   for (const match of html.matchAll(tokenRe)) {
     const index = match.index ?? 0;
     const raw = match[0];
@@ -48,6 +118,12 @@ function omitHiddenHtml(html: string): string {
     const isClose = raw.startsWith("</");
     const selfClosing = /\/\s*>$/.test(raw);
     if (skipDepth > 0) {
+      if (!isClose && name === "body" && skipName === "head") {
+        skipDepth = 0;
+        skipName = null;
+        out += raw;
+        continue;
+      }
       if (!isClose && !selfClosing && name === skipName) {
         skipDepth += 1;
       } else if (isClose && name === skipName) {
@@ -62,12 +138,15 @@ function omitHiddenHtml(html: string): string {
       if (!selfClosing) {
         skipName = name;
         skipDepth = 1;
+        skipTailStart = last;
       }
       continue;
     }
     out += raw;
   }
-  if (skipDepth === 0) {
+  if (skipDepth > 0) {
+    out += html.slice(skipTailStart);
+  } else {
     out += html.slice(last);
   }
   return out;
@@ -75,20 +154,13 @@ function omitHiddenHtml(html: string): string {
 
 export function htmlToText(html: string): string {
   let withoutBlocks = omitHiddenHtml(html);
-  withoutBlocks = withoutBlocks
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<\/div>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#(\d+);/g, (_m, digits: string) => {
-      const code = Number(digits);
-      return Number.isFinite(code) ? String.fromCharCode(code) : "";
-    });
+  withoutBlocks = decodeHtmlEntities(
+    withoutBlocks
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n")
+      .replace(/<\/div>/gi, "\n")
+      .replace(/<[^>]+>/g, " ")
+  );
   return withoutBlocks.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/[ \t]{2,}/g, " ").trim();
 }
 

@@ -12,7 +12,7 @@ Required: `Authorization: Bearer <TAILOR_API_KEY>`.
 |-----------|--------|
 | Smoke CLI (`npm run smoke`) | Operator / manual live-API path |
 
-The planned inbox worker is **not** an HTTP presenter: it tailors in-process (no Bearer, no `RATE_LIMIT_*` buckets). Product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`. Seekers and browsers never hold the key.
+The inbox worker is **not** an HTTP presenter: `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a labeled payload then calls `runTailorCore` (strict `cv` + `replyText`, no Bearer, no `RATE_LIMIT_*` buckets, no `remaining`/`resetTime`). Success carries `claimToken` so a later draft step can mark processed only while that token still owns the Redis claim. Non-crash extract/JD/tailor failures release the claim. Product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`. Seekers and browsers never hold the key.
 
 Missing/invalid Bearer → **401**. Unset/`TAILOR_API_KEY` misconfiguration, production bypass hard-block, or other auth-gate unavailability → **503** (fail closed; not all auth failures are 401). Deployed environments fail closed when `TAILOR_API_KEY` is unset. Local insecure bypass (`TAILOR_AUTH_INSECURE_BYPASS=1`) is hard-blocked when production markers are set.
 
@@ -76,11 +76,33 @@ Request body size capped by `TAILOR_REQUEST_MAX_BYTES` (default 65536).
 
 #### 200 OK
 
+Strict (`curationMode` omitted or `"strict"`) include `replyText`. Flexible may include `coverLetter`. A single payload never contains both.
+
+**Strict:**
 ```json
 {
   "cv": "<base64-encoded .docx>",
   "curatedJson": { "name": "…", "contact": {}, "summary": [], "…": "…" },
-  "coverLetter": "…markdown cover letter (flexible mode only)…",
+  "replyText": "…recruiter reply email body…",
+  "builderVersion": "1.0.0",
+  "curationMode": "strict",
+  "model": "anthropic/sonnet",
+  "usage": {
+    "promptTokens": 12000,
+    "completionTokens": 1500,
+    "totalTokens": 13500
+  },
+  "remaining": 4,
+  "resetTime": 1717632000000
+}
+```
+
+**Flexible:**
+```json
+{
+  "cv": "<base64-encoded .docx>",
+  "curatedJson": { "name": "…", "contact": {}, "summary": [], "…": "…" },
+  "coverLetter": "…markdown cover letter…",
   "builderVersion": "1.0.0",
   "curationMode": "flexible",
   "model": "anthropic/sonnet",
@@ -98,6 +120,7 @@ Request body size capped by `TAILOR_REQUEST_MAX_BYTES` (default 65536).
 |-------|-------------|
 | `cv` | Base64 `.docx` |
 | `coverLetter` | Markdown cover letter (flexible mode only; absent for strict mode) |
+| `replyText` | Recruiter-thread email body (strict mode only; absent for flexible). Trimmed non-empty string; missing/blank curator `reply_text` is HTTP 422. |
 | `curatedJson` | Schema-valid curated CV (caller-owned for history/regen) |
 | `builderVersion` | Mechanical builder semver; keep with JSON for style-stable regen |
 | `curationMode` | Echo of the mode used for this tailor (`strict` or `flexible`) |
