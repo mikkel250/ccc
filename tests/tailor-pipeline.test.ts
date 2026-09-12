@@ -9,11 +9,18 @@ import { createFailingMock } from "../tests/helpers/rate-limit-mock";
 import { BUILDER_VERSION } from "../app/api/lib/json-docx-builder";
 import { getTailorJdMaxChars } from "../app/api/lib/cv-schema";
 import {
+  DEFAULT_STRICT_REPLY,
+  strictCuratorJson,
+} from "../tests/helpers/strict-curator";
+import {
   getRateLimitConfig,
   hashTailorApiKeyForRateLimit,
   __injectRatelimitForTest,
 } from "../app/api/lib/rate-limit";
-import { buildTailorResponse } from "../app/api/lib/tailor-pipeline";
+import {
+  buildTailorResponse,
+  runTailorCore,
+} from "../app/api/lib/tailor-pipeline";
 import {
   authHeaders,
   buildPostRequest,
@@ -55,7 +62,7 @@ function mockPipelineSuccess(
     (jd: string) => `JD:\n${jd}`
   );
   mock.method(tailorCvDeps, "chat", async () => ({
-    content: JSON.stringify(curated),
+    content: strictCuratorJson(curated),
     usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
     model: "claude-sonnet-4-6",
     finishReason: "stop",
@@ -389,7 +396,7 @@ describe("buildTailorResponse — pipeline orchestration", () => {
   it("returns error when curator JSON fails schema validation", async () => {
     mockPipelineSuccess();
     mock.method(tailorCvDeps, "chat", async () => ({
-      content: JSON.stringify({ name: "Only Name" }),
+      content: strictCuratorJson({ name: "Only Name" }),
       usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
       model: "anthropic/sonnet",
       finishReason: "stop",
@@ -472,6 +479,8 @@ describe("buildTailorResponse — pipeline orchestration", () => {
         assert.equal(typeof result.body.remaining, "number");
         assert.equal(typeof result.body.resetTime, "number");
         assert.equal(result.body.curationMode, "strict");
+        assert.equal(result.body.replyText, DEFAULT_STRICT_REPLY);
+        assert.equal(result.body.coverLetter, undefined);
         assert.equal(typeof result.body.model, "string");
         assert.equal(result.body.model, "anthropic/sonnet");
         assert.ok(result.body.usage);
@@ -526,7 +535,7 @@ describe("buildTailorResponse — pipeline orchestration", () => {
       mock.method(tailorCvDeps, "chat", async () => {
         callOrder.push("chat");
         return {
-          content: JSON.stringify(FIXTURE_CURATED),
+          content: strictCuratorJson(FIXTURE_CURATED),
           usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
           model: "anthropic/sonnet",
           finishReason: "stop",
@@ -559,5 +568,130 @@ describe("buildTailorResponse — pipeline orchestration", () => {
       );
       assert.equal(chatSpy.mock.callCount(), 0);
     });
+
+    it("HTTP adapter still invokes checkRateLimit on success", async () => {
+      const orig = tailorCvDeps.checkRateLimit;
+      const spy = mock.method(
+        tailorCvDeps,
+        "checkRateLimit",
+        async (
+          phase: string,
+          ipAddress: string,
+          secretBucketKey: string
+        ) => orig.call(tailorCvDeps, phase, ipAddress, secretBucketKey)
+      );
+      const result = await buildTailorResponse(
+        tailorCvDeps,
+        buildPostRequest(VALID_BODY, XFF)
+      );
+      assert.equal(result.ok, true);
+      assert.ok(spy.mock.callCount() >= 1);
+    });
+  });
+});
+
+describe("runTailorCore — in-process curator path", () => {
+  beforeEach(() => {
+    ensureEnv();
+    resetRedisClientForTest();
+    mockPipelineSuccess();
+  });
+
+  afterEach(() => {
+    mock.restoreAll();
+    resetRedisClientForTest();
+  });
+
+  it("returns strict artifacts without remaining/resetTime and without checkRateLimit", async () => {
+    const rateSpy = mock.method(tailorCvDeps, "checkRateLimit", async () => {
+      throw new Error("checkRateLimit must not be called from runTailorCore");
+    });
+    const authSpy = mock.method(tailorCvDeps, "authenticateTailorRequest", () => {
+      throw new Error("authenticateTailorRequest must not be called from runTailorCore");
+    });
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription:
+        "We need a senior engineer with React and Node.js experience.",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(rateSpy.mock.callCount(), 0);
+    assert.equal(authSpy.mock.callCount(), 0);
+    if (result.ok) {
+      assert.equal(typeof result.body.cv, "string");
+      assert.ok(result.body.cv.length > 0);
+      assert.ok(result.body.curatedJson);
+      assert.equal(result.body.builderVersion, BUILDER_VERSION);
+      assert.equal(result.body.curationMode, "strict");
+      assert.equal(result.body.replyText, DEFAULT_STRICT_REPLY);
+      assert.equal(result.body.coverLetter, undefined);
+      assert.equal("remaining" in result.body, false);
+      assert.equal("resetTime" in result.body, false);
+    }
+  });
+
+  it("returns 422 without cv when strict reply_text is blank", async () => {
+    mock.method(tailorCvDeps, "chat", async () => ({
+      content: strictCuratorJson(FIXTURE_CURATED, "   "),
+      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+      model: "anthropic/sonnet",
+      finishReason: "stop",
+    }));
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 422);
+      assert.match(result.error, /reply_text/);
+    }
+  });
+
+  it("maps a chat throw to 503 without leaking the provider message", async () => {
+    mock.method(tailorCvDeps, "chat", async () => {
+      throw new Error("OPENROUTER_API_KEY is not configured");
+    });
+    mock.method(tailorCvDeps, "isLlmServiceError", () => true);
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.doesNotMatch(result.error, /OPENROUTER_API_KEY/);
+    }
+  });
+
+  it("echoes namespaced TAILOR_MODEL instead of the provider model id", async () => {
+    const previous = process.env.TAILOR_MODEL;
+    process.env.TAILOR_MODEL = "anthropic/sonnet";
+    mock.method(tailorCvDeps, "chat", async () => ({
+      content: strictCuratorJson(FIXTURE_CURATED),
+      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+      model: "claude-sonnet-4-6",
+      finishReason: "stop",
+    }));
+
+    try {
+      const result = await runTailorCore(tailorCvDeps, {
+        jobDescription: "React role",
+        curationMode: "strict",
+      });
+      assert.equal(result.ok, true);
+      if (result.ok) {
+        assert.equal(result.body.model, "anthropic/sonnet");
+      }
+    } finally {
+      if (previous === undefined) delete process.env.TAILOR_MODEL;
+      else process.env.TAILOR_MODEL = previous;
+    }
   });
 });

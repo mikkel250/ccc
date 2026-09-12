@@ -6,7 +6,6 @@ import { randomBytes } from "node:crypto";
 import {
   getInboxClaimTtlSeconds,
   getInboxMessageIdMaxChars,
-  getInboxProcessedTtlSeconds,
   getInboxRedisPrefix,
   getInboxRedisTimeoutMs,
 } from "./inbox-config";
@@ -20,6 +19,7 @@ export type InboxKv = {
     value: string,
     opts?: { nx?: boolean; ex?: number }
   ) => Promise<"OK" | null>;
+  del: (key: string) => Promise<void>;
   deleteIfValue: (key: string, value: string) => Promise<boolean>;
 };
 
@@ -74,6 +74,9 @@ function kv(): InboxKv {
         result = await withTimeout(client.set(key, value), timeoutMs);
       }
       return result === "OK" ? "OK" : null;
+    },
+    del: async (key) => {
+      await withTimeout(client.del(key), timeoutMs);
     },
     deleteIfValue: async (key, value) => {
       const deleted = await withTimeout(
@@ -204,11 +207,25 @@ export async function markInboxProcessed(
   if (!parsed.ok) {
     return parsed;
   }
-  const ttl = getInboxProcessedTtlSeconds();
-  const opts = ttl > 0 ? { ex: ttl } : undefined;
-  const set = await kv().set(inboxProcessedKey(parsed.messageId), "1", opts);
+  // Processed is terminal for idempotency — never EX (ignore positive TTL env).
+  const set = await kv().set(inboxProcessedKey(parsed.messageId), "1");
   if (set !== "OK") {
     return { ok: false, error: "Failed to persist processed messageId" };
+  }
+  return { ok: true };
+}
+
+export async function releaseInboxClaim(
+  messageId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = parseInboxMessageId(messageId);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  try {
+    await kv().del(inboxClaimKey(parsed.messageId));
+  } catch {
+    return { ok: false, error: "Failed to release inbox claim" };
   }
   return { ok: true };
 }

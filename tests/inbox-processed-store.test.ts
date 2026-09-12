@@ -8,6 +8,7 @@ import {
   inboxProcessedKey,
   markInboxProcessed,
   parseInboxMessageId,
+  releaseInboxClaim,
   type InboxKv,
 } from "../app/api/lib/inbox-processed-store";
 
@@ -36,6 +37,9 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
       }
       store.set(key, value);
       return "OK";
+    },
+    del: async (key) => {
+      store.delete(key);
     },
     deleteIfValue: async (key, value) => {
       if (store.get(key) !== value) {
@@ -99,6 +103,36 @@ describe("inbox processed store", () => {
     }
   });
 
+  it("marks processed without Redis expiry even when TTL env is positive", async () => {
+    const prev = process.env.INBOX_PROCESSED_TTL_SECONDS;
+    process.env.INBOX_PROCESSED_TTL_SECONDS = "3600";
+    const setCalls: Array<{ key: string; opts?: { ex?: number; nx?: boolean } }> =
+      [];
+    const trackingKv: InboxKv = {
+      get: async (key) => memory.get(key),
+      set: async (key, value, opts) => {
+        setCalls.push({ key, opts });
+        return memory.set(key, value, opts);
+      },
+      del: async (key) => memory.del(key),
+      deleteIfValue: async (key, value) => memory.deleteIfValue(key, value),
+    };
+    __injectInboxKvForTest(trackingKv);
+    try {
+      const marked = await markInboxProcessed(ID);
+      assert.equal(marked.ok, true);
+      const processedCalls = setCalls.filter(
+        (c) => c.key === inboxProcessedKey(ID)
+      );
+      assert.equal(processedCalls.length, 1);
+      assert.equal(processedCalls[0]?.opts?.ex, undefined);
+    } finally {
+      if (prev === undefined) delete process.env.INBOX_PROCESSED_TTL_SECONDS;
+      else process.env.INBOX_PROCESSED_TTL_SECONDS = prev;
+      __injectInboxKvForTest(memory);
+    }
+  });
+
   it("extracts after a claim that never became processed (crash recovery)", async () => {
     const first = await extractUnprocessedInboxMessage(
       ID,
@@ -127,6 +161,15 @@ describe("inbox processed store", () => {
     const result = await extractUnprocessedInboxMessage("bad:id", plainMessage("JD"));
     assert.equal(result.ok, false);
     assert.equal(memory.store.size, 0);
+  });
+
+  it("releaseInboxClaim deletes the NX claim key", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    assert.equal(memory.store.has(inboxClaimKey(ID)), true);
+    const released = await releaseInboxClaim(ID);
+    assert.equal(released.ok, true);
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
   });
 
   it("returns processed when a mark lands before the claim SET commits", async () => {

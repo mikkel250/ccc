@@ -17,6 +17,9 @@
     "test:e2e": "playwright test",
     "regen-docx": "tsx scripts/regen-docx.ts",
     "smoke": "tsx scripts/e2e-tailor-cv.ts",
+    "gmail:auth": "tsx scripts/gmail-auth.ts",
+    "gmail:list": "tsx scripts/gmail-list.ts",
+    "inbox:scan": "tsx scripts/inbox-scan.ts",
     "smoke:parity": "tsx scripts/e2e-tailor-cv.ts --parity"
   },
   "dependencies": {
@@ -37,15 +40,15 @@
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "typescript": "5.0.2",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "dotenv": "^17.2.3",
+    "tsx": "^4.19.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "@types/react": "19.2.15",
     "@types/uuid": "^10.0.0",
-    "dotenv": "^17.2.3",
     "eslint": "^9.39.4",
-    "eslint-config-next": "16.2.6",
-    "tsx": "^4.19.0"
+    "eslint-config-next": "16.2.6"
   }
 }

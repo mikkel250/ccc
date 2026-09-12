@@ -51,7 +51,7 @@ tailor-cv/route.ts
   ├── authenticate (Bearer TAILOR_API_KEY)
   ├── requireMasterCv (MASTER_CV_JSON / MASTER_CV_PATH)
   ├── getCuratorPrompt()        → Langfuse Prompt Management ("cv-curator-json", label: production)
-  │     └── fallback: hardcoded prompt in curator-prompt.ts (kept in sync with Langfuse)
+  │     └── fallback: hardcoded prompt in curator-prompt.ts (unreachable Langfuse, or strict production copy missing reply_text / {{MASTER_CV_JSON}})
   ├── applyCurationModePolicy(prompt, curationMode)
   ├── compileCuratorPrompt(prompt, masterCv)
   ├── chat(messages, systemPrompt, { langfusePrompt })  → LLM (via TAILOR_MODEL)
@@ -73,7 +73,7 @@ See [Pipeline enhancements](./PIPELINE_ENHANCEMENTS.md) for the two-pass pipelin
 - **Provider/model namespace for all LLM routing**: Every model identifier is `provider/model`. The first `/`-delimited segment names the provider; the remainder is the model ID passed to that provider's API. No bare aliases (e.g. `sonnet`, `gpt-4o`) — the provider must be explicit. Adding a new model or provider is a config change (env var), not a code change (no new `if` branches in routing logic). This contract eliminates the ambiguity of inferring a provider from model name conventions.
 - **Separate model**: CV generation uses a different model (`TAILOR_MODEL` env var) than the chat bot. Frontier model expected (Gemini 2.5 Pro, DeepSeek V4 Pro, Sonnet) since reasoning quality matters more than cost here.
 - **Strict-path reply text**: Successful `strict` tailor returns recruiter reply email text in the same curator pass as the Curated CV (not a second LLM call). The inbox worker copies that string into the Gmail draft body. Flexible `coverLetter` is unchanged and is not the commercial inbox path. Product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`.
-- **Langfuse Prompt Management**: The curator system prompt lives in Langfuse (`cv-curator-json`, text type). At runtime, the app fetches the `production`-labeled version with 300s caching. A hardcoded fallback in `curator-prompt.ts` ensures availability if Langfuse is unreachable. Prompt updates are done programmatically via the Langfuse API/SDK — no UI-only workflows. Each LLM generation is linked to its prompt version via the native `prompt` attribute for tracing full version lineage.
+- **Langfuse Prompt Management**: The curator system prompt lives in Langfuse (`cv-curator-json`, text type). At runtime, the app fetches the `production`-labeled version with 300s caching. A hardcoded fallback in `curator-prompt.ts` is used if Langfuse is unreachable or the strict production copy omits `{curated_cv, reply_text}` or `{{MASTER_CV_JSON}}`. Prompt updates are done programmatically via the Langfuse API/SDK — no UI-only workflows. Each LLM generation is linked to its prompt version via the native `prompt` attribute for tracing full version lineage.
 - **Bearer auth**: `POST /api/tailor-cv` requires `Authorization: Bearer <TAILOR_API_KEY>`. Single-user shared secret; no sessions or accounts.
 
 ### Anti-patterns

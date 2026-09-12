@@ -1,8 +1,8 @@
 /**
- * CV tailoring pipeline — orchestrates all 10 steps from auth through DOCX generation.
+ * CV tailoring pipeline — HTTP adapter plus shared curator/DOCX core.
  *
- * Returns a discriminated union: the route handler maps to HTTP status codes.
- * Extracted from route.ts so the pipeline can be unit-tested without HTTP mocking.
+ * `buildTailorResponse` maps NextRequest (IP, rate-limit, Bearer, body) onto
+ * `runTailorCore`. The route handler maps the result to HTTP status codes.
  */
 import { isIP } from "node:net";
 import type { NextRequest } from "next/server";
@@ -25,7 +25,12 @@ import {
   getTailorResponseMaxBytes,
 } from "./cv-schema";
 import { CURATOR_LANGFUSE_PROMPT_NAME } from "./curator-prompt";
-import { isFlexibleWrapper, flexibleCoverLetter } from "./curation-mode";
+import {
+  isCuratedCvWrapper,
+  isFlexibleWrapper,
+  flexibleCoverLetter,
+  usableReplyText,
+} from "./curation-mode";
 import type { CurationMode } from "./curation-mode";
 
 // ---------------------------------------------------------------------------
@@ -47,7 +52,18 @@ export interface TailorResponseBody {
   resetTime: number;
   /** Present only for flexible mode — cover letter as markdown. */
   coverLetter?: string;
+  /** Present only for strict mode — recruiter reply email body. */
+  replyText?: string;
 }
+
+export type TailorCoreSuccess = Omit<
+  TailorResponseBody,
+  "remaining" | "resetTime"
+>;
+
+export type TailorCoreResult =
+  | { ok: true; body: TailorCoreSuccess }
+  | { ok: false; error: string; status: 422 | 503 };
 
 export type TailorPipelineResult =
   | { ok: true; body: TailorResponseBody }
@@ -314,6 +330,41 @@ export async function buildTailorResponse(
 
   const { jobDescription, curationMode } = validated;
 
+  const core = await runTailorCore(deps, { jobDescription, curationMode });
+  if (!core.ok) {
+    return core;
+  }
+
+  const responseBody: TailorResponseBody = {
+    ...core.body,
+    remaining: rateLimit.remaining,
+    resetTime: rateLimit.resetTime,
+  };
+
+  const responseBytes = Buffer.byteLength(
+    JSON.stringify(responseBody),
+    "utf8"
+  );
+  if (responseBytes > getTailorResponseMaxBytes()) {
+    return {
+      ok: false,
+      error: "Tailor response exceeds configured size limit",
+      status: 422,
+    };
+  }
+
+  return { ok: true, body: responseBody };
+}
+
+/**
+ * Shared curator + DOCX path. No Bearer, no RATE_LIMIT_* buckets (R8).
+ */
+export async function runTailorCore(
+  deps: TailorPipelineDeps,
+  input: { jobDescription: string; curationMode: CurationMode }
+): Promise<TailorCoreResult> {
+  const { jobDescription, curationMode } = input;
+
   // 6. Prompt construction
   const masterCv = deps.requireMasterCv();
   const { systemPrompt: promptText, langfusePrompt } =
@@ -330,24 +381,37 @@ export async function buildTailorResponse(
   );
 
   // 7. Curator LLM call
-  const curatorResponse = await deps.chat(
-    [{ role: "user" as const, content: userContent }],
-    systemPrompt,
-    {
-      model: getTailorModel(),
-      reasoningEffort: getTailorReasoningEffort(),
-      langfusePrompt: langfusePrompt ?? {
-        name: CURATOR_LANGFUSE_PROMPT_NAME,
-        version: 0,
-        isFallback: true,
-      },
-      source: "tailor-cv-curator",
+  let curatorResponse: Awaited<ReturnType<typeof deps.chat>>;
+  try {
+    curatorResponse = await deps.chat(
+      [{ role: "user" as const, content: userContent }],
+      systemPrompt,
+      {
+        model: getTailorModel(),
+        reasoningEffort: getTailorReasoningEffort(),
+        langfusePrompt: langfusePrompt ?? {
+          name: CURATOR_LANGFUSE_PROMPT_NAME,
+          version: 0,
+          isFallback: true,
+        },
+        source: "tailor-cv-curator",
+      }
+    );
+  } catch (error: unknown) {
+    if (error instanceof ServiceError) {
+      return { ok: false, error: error.message, status: 503 };
     }
-  );
+    return {
+      ok: false,
+      error: "AI service error. Please try again.",
+      status: 503,
+    };
+  }
 
   // 8. Extract + schema validate + size check
   let curatedRaw: unknown;
   let coverLetter: string | undefined;
+  let replyText: string | undefined;
   try {
     const parsed = deps.extractStructuredJson(curatorResponse.content);
     if (curationMode === "flexible") {
@@ -362,7 +426,25 @@ export async function buildTailorResponse(
       curatedRaw = parsed.curated_cv;
       coverLetter = flexibleCoverLetter(parsed);
     } else {
-      curatedRaw = parsed;
+      if (!isCuratedCvWrapper(parsed)) {
+        console.error("Curator output missing curated_cv in strict wrapper");
+        return {
+          ok: false,
+          error: "Curator output missing curated_cv in strict wrapper",
+          status: 422,
+        };
+      }
+      const reply = usableReplyText(Reflect.get(parsed, "reply_text"));
+      if (reply === undefined) {
+        console.error("Curator output missing reply_text");
+        return {
+          ok: false,
+          error: "Curator output missing reply_text",
+          status: 422,
+        };
+      }
+      curatedRaw = parsed.curated_cv;
+      replyText = reply;
     }
   } catch {
     console.error("Curator output was not valid JSON");
@@ -398,30 +480,16 @@ export async function buildTailorResponse(
     };
   }
 
-  // 10. Build response body
-  const responseBody: TailorResponseBody = {
+  const body: TailorCoreSuccess = {
     cv: built.base64,
     curatedJson: sanitized,
     builderVersion: built.builderVersion,
     curationMode,
     model: getTailorModel(),
     usage: curatorResponse.usage,
-    remaining: rateLimit.remaining,
-    resetTime: rateLimit.resetTime,
     ...(coverLetter !== undefined ? { coverLetter } : {}),
+    ...(replyText !== undefined ? { replyText } : {}),
   };
 
-  const responseBytes = Buffer.byteLength(
-    JSON.stringify(responseBody),
-    "utf8"
-  );
-  if (responseBytes > getTailorResponseMaxBytes()) {
-    return {
-      ok: false,
-      error: "Tailor response exceeds configured size limit",
-      status: 422,
-    };
-  }
-
-  return { ok: true, body: responseBody };
+  return { ok: true, body };
 }
