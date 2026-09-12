@@ -48,7 +48,7 @@ function leaseRenewalFailure(
 async function withClaimLease<T>(
   messageId: string,
   claimToken: string,
-  work: () => Promise<T>
+  work: (signal: AbortSignal) => Promise<T>
 ): Promise<
   | { ok: true; value: T }
   | { ok: true; status: "skipped-claimed" }
@@ -64,6 +64,7 @@ async function withClaimLease<T>(
     return { ok: true, status: "skipped-claimed" };
   }
 
+  const abortController = new AbortController();
   let finished = false;
   let resolveLost: (result: { ok: false; error: string }) => void = () => {};
   const leaseLost = new Promise<{ ok: false; error: string }>((resolve) => {
@@ -86,13 +87,21 @@ async function withClaimLease<T>(
         }
       });
   }, intervalMs);
-  const workResult = work().then((value) => ({ ok: true as const, value }));
+  const workPromise = work(abortController.signal);
   try {
-    return await Promise.race([workResult, leaseLost]);
+    const raced = await Promise.race([
+      workPromise.then((value) => ({ kind: "work" as const, value })),
+      leaseLost.then((lost) => ({ kind: "lost" as const, lost })),
+    ]);
+    if (raced.kind === "lost") {
+      abortController.abort();
+      await workPromise.catch(() => {});
+      return raced.lost;
+    }
+    return { ok: true, value: raced.value };
   } finally {
     finished = true;
     clearInterval(timer);
-    void workResult.catch(() => {});
   }
 }
 
@@ -127,10 +136,11 @@ export async function tailorLabeledMessage(
     const leased = await withClaimLease(
       input.messageId,
       extracted.claimToken,
-      () =>
+      (signal) =>
         runTailorCore(deps, {
           jobDescription: extracted.jobDescription,
           curationMode: "strict",
+          signal,
         })
     );
     if (leased.ok && "status" in leased) {
@@ -138,7 +148,9 @@ export async function tailorLabeledMessage(
       return { ok: true, status: "skipped-claimed" };
     }
     if (!leased.ok) {
-      await releaseInboxClaim(input.messageId, extracted.claimToken);
+      if (!isInboxRedisError(leased.error)) {
+        await releaseInboxClaim(input.messageId, extracted.claimToken);
+      }
       return { ok: false, error: leased.error, status: 503 };
     }
     core = leased.value;

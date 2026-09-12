@@ -14,6 +14,9 @@ import {
   type InboxKv,
 } from "../app/api/lib/inbox-processed-store";
 import { tailorLabeledMessage } from "../app/api/lib/inbox-tailor";
+import type { TailorPipelineDeps } from "../app/api/lib/tailor-pipeline";
+
+type ChatArgs = Parameters<TailorPipelineDeps["chat"]>;
 import { BUILDER_VERSION } from "../app/api/lib/json-docx-builder";
 import {
   DEFAULT_STRICT_REPLY,
@@ -109,6 +112,23 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
       return true;
     },
   };
+}
+
+async function sleepUnlessAborted(
+  ms: number,
+  signal?: AbortSignal
+): Promise<void> {
+  if (signal?.aborted) {
+    throw new DOMException("The operation was aborted", "AbortError");
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("The operation was aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function mockPipelineSuccess(): void {
@@ -337,15 +357,19 @@ describe("tailorLabeledMessage", () => {
   it("keeps claim ownership when core work outlasts the initial lease", async () => {
     const previous = process.env.INBOX_CLAIM_TTL_SECONDS;
     process.env.INBOX_CLAIM_TTL_SECONDS = "1";
-    mock.method(tailorCvDeps, "chat", async () => {
-      await new Promise((resolve) => setTimeout(resolve, 1100));
+    mock.method(
+      tailorCvDeps,
+      "chat",
+      async (...[_messages, _system, options]: ChatArgs) => {
+      await sleepUnlessAborted(1100, options.signal);
       return {
         content: strictCuratorJson(FIXTURE_CURATED),
         usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
         model: "anthropic/sonnet",
         finishReason: "stop",
       };
-    });
+    }
+    );
     try {
       const result = await tailorLabeledMessage(tailorCvDeps, {
         messageId: ID,
@@ -396,15 +420,21 @@ describe("tailorLabeledMessage", () => {
       memory.store.set(key, "replacement-token");
       return origExpire(key, value, ttlSeconds);
     };
-    mock.method(tailorCvDeps, "chat", async () => {
-      await new Promise((resolve) => setTimeout(resolve, 1100));
+    let chatCompleted = false;
+    mock.method(
+      tailorCvDeps,
+      "chat",
+      async (...[_messages, _system, options]: ChatArgs) => {
+      await sleepUnlessAborted(1100, options.signal);
+      chatCompleted = true;
       return {
         content: strictCuratorJson(FIXTURE_CURATED),
         usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
         model: "anthropic/sonnet",
         finishReason: "stop",
       };
-    });
+    }
+    );
     try {
       const result = await tailorLabeledMessage(tailorCvDeps, {
         messageId: ID,
@@ -415,6 +445,7 @@ describe("tailorLabeledMessage", () => {
         assert.equal(result.status, 503);
         assert.equal(result.error, INBOX_CLAIM_LOST_ERROR);
       }
+      assert.equal(chatCompleted, false);
       assert.equal(typeof workerToken, "string");
       assert.equal(memory.store.get(inboxClaimKey(ID)), "replacement-token");
       assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
@@ -442,15 +473,21 @@ describe("tailorLabeledMessage", () => {
       }
       throw new Error(INBOX_REDIS_TIMEOUT_ERROR);
     };
-    mock.method(tailorCvDeps, "chat", async () => {
-      await new Promise((resolve) => setTimeout(resolve, 1100));
+    let chatCompleted = false;
+    mock.method(
+      tailorCvDeps,
+      "chat",
+      async (...[_messages, _system, options]: ChatArgs) => {
+      await sleepUnlessAborted(1100, options.signal);
+      chatCompleted = true;
       return {
         content: strictCuratorJson(FIXTURE_CURATED),
         usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
         model: "anthropic/sonnet",
         finishReason: "stop",
       };
-    });
+    }
+    );
     try {
       const result = await tailorLabeledMessage(tailorCvDeps, {
         messageId: ID,
@@ -461,7 +498,9 @@ describe("tailorLabeledMessage", () => {
         assert.equal(result.status, 503);
         assert.equal(result.error, INBOX_REDIS_TIMEOUT_ERROR);
       }
+      assert.equal(chatCompleted, false);
       assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
+      assert.equal(memory.store.has(inboxClaimKey(ID)), true);
     } finally {
       if (previous === undefined) delete process.env.INBOX_CLAIM_TTL_SECONDS;
       else process.env.INBOX_CLAIM_TTL_SECONDS = previous;

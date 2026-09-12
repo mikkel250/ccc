@@ -235,33 +235,31 @@ export async function claimInboxMessage(
   const token = randomBytes(16).toString("hex");
   const claimKey = inboxClaimKey(parsed.messageId);
   const store = kv();
-  let claimed = false;
-  for (let attempt = 0; attempt < 2 && !claimed; attempt += 1) {
-    let set: "OK" | null = null;
-    try {
-      set = await store.set(claimKey, token, {
-        nx: true,
-        ex: getInboxClaimTtlSeconds(),
-      });
-    } catch (err) {
-      if (!isInboxRedisTimeout(err)) {
-        return inboxRedisFailure(err);
-      }
+  let set: "OK" | null = null;
+  let setTimedOut = false;
+  try {
+    set = await store.set(claimKey, token, {
+      nx: true,
+      ex: getInboxClaimTtlSeconds(),
+    });
+  } catch (err) {
+    if (!isInboxRedisTimeout(err)) {
+      return inboxRedisFailure(err);
     }
-    if (set === "OK") {
-      claimed = true;
-      break;
-    }
+    setTimedOut = true;
+  }
+  let claimed = set === "OK";
+  if (!claimed) {
     const existing = await callKv(() => store.get(claimKey));
     if (!existing.ok) {
       return existing;
     }
     if (existing.value === token) {
       claimed = true;
-      break;
-    }
-    if (existing.value != null) {
-      break;
+    } else if (existing.value != null) {
+      return { ok: true, outcome: "lost" };
+    } else if (setTimedOut) {
+      return { ok: false, error: INBOX_REDIS_TIMEOUT_ERROR };
     }
   }
   if (claimed) {

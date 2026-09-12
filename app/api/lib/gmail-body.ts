@@ -65,14 +65,34 @@ function decodeHtmlEntities(text: string): string {
   );
 }
 
-/** Hidden-content policy: drop boolean `hidden`, `aria-hidden="true"`, `display:none`, and `visibility:hidden`. */
-function isHiddenOpeningTag(raw: string): boolean {
-  const unquoted = raw.replace(/=\s*("[^"]*"|'[^']*')/g, "");
+function styleDeclaresHidden(style: string): boolean {
   return (
-    /\shidden(?=[\s=>/])/i.test(unquoted) ||
-    /\baria-hidden\s*=\s*(["']?)true\1(?=[\s/>])/i.test(raw) ||
-    /style\s*=\s*(["'])[^"'<>]*display\s*:\s*none[^"'<>]*\1/i.test(raw) ||
-    /style\s*=\s*(["'])[^"'<>]*visibility\s*:\s*hidden[^"'<>]*\1/i.test(raw)
+    /display\s*:\s*none/i.test(style) ||
+    /visibility\s*:\s*hidden/i.test(style) ||
+    /opacity\s*:\s*0(?:\.0*)?(?=\s|;|$)/i.test(style) ||
+    /font-size\s*:\s*0(?:px|em|rem|%)?(?=\s|;|$)/i.test(style) ||
+    /max-height\s*:\s*0(?:px|em|rem|%)?(?=\s|;|$)/i.test(style)
+  );
+}
+
+function hiddenStyleInTag(raw: string): boolean {
+  const decoded = decodeHtmlEntities(raw);
+  const quoted = decoded.match(/style\s*=\s*(["'])([^"']*)\1/i);
+  if (quoted && styleDeclaresHidden(quoted[2]!)) {
+    return true;
+  }
+  const unquoted = decoded.match(/style\s*=\s*([^>\s]+)/i);
+  return unquoted != null && styleDeclaresHidden(unquoted[1]!);
+}
+
+/** Hidden-content policy: drop boolean `hidden`, `aria-hidden="true"`, and hidden inline styles. */
+function isHiddenOpeningTag(raw: string): boolean {
+  const decoded = decodeHtmlEntities(raw);
+  const attrsWithoutValues = decoded.replace(/=\s*("[^"]*"|'[^']*')/g, "");
+  return (
+    /\shidden(?=[\s=>/])/i.test(attrsWithoutValues) ||
+    /\baria-hidden\s*=\s*(["']?)true\1(?=[\s/>])/i.test(decoded) ||
+    hiddenStyleInTag(raw)
   );
 }
 
@@ -83,6 +103,7 @@ function omitHiddenHtml(html: string): string {
   let last = 0;
   let skipName: string | null = null;
   let skipDepth = 0;
+  let skipTailStart = 0;
   for (const match of html.matchAll(tokenRe)) {
     const index = match.index ?? 0;
     const raw = match[0];
@@ -97,6 +118,12 @@ function omitHiddenHtml(html: string): string {
     const isClose = raw.startsWith("</");
     const selfClosing = /\/\s*>$/.test(raw);
     if (skipDepth > 0) {
+      if (!isClose && name === "body" && skipName === "head") {
+        skipDepth = 0;
+        skipName = null;
+        out += raw;
+        continue;
+      }
       if (!isClose && !selfClosing && name === skipName) {
         skipDepth += 1;
       } else if (isClose && name === skipName) {
@@ -111,12 +138,15 @@ function omitHiddenHtml(html: string): string {
       if (!selfClosing) {
         skipName = name;
         skipDepth = 1;
+        skipTailStart = last;
       }
       continue;
     }
     out += raw;
   }
-  if (skipDepth === 0) {
+  if (skipDepth > 0) {
+    out += html.slice(skipTailStart);
+  } else {
     out += html.slice(last);
   }
   return out;

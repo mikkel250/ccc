@@ -102,6 +102,16 @@ export type WriteSmokeArtifactsInput = {
   model?: string;
 };
 
+/** Remove prior strict-mode artifacts so a failed verify cannot leave stale operator files. */
+export function clearStaleStrictSmokeArtifacts(
+  jdPath: string,
+  smokeDir: string
+): void {
+  const paths = smokeArtifactPaths(jdPath, smokeDir);
+  rmSync(paths.replyPath, { force: true });
+  rmSync(paths.coverLetterPath, { force: true });
+}
+
 export async function writeSmokeArtifacts(
   input: WriteSmokeArtifactsInput
 ): Promise<{
@@ -170,6 +180,7 @@ export async function writeSmokeArtifacts(
   } else {
     rmSync(paths.replyPath, { force: true });
     if (input.curationMode === "strict") {
+      rmSync(paths.coverLetterPath, { force: true });
       console.warn("Reply text missing or empty for strict run, skipping reply file");
     }
   }
@@ -208,6 +219,10 @@ export async function runSmokeCli(options: RunSmokeCliOptions): Promise<void> {
       console.error(err instanceof Error ? err.message : err);
       process.exit(1);
     }
+  }
+
+  if (curationMode === "strict" && !options.parity) {
+    clearStaleStrictSmokeArtifacts(jd.path, smokeRoot);
   }
 
   const result = await verifySmokePipeline(jd.text, {

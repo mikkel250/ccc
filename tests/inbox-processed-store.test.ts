@@ -197,6 +197,19 @@ describe("inbox processed store", () => {
     assert.equal(memory.store.has(inboxProcessedKey(ID)), true);
   });
 
+  it("returns timeout instead of lost when SET times out and the claim key is still empty", async () => {
+    const origSet = memory.set.bind(memory);
+    memory.set = async (key, value, opts) => {
+      if (key === inboxClaimKey(ID)) {
+        throw new Error("Inbox Redis timed out");
+      }
+      return origSet(key, value, opts);
+    };
+    const result = await claimInboxMessage(ID);
+    assert.deepEqual(result, { ok: false, error: "Inbox Redis timed out" });
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+  });
+
   it("treats a timed-out SET that still committed as a won claim", async () => {
     const origSet = memory.set.bind(memory);
     let firstClaimSet = true;

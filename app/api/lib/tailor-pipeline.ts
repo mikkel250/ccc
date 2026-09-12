@@ -207,6 +207,7 @@ export interface TailorPipelineDeps {
       };
       source: string;
       reasoningEffort?: ReasoningEffort;
+      signal?: AbortSignal;
     }
   ) => Promise<{
     content: string;
@@ -364,9 +365,13 @@ export async function buildTailorResponse(
  */
 export async function runTailorCore(
   deps: TailorPipelineDeps,
-  input: { jobDescription: string; curationMode: CurationMode }
+  input: {
+    jobDescription: string;
+    curationMode: CurationMode;
+    signal?: AbortSignal;
+  }
 ): Promise<TailorCoreResult> {
-  const { jobDescription, curationMode } = input;
+  const { jobDescription, curationMode, signal } = input;
 
   // 6. Prompt construction
   const masterCv = deps.requireMasterCv();
@@ -405,9 +410,17 @@ export async function runTailorCore(
           isFallback: true,
         },
         source: "tailor-cv-curator",
+        signal,
       }
     );
   } catch (error: unknown) {
+    if (signal?.aborted) {
+      return {
+        ok: false,
+        error: "AI service error. Please try again.",
+        status: 503,
+      };
+    }
     const message = error instanceof Error ? error.message : String(error);
     if (error instanceof ServiceError) {
       return { ok: false, error: error.message, status: 503 };
