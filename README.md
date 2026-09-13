@@ -95,7 +95,10 @@ See [`docs/test/TESTING.md`](docs/test/TESTING.md).
 
 ## Deployment (Railway)
 
+Default v1 host for **sync** tailor and inbox scan (live LLM calls that can run minutes). Vercel free is a poor fit for those paths; deferred batch polling is cron-friendly and could use Vercel later without moving sync off Railway. Local dev + manual `inbox:scan` needs no hosting until M8.6 cron.
+
 - Config: [`railway.toml`](railway.toml), [`.env.example`](.env.example).
+- Rationale: [`docs/arch/README.md#deployment-hosting-railway-vs-vercel`](docs/arch/README.md#deployment-hosting-railway-vs-vercel)
 - Set `TAILOR_API_KEY`, master CV secret, Redis, LLM keys; rotate the shared secret if leaked (coordinate with CCC).
 - When leaving local-only: CCC must send `Authorization: Bearer` in the same window as this cutover.
 

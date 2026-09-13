@@ -47,7 +47,10 @@ Operator loop (`npm run smoke:parity` / `--parity`) that fills **one** `SMOKE_PA
 The recruiter-facing email body returned on a successful `strict` tailor. Curator JSON key `reply_text`; HTTP and in-process result field `replyText`. Grounded in the Master CV with the same no-invention rules as the Curated CV. The inbox worker copies it into the Gmail draft body. Distinct from flexible-mode `coverLetter`.
 
 ### Inbox scan
-On-demand or scheduled job in this process: list Gmail messages with the recruiter label, skip claimed or processed ids, strict-tailor the body in-process, create a thread reply draft with reply text and the CV `.docx`. Local `npm run inbox:scan` and Railway cron invoke the same job.
+On-demand or scheduled job in this repo: list Gmail messages with the recruiter label, skip claimed or processed ids, strict-tailor the body in-process via `runTailorCore`, create a thread reply draft with reply text and the CV `.docx`. Local `npm run inbox:scan` (tsx CLI importing `app/api/lib/*`) and Railway cron (M8.6) invoke the **same implementation** — not a separate service and not HTTP through `POST /api/tailor-cv`.
+
+### LLM batch dispatch
+Deferred cost path: provider native batch APIs (Anthropic Message Batches, DeepSeek batch). Flow is **submit** (get `batch_id`) → **poll** status on a schedule (short HTTP calls; model may finish minutes later) → **retrieve** results — not one long blocking wait on the model. Distinct from inbox scan (sync `chat()` today). Needs durable state between poll ticks; poller could run on Vercel cron or Railway cron when built. Sync tailor remains the reason v1 defaults to Railway over Vercel Hobby limits.
 
 ### Processed message
 A Gmail `messageId` in its terminal Redis state: a sendable reply draft already exists, so a later scan (local or Railway) does not tailor or create another draft. The worker claims the id before drafting and writes this mark only after draft success. Overlap and crash recovery live in the inbox-worker product contract (R10, R12, F3).

@@ -2,6 +2,10 @@
 
 Post-MVP improvements to the CV generation pipeline. These address the "reasoning gap" — the core challenge of reading intent from a JD and accurately mapping it to experience without overstating or fabricating.
 
+**Current product (v1):** single-pass JSON curator (`runTailorCore`), operator-reviewed smoke artifacts, no on-path LLM judges. Sections 1–3 below are exploratory designs, not active scope. See [retire LLM judges](../plans/2026-09-03-001-feat-retire-llm-judges-plan.md).
+
+**Runtime (v1):** sync tailor via `POST /api/tailor-cv` and in-process inbox scan (`app/api/lib/inbox-tailor.ts` → `runTailorCore`). See [Inbox scan runtime](#inbox-scan-runtime-current) below — this is **not** the deferred native LLM batch API path.
+
 ## 1. Two-Pass Pipeline (Intent Extractor → Synthesizer)
 
 Splits the single-pass LLM call into two focused steps to prevent the model from getting lost in a wall of text:
@@ -68,28 +72,57 @@ Key decisions:
 - **Different model**: Using a different provider/model for the critic avoids self-confirmation bias. E.g., Claude Haiku as critic for DeepSeek-generated CVs, or vice versa.
 - **Cost**: Doubles LLM calls (generation + critic). Only worth it if hallucination rate in the two-pass pipeline remains above acceptable threshold after eval.
 
-## Batch processing path (future)
+## Inbox scan runtime (current)
 
-The instant API path is the MVP. The following batch architecture is designed but not yet built:
+The Gmail inbox worker ships as **library code in this Next.js repo**, not a second deployed service.
 
-```
-Scheduled Worker (cron, 3x/day)
+```text
+Trigger: npm run inbox:scan (local tsx CLI)  OR  Railway cron (M8.6, same entrypoint)
   ↓
-Queue (pending JDs from any source: email, paste, link, job board)
+List labeled Gmail messages; claim unprocessed ids (Upstash Redis)
   ↓
-Shared CV Engine (same as instant path: cv-prompt.ts + knowledge-base + framework)
+Extract JD from message body
   ↓
-Batch LLM dispatch (OpenRouter flex / Anthropic native batch / DeepSeek native batch)
-  ├── submit job
-  ├── poll status
-  └── retrieve results
+runTailorCore (strict, in-process — same curator + mechanical .docx as HTTP tailor)
   ↓
-Generated CVs → store → notify frontend
+Create Gmail thread draft with replyText + CV .docx attach (M8.5)
+  ↓
+Mark message processed in Redis
 ```
 
 Key decisions:
 
-- **Separate worker process**: Decoupled from the Next.js API server. Runs on Railway via cron or a standalone script. Avoids serverless timeout issues with long-running batch submission/polling.
-- **Queue-backed inputs**: JDs from any source (email, paste, link, job boards) land in the same queue. The worker does not care about input origin.
-- **Shared CV engine**: The same prompt assembly, knowledge base injection, and 8-part framework logic serves both sync (instant) and async (batch) paths. Only the LLM dispatch mechanism differs.
-- **Tiered delivery**: Instant path = premium tier (sync, frontier model). Batch path = economy tier (async, cost-optimized, up to 24h turnaround). BYOK option lets users bring their own API keys for direct provider pricing.
+- **Same repo, same engine**: Only the entrypoint differs — HTTP adapter (`buildTailorResponse`) vs inbox adapter (`tailorLabeledMessage`). Prompts, schema validation, and `.docx` build are shared.
+- **Not HTTP-presented**: Inbox must not call `POST /api/tailor-cv` or consume public rate-limit buckets (product contract R8).
+- **Local first**: Prove the loop with `npm run inbox:scan`; Railway cron (M8.6) is the unattended schedule when the laptop is closed — not a different worker architecture. Until M8.6, hosting can stay local-only ($0).
+- **Railway hosts sync v1**: Chosen for live `chat()` tailor and serial inbox scans, not because batch polling requires a long-lived blocker. See [Deployment hosting](./README.md#deployment-hosting-railway-vs-vercel).
+
+Product contract: [inbox worker plan](../plans/2026-09-05-002-feat-inbox-worker-plan.md).
+
+## Native LLM batch APIs (deferred)
+
+Sync tailor and inbox scan use **live** `chat()` calls today. A separate **cost optimization** path — provider native batch APIs — is designed but not built.
+
+**How batch APIs actually work:** submit message requests and receive a `batch_id` (seconds) → **poll** batch status on a schedule (each GET is short; completion may take minutes to hours) → **retrieve** results when status is `ended`. You do **not** hold one HTTP connection or worker process open waiting for the model. The infra gap is **durable state between poll ticks** (store `batch_id`, pending JD, retrieval cursor) — e.g. Upstash — not a blocking daemon.
+
+```text
+Cron or CLI tick (short invocation — Vercel cron or Railway cron both viable for this lane alone)
+  ↓
+Pending work queue (Redis / DB — batch ids survive between ticks)
+  ↓
+Submit new batches / poll in-flight / retrieve completed
+  ↓
+Shared curator engine (same prompts + master CV + schema path as sync)
+  ↓
+Write artifacts / notify operator (no v1 product UI)
+```
+
+Key decisions:
+
+- **Not the inbox scan job**: Gmail scan + in-process tailor is current M8 work and uses **sync** `runTailorCore`, not Message Batches. Native LLM batch APIs are deferred until single-pass quality is settled and poll/state infra exists.
+- **Do not block user-facing routes**: Submit/poll/retrieve must not run inside a single `POST /api/tailor-cv` request. A future cron-triggered poller (could be a route **only** invoked by cron) is fine; see [MODEL_SELECTION](./MODEL_SELECTION.md).
+- **Vercel is not ruled out for batch-only polling** — earlier “serverless timeout” wording targeted **sync** tailor, not periodic poll. v1 still defaults to Railway because sync API + inbox scan are the active workloads.
+- **Depends on judge-free sync path**: One curator call per JD (see [retire LLM judges](../plans/2026-09-03-001-feat-retire-llm-judges-plan.md)).
+- **Tiered delivery (future)**: Sync path = interactive; batch path = economy tier (async, cost-optimized). BYOK is out of product scope (`STRATEGY.md`).
+
+Historical note: an earlier sketch tied batch to a multi-source JD queue and frontend notification. v1 uses Gmail as the review surface and inbox scan as the inbound path instead.
