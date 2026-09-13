@@ -336,6 +336,34 @@ describe("runSmokeCli exit codes", () => {
     assert.deepEqual(exits, [1]);
   });
 
+  it("removes a stale cover letter when a strict run writes a valid reply", async () => {
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const paths = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "flexible",
+      coverLetter: "Dear hiring team,\n\nI am excited.",
+      replyText: undefined,
+      artifactDir: dir,
+    });
+    assert.ok(existsSync(paths.coverLetterPath));
+
+    const strictPaths = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "strict",
+      coverLetter: undefined,
+      replyText: "Thank you for reaching out.",
+      artifactDir: dir,
+    });
+    assert.equal(existsSync(strictPaths.coverLetterPath), false);
+    assert.ok(existsSync(strictPaths.replyPath));
+  });
+
   it("removes a stale cover letter when a strict run skips reply write", async () => {
     const docx = await markdownToDocxBase64("# CV\n- bullet");
     const paths = await writeSmokeArtifacts({

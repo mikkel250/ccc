@@ -73,6 +73,24 @@ describe("curator-prompt", () => {
     );
   });
 
+  it("strictPromptRequestsReplyWrapper rejects field names that are only substrings", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Mention curated_cv and reply_text in the narrative. Emit curated JSON only."
+      ),
+      false
+    );
+  });
+
+  it("strictPromptRequestsReplyWrapper rejects a prompt that prohibits reply_text", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        'Return JSON with "curated_cv": {} and "reply_text": "". Never emit reply_text.'
+      ),
+      false
+    );
+  });
+
   it("has flexible pivot Langfuse prompt name", () => {
     assert.equal(FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME, "cv-curator-flexible-pivot");
   });

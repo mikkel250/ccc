@@ -104,11 +104,39 @@ describe("htmlToText", () => {
     assert.doesNotMatch(text, /^x$/);
   });
 
-  it("keeps the JD tail when a hidden wrapper is unclosed", () => {
+  it("omits an unclosed hidden container through EOF", () => {
     const text = htmlToText(
       '<div style="display:none">TRACKING<p>Need a GM</p>'
     );
+    assert.doesNotMatch(text, /TRACKING/);
+    assert.doesNotMatch(text, /Need a GM/);
+  });
+
+  it("does not treat a body token inside head script as skip recovery", () => {
+    const text = htmlToText(
+      '<html><head><script>var t="<body>SECRET_TRACKING"</script></head><body><p>Need a GM</p></body></html>'
+    );
     assert.match(text, /Need a GM/);
+    assert.doesNotMatch(text, /SECRET_TRACKING/);
+  });
+
+  it("does not treat a body token inside head style as skip recovery", () => {
+    const text = htmlToText(
+      '<html><head><style>.x { content: "<body>SECRET_TRACKING" }</style></head><body><p>Need a GM</p></body></html>'
+    );
+    assert.match(text, /Need a GM/);
+    assert.doesNotMatch(text, /SECRET_TRACKING/);
+  });
+
+  it("keeps max-height:0 text when overflow is not clipping", () => {
+    assert.equal(
+      htmlToText('<div style="max-height:0">Need a GM</div>'),
+      "Need a GM"
+    );
+    assert.equal(
+      htmlToText('<div style="max-height:0;overflow:visible">Need a GM</div>'),
+      "Need a GM"
+    );
   });
 
   it("drops unquoted display:none and entity-encoded hidden styles", () => {
@@ -126,6 +154,8 @@ describe("htmlToText", () => {
   it("drops common email preheader hiding styles", () => {
     for (const html of [
       '<div style="max-height:0;overflow:hidden">SECRET</div>visible',
+      '<div style="max-height:0;overflow:clip">SECRET</div>visible',
+      '<div style="max-height:0;overflow:scroll">SECRET</div>visible',
       '<div style="opacity:0">SECRET</div>visible',
       '<div style="font-size:0">SECRET</div>visible',
     ]) {
@@ -215,6 +245,60 @@ describe("extractGmailJobDescription", () => {
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.equal(result.jobDescription, "Need a GM");
+    }
+  });
+
+  it("ignores MIME parts that are attachments", () => {
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "multipart/mixed",
+        parts: [
+          {
+            mimeType: "text/plain",
+            filename: "",
+            body: { data: b64("Need a GM") },
+          },
+          {
+            mimeType: "text/plain",
+            filename: "secret.txt",
+            body: { data: b64("ATTACHMENT_SECRET") },
+          },
+          {
+            mimeType: "text/plain",
+            headers: [
+              { name: "Content-Disposition", value: 'attachment; filename="note.txt"' },
+            ],
+            body: { data: b64("DISPOSITION_SECRET") },
+          },
+          {
+            mimeType: "text/plain",
+            body: { attachmentId: "att-1", data: b64("ATTACHMENT_ID_SECRET") },
+          },
+        ],
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.jobDescription, "Need a GM");
+    }
+  });
+
+  it("fails when the only text parts are attachments", () => {
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "multipart/mixed",
+        parts: [
+          {
+            mimeType: "text/plain",
+            filename: "jd.txt",
+            body: { data: b64("Need a GM") },
+          },
+        ],
+      },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /no usable text/);
     }
   });
 });

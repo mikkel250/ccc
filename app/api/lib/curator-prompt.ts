@@ -16,9 +16,25 @@ export const CURATOR_LANGFUSE_PROMPT_NAME = "cv-curator-json";
 export const FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME = "cv-curator-flexible-pivot";
 export const MASTER_CV_JSON_PLACEHOLDER = "{{MASTER_CV_JSON}}";
 
+const STRICT_WRAPPER_OBJECT =
+  /\{\s*"?curated_cv"?\s*,\s*"?reply_text"?\s*\}|\{\s*"?reply_text"?\s*,\s*"?curated_cv"?\s*\}/;
+const STRICT_JSON_KEY_CURATED = /"curated_cv"\s*:/;
+const STRICT_JSON_KEY_REPLY = /"reply_text"\s*:/;
+const STRICT_PROHIBITS_REPLY_TEXT =
+  /(?:\bnever\b|\bdo not\b|\bdon't\b|\bomit\b|\bwithout\b)(?:\s+\w+){0,6}\s+reply_text\b/i;
+
 /** Live Langfuse strict prompts must request the wrapper, not bare CV JSON. */
 export function strictPromptRequestsReplyWrapper(promptText: string): boolean {
-  return promptText.includes("reply_text") && promptText.includes("curated_cv");
+  if (STRICT_PROHIBITS_REPLY_TEXT.test(promptText)) {
+    return false;
+  }
+  if (STRICT_WRAPPER_OBJECT.test(promptText)) {
+    return true;
+  }
+  return (
+    STRICT_JSON_KEY_CURATED.test(promptText) &&
+    STRICT_JSON_KEY_REPLY.test(promptText)
+  );
 }
 
 /** Langfuse prompt cache TTL (seconds). Default 300. */
@@ -192,6 +208,20 @@ export async function getCuratorPrompt(mode?: CurationMode): Promise<{
       label: "production",
       cacheTtlSeconds: CURATOR_PROMPT_CACHE_TTL_SECONDS,
     });
+
+    if (!isFlexible && !strictPromptRequestsReplyWrapper(prompt.prompt)) {
+      console.warn(
+        `Langfuse prompt "${prompt.name}" v${prompt.version} omitted the reply wrapper; using hardcoded fallback`
+      );
+      return {
+        systemPrompt: fallbackPrompt,
+        langfusePrompt: {
+          name: promptName,
+          version: 0,
+          isFallback: true,
+        },
+      };
+    }
 
     return {
       systemPrompt: prompt.prompt,
