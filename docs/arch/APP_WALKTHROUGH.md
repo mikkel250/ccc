@@ -6,7 +6,7 @@ Start-to-finish guide to how the CV Tailoring API works. For stack decisions and
 
 ## What this app does
 
-A **Next.js backend** (no product UI) that accepts a job description, curates structured CV JSON from a master JSON, mechanically renders Word, and returns both artifacts. The inbox worker in this process (planned) uses the same pipeline, attaches the `.docx` to a Gmail reply draft, and may retain curated JSON for regen.
+A **Next.js backend** (no product UI) that accepts a job description, curates structured CV JSON from a master JSON, mechanically renders Word, and returns both artifacts. The inbox worker in this process claims + extracts a labeled Gmail payload via `tailorLabeledMessage`, then strict-tailors in-process with `runTailorCore` (no HTTP Bearer, no public rate-limit buckets). It returns `cv`, `replyText`, and `claimToken` for a later step; Gmail reply drafts with attached `.docx` are **M8.5** (not implemented here).
 
 **Production entry point:** `POST /api/tailor-cv` → `app/api/tailor-cv/route.ts :: POST`
 
@@ -23,19 +23,20 @@ app/api/tailor-cv/route.ts
     ├── checkRateLimit(ip, secret)    app/api/lib/rate-limit.ts  (before auth)
     ├── authenticateTailorRequest()   app/api/lib/tailor-auth.ts
     ├── validateTailorCvBody()        app/api/lib/tailor-cv-validation.ts
-    ├── requireMasterCv()             app/api/lib/master-cv.ts
-    ├── getCuratorPrompt() + compile  app/api/lib/curator-prompt.ts
-    ├── chat()                        app/api/lib/llm.ts  (TAILOR_MODEL, source: tailor-cv-curator)
-    │     ├── dispatchProvider()
-    │     └── tracers (Langfuse content redacted)
-    ├── extractStructuredJson()       app/api/lib/eval-parse.ts
-    ├── validateCvJson()              app/api/lib/cv-schema.ts
-    └── buildJsonDocxBase64()         app/api/lib/json-docx-builder.ts
+    └── runTailorCore()               app/api/lib/tailor-pipeline.ts
+          ├── requireMasterCv()       app/api/lib/master-cv.ts
+          ├── getCuratorPrompt() + compile  app/api/lib/curator-prompt.ts
+          ├── chat()                  app/api/lib/llm.ts  (TAILOR_MODEL, source: tailor-cv-curator)
+          │     ├── dispatchProvider()
+          │     └── tracers (Langfuse content redacted)
+          ├── extractStructuredJson() app/api/lib/eval-parse.ts
+          ├── validateCvJson()        app/api/lib/cv-schema.ts
+          └── buildJsonDocxBase64()   app/api/lib/json-docx-builder.ts
     │
-    ▼ 200 { cv, curatedJson, builderVersion, model, usage, remaining, resetTime }
+    ▼ 200 { cv, curatedJson, builderVersion, model, usage, remaining, resetTime [, replyText] }
 ```
 
-The planned inbox worker is not this HTTP client. It calls an in-process tailor core (same curator + mechanical `.docx`; no Bearer, no public rate-limit buckets). Today's `buildTailorResponse` is the HTTP adapter (`NextRequest`, IP, auth, `checkRateLimit`); M8.4 extracts or wraps the shared core.
+Inbox is not this HTTP client. `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a Gmail payload, then `runTailorCore` (same curator + mechanical `.docx`; no Bearer, no public rate-limit buckets). Success returns `claimToken`; the claim lease is renewed while core runs, and a lost or failed renewal aborts before a processed mark; non-crash failures release the Redis claim. `buildTailorResponse` remains the HTTP adapter (`NextRequest`, IP, auth, `checkRateLimit`) and attaches `remaining` / `resetTime`.
 
 ---
 
@@ -104,11 +105,11 @@ Provider dispatch and dual tracing unchanged. Langfuse/LangSmith content for tai
 | Schema + size | `app/api/lib/cv-schema.ts` | `validateCvJson`, `assertCuratedJsonSize` |
 | Build | `app/api/lib/json-docx-builder.ts` | `buildJsonDocxBase64` |
 
-Parse/schema/builder failures → **422** with no dual artifacts. Success → `{ cv, curatedJson, builderVersion, ... }`.
+Parse/schema/builder failures → **422** with no dual artifacts. Success → `{ cv, curatedJson, builderVersion, model, usage, remaining, resetTime [, replyText] }` (strict mode includes `replyText`; flexible may include `coverLetter` instead).
 
 ### 8. Response and errors
 
-**Success (200):** `{ cv, curatedJson, builderVersion, model, usage, remaining, resetTime }`
+**Success (200):** `{ cv, curatedJson, builderVersion, model, usage, remaining, resetTime [, replyText] }` — strict mode includes trimmed non-empty `replyText`; flexible mode may include `coverLetter` instead (never both in one payload).
 
 **Error mapping** (`route.ts :: mapErrorToResponse`, table-driven `ERROR_RESPONSES`):
 

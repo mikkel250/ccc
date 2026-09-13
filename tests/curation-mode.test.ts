@@ -5,6 +5,8 @@ import {
   curationModePolicy,
   isFlexibleWrapper,
   flexibleCoverLetter,
+  isCuratedCvWrapper,
+  usableReplyText,
   CURATION_MODE_POLICY_PLACEHOLDER,
   DEFAULT_CURATION_MODE,
   FLEXIBLE_PIVOT_FALLBACK_PROMPT,
@@ -268,6 +270,21 @@ describe("curation-mode", () => {
         flexibleCoverLetter({ cover_letter: "hi" }),
         "hi"
       );
+    });
+  });
+
+  describe("isCuratedCvWrapper and usableReplyText", () => {
+    it("detects curated_cv wrapper", () => {
+      assert.equal(isCuratedCvWrapper({ curated_cv: { name: "X" } }), true);
+      assert.equal(isCuratedCvWrapper({ name: "X" }), false);
+    });
+
+    it("trims a usable reply and rejects blank or non-string", () => {
+      assert.equal(usableReplyText("  Thanks  "), "Thanks");
+      assert.equal(usableReplyText("   "), undefined);
+      assert.equal(usableReplyText(""), undefined);
+      assert.equal(usableReplyText(null), undefined);
+      assert.equal(usableReplyText(12), undefined);
     });
   });
 });

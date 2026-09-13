@@ -61,6 +61,7 @@ async function okTailorFetch() {
         curatedJson: CURATED,
         builderVersion: "test-builder",
         model: "test/model",
+        replyText: "Thank you for reaching out.",
       })
     ),
   };
@@ -392,6 +393,7 @@ describe("verifySmokePipeline", () => {
         builderVersion: "test-builder",
         model: "test/model",
         coverLetter: "should be omitted",
+        replyText: "Thank you for reaching out.",
       });
     });
     const result = await verifySmokePipeline(
@@ -401,6 +403,25 @@ describe("verifySmokePipeline", () => {
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.equal(result.coverLetter, undefined);
+      assert.equal(result.replyText, "Thank you for reaching out.");
+    }
+  });
+
+  it("fails strict 200 when replyText is missing", async () => {
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const fetchFn = helloThen(() =>
+      jsonResponse({
+        cv: docx,
+        curatedJson: CURATED,
+        builderVersion: "test-builder",
+        model: "test/model",
+      })
+    );
+    const result = await verifySmokePipeline(JD, baseOptions({ fetchFn }));
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.stage, "tailor");
+      assert.match(result.error, /replyText/);
     }
   });
 });

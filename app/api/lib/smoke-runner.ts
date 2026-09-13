@@ -23,6 +23,7 @@ export type VerifySmokeSuccess = {
   docxBase64: string;
   builderVersion: string;
   coverLetter?: string;
+  replyText?: string;
   model: string;
 };
 
@@ -41,6 +42,7 @@ const TAILOR_JSON_FIELDS = [
   "curatedJson",
   "builderVersion",
   "coverLetter",
+  "replyText",
   "model",
   "error",
 ] as const;
@@ -206,6 +208,18 @@ export async function verifySmokePipeline(
   }
   const curatedJson = schemaResult.data;
 
+  if (
+    options.curationMode === "strict" &&
+    (typeof data.replyText !== "string" || data.replyText.trim().length === 0)
+  ) {
+    return {
+      ok: false,
+      stage: "tailor",
+      error: "Missing replyText",
+      status: tailorRes.status,
+    };
+  }
+
   const success: VerifySmokeSuccess = {
     ok: true,
     curatedJson,
@@ -219,6 +233,10 @@ export async function verifySmokePipeline(
     typeof data.coverLetter === "string"
   ) {
     success.coverLetter = data.coverLetter;
+  }
+
+  if (options.curationMode === "strict" && typeof data.replyText === "string") {
+    success.replyText = data.replyText.trim();
   }
 
   return success;

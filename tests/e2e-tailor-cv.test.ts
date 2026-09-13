@@ -7,10 +7,12 @@ import {
   writeFileSync,
   chmodSync,
   existsSync,
+  mkdirSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { markdownToDocxBase64 } from "../app/api/lib/markdown-docx";
+import { smokeArtifactPaths } from "../app/api/lib/smoke-helpers";
 import {
   resolveCurationMode,
   writeSmokeArtifacts,
@@ -73,10 +75,16 @@ describe("writeSmokeArtifacts", () => {
       cvBase64: docx,
       curationMode: "strict",
       coverLetter: undefined,
+      replyText: "Thank you for reaching out.",
       artifactDir: dir,
     });
     assert.ok(existsSync(paths.curatedPath));
     assert.ok(existsSync(paths.docxPath));
+    assert.ok(existsSync(paths.replyPath));
+    assert.equal(
+      readFileSync(paths.replyPath, "utf8"),
+      "Thank you for reaching out."
+    );
     const payload = JSON.parse(readFileSync(paths.curatedPath, "utf8")) as {
       redacted: boolean;
       curatedJson: { contact?: { redacted?: boolean }; summary?: string[] };
@@ -124,6 +132,61 @@ describe("writeSmokeArtifacts", () => {
     const buf = readFileSync(paths.coverLetterPath);
     assert.equal(buf[0], 0x50);
     assert.equal(buf[1], 0x4b);
+  });
+
+  it("removes a stale reply artifact on a repeat strict run without reply text", async () => {
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const first = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "strict",
+      coverLetter: undefined,
+      replyText: "Thank you for reaching out.",
+      artifactDir: dir,
+    });
+    assert.ok(existsSync(first.replyPath));
+
+    const second = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "strict",
+      coverLetter: undefined,
+      replyText: "   ",
+      artifactDir: dir,
+    });
+    assert.equal(second.replyPath, first.replyPath);
+    assert.equal(existsSync(second.replyPath), false);
+  });
+
+  it("removes a stale reply artifact on a flexible run", async () => {
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const first = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "strict",
+      coverLetter: undefined,
+      replyText: "Thank you for reaching out.",
+      artifactDir: dir,
+    });
+    assert.ok(existsSync(first.replyPath));
+
+    const second = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "flexible",
+      coverLetter: "Dear hiring team,\n\nI am excited.",
+      artifactDir: dir,
+    });
+    assert.equal(second.replyPath, first.replyPath);
+    assert.equal(existsSync(second.replyPath), false);
   });
 
   it("skips cover-letter DOCX in flexible mode when coverLetter is missing", async () => {
@@ -273,6 +336,65 @@ describe("runSmokeCli exit codes", () => {
     assert.deepEqual(exits, [1]);
   });
 
+  it("removes a stale cover letter when a strict run skips reply write", async () => {
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const paths = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "flexible",
+      coverLetter: "Dear hiring team,\n\nI am excited.",
+      replyText: undefined,
+      artifactDir: dir,
+    });
+    assert.ok(existsSync(paths.coverLetterPath));
+
+    const strictPaths = await writeSmokeArtifacts({
+      jdPath: "/tmp/acme-se.md",
+      curated: CURATED,
+      builderVersion: "v1",
+      cvBase64: docx,
+      curationMode: "strict",
+      coverLetter: undefined,
+      replyText: "   ",
+      artifactDir: dir,
+    });
+    assert.equal(existsSync(strictPaths.coverLetterPath), false);
+  });
+
+  it("removes a stale strict reply artifact when verify fails before write", async () => {
+    const jdPath = join(dir, "jd.md");
+    writeFileSync(jdPath, "Need a solutions engineer");
+    const replyPath = smokeArtifactPaths(jdPath, dir).replyPath;
+    writeFileSync(replyPath, "stale reply from a prior successful run", "utf8");
+
+    mock.method(process, "exit", ((code?: number) => {
+      throw new Error(`process.exit(${code ?? 0})`);
+    }) as typeof process.exit);
+
+    await assert.rejects(
+      () =>
+        runSmokeCli({
+          baseUrl: "http://localhost:3000",
+          jdPath,
+          wantFlexible: false,
+          artifactDir: dir,
+          deps: {
+            fetchFn: async (input: RequestInfo | URL) => {
+              const url = String(input);
+              if (url.endsWith("/api/hello")) {
+                return jsonResponse({ status: "ok" });
+              }
+              return jsonResponse({ error: "boom" }, 500);
+            },
+          },
+        }),
+      /process\.exit\(1\)/
+    );
+    assert.equal(existsSync(replyPath), false);
+  });
+
   it("exits 1 on docx failure", async () => {
     writeFileSync(join(dir, "jd.md"), "Need a solutions engineer");
     const exits: number[] = [];
@@ -335,6 +457,7 @@ describe("runSmokeCli exit codes", () => {
                 curatedJson: CURATED,
                 builderVersion: "v1",
                 model: "test/model",
+                replyText: "Thank you for reaching out.",
               });
             },
           },
@@ -344,6 +467,7 @@ describe("runSmokeCli exit codes", () => {
     assert.deepEqual(exits, [0]);
     assert.ok(existsSync(join(dir, "jd.curated.json")));
     assert.ok(existsSync(join(dir, "jd.docx")));
+    assert.ok(existsSync(join(dir, "jd.reply.txt")));
   });
 
   it("exits 1 when TAILOR_API_KEY is missing", async () => {
@@ -396,6 +520,7 @@ describe("runSmokeCli exit codes", () => {
                 curatedJson: CURATED,
                 builderVersion: "v1",
                 model: "test/model",
+                replyText: "Thank you for reaching out.",
               });
             },
           },
@@ -405,6 +530,54 @@ describe("runSmokeCli exit codes", () => {
     assert.deepEqual(exits, [0]);
     assert.ok(existsSync(join(dir, "jd.curated.json")));
     assert.ok(existsSync(join(dir, "jd.docx")));
+    assert.ok(existsSync(join(dir, "jd.reply.txt")));
+  });
+
+  it("parity strict run does not delete sibling model reply artifacts", async () => {
+    const jdPath = join(dir, "jd.md");
+    writeFileSync(jdPath, "Need a solutions engineer");
+    process.env.SMOKE_PARITY_MODELS =
+      "anthropic/sonnet,deepseek/deepseek-v4-pro";
+    const docx = await markdownToDocxBase64("# CV\n- bullet");
+    const siblingReply = smokeArtifactPaths(
+      jdPath,
+      dir,
+      "deepseek/deepseek-v4-pro"
+    ).replyPath;
+    mkdirSync(dirname(siblingReply), { recursive: true });
+    writeFileSync(siblingReply, "prior model reply", "utf8");
+
+    mock.method(process, "exit", ((code?: number) => {
+      throw new Error(`process.exit(${code ?? 0})`);
+    }) as typeof process.exit);
+
+    await assert.rejects(
+      () =>
+        runSmokeCli({
+          baseUrl: "http://localhost:3000",
+          jdPath,
+          wantFlexible: false,
+          artifactDir: dir,
+          parity: true,
+          deps: {
+            fetchFn: async (input: RequestInfo | URL) => {
+              const url = String(input);
+              if (url.endsWith("/api/hello")) {
+                return jsonResponse({ status: "ok" });
+              }
+              return jsonResponse({
+                cv: docx,
+                curatedJson: CURATED,
+                builderVersion: "v1",
+                model: "anthropic/sonnet",
+                replyText: "Thank you for reaching out.",
+              });
+            },
+          },
+        }),
+      /process\.exit\(0\)/
+    );
+    assert.equal(readFileSync(siblingReply, "utf8"), "prior model reply");
   });
 
   it("parity run nests artifacts by response model and records pending catalog cells", async () => {
@@ -437,6 +610,7 @@ describe("runSmokeCli exit codes", () => {
                 curatedJson: CURATED,
                 builderVersion: "v1",
                 model: "deepseek/deepseek-v4-pro",
+                replyText: "Thank you for reaching out.",
               });
             },
           },

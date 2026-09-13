@@ -15,6 +15,12 @@ import { initLangFuse } from "./tracers/langfuse";
 export const CURATOR_LANGFUSE_PROMPT_NAME = "cv-curator-json";
 export const FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME = "cv-curator-flexible-pivot";
 export const MASTER_CV_JSON_PLACEHOLDER = "{{MASTER_CV_JSON}}";
+
+/** Live Langfuse strict prompts must request the wrapper, not bare CV JSON. */
+export function strictPromptRequestsReplyWrapper(promptText: string): boolean {
+  return promptText.includes("reply_text") && promptText.includes("curated_cv");
+}
+
 /** Langfuse prompt cache TTL (seconds). Default 300. */
 const CURATOR_PROMPT_CACHE_TTL_SECONDS = Math.max(
   0,
@@ -116,16 +122,26 @@ cut. That produces a CV that reads like two unrelated careers stapled together, 
    the Keyword Bank. Cut anything you cannot justify this way — do not keep it "for
    completeness" or because of its position in master. Do not write the audit, Keyword Bank,
    or Alignment Snapshot into the response.
-4. Emit curated_cv.json — same schema as master, shaped per <curation_mode>.
+4. Emit a JSON wrapper { curated_cv, reply_text } — curated_cv matches the master schema
+   shaped per <curation_mode>; reply_text is a recruiter-thread email body grounded in
+   the Master CV (same no-invention rules). Not a cover letter.
 </process>
 
 <output_format>
-Return a single JSON object matching the master CV schema.
+Return a single JSON object. No markdown fences and no prose before or after the JSON.
+Shape:
+{
+  "curated_cv": { ... },
+  "reply_text": "plain-text recruiter reply email body"
+}
+
+curated_cv MUST match hard constraints in references/json-curator/master-cv.schema.json
+(keep this block synchronized with that schema — do not invent fields):
 The first non-whitespace character must be \`{\` and the last must be \`}\`.
 No Alignment Snapshot, Change Log, Keyword Bank, cut audit, markdown fences, or
 conversational filler before or after the JSON.
 Do not wrap the object in markdown fences unless required by the channel; the first
-top-level \`{\` … last \`}\` must be valid curated CV JSON.
+top-level \`{\` … last \`}\` must be valid wrapper JSON.
 </output_format>
 
 <guardrails>
@@ -274,6 +290,6 @@ export function buildCuratorUserMessage(
     "",
     curationMode === "flexible"
       ? "Respond with a JSON object containing curated_cv (the curated CV per the master schema) and cover_letter (a markdown cover letter)."
-      : "Respond with curated CV JSON only (same schema as master). The response must start with { and end with } — no prose, audit notes, or markdown fences.",
+      : "Respond with a JSON object { curated_cv, reply_text } — curated_cv matches the master schema; reply_text is the recruiter-thread email body. The response must start with { and end with } — no prose, audit notes, or markdown fences.",
   ].join("\n");
 }
