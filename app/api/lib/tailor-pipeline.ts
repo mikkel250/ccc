@@ -26,6 +26,7 @@ import {
 } from "./cv-schema";
 import {
   CURATOR_LANGFUSE_PROMPT_NAME,
+  getCuratorPromptFallbackText,
   strictPromptRequestsReplyWrapper,
 } from "./curator-prompt";
 import {
@@ -334,7 +335,11 @@ export async function buildTailorResponse(
 
   const { jobDescription, curationMode } = validated;
 
-  const core = await runTailorCore(deps, { jobDescription, curationMode });
+  const core = await runTailorCore(deps, {
+    jobDescription,
+    curationMode,
+    signal: request.signal,
+  });
   if (!core.ok) {
     return core;
   }
@@ -360,6 +365,14 @@ export async function buildTailorResponse(
   return { ok: true, body: responseBody };
 }
 
+function abortCoreResult(): TailorCoreResult {
+  return {
+    ok: false,
+    error: "AI service error. Please try again.",
+    status: 503,
+  };
+}
+
 /**
  * Shared curator + DOCX path. No Bearer, no RATE_LIMIT_* buckets (R8).
  */
@@ -375,14 +388,22 @@ export async function runTailorCore(
 
   // 6. Prompt construction
   const masterCv = deps.requireMasterCv();
-  const { systemPrompt: promptText, langfusePrompt } =
+  let { systemPrompt: promptText, langfusePrompt } =
     await deps.getCuratorPrompt(curationMode);
   if (
     curationMode === "strict" &&
     langfusePrompt?.isFallback !== true &&
     !strictPromptRequestsReplyWrapper(promptText)
   ) {
-    return { ok: false, error: "Curator prompt misconfigured", status: 503 };
+    console.warn(
+      "Live Langfuse strict prompt omitted the reply wrapper; using hardcoded fallback"
+    );
+    promptText = getCuratorPromptFallbackText();
+    langfusePrompt = {
+      name: langfusePrompt?.name ?? CURATOR_LANGFUSE_PROMPT_NAME,
+      version: 0,
+      isFallback: true,
+    };
   }
   const modePrompt = deps.applyCurationModePolicy(promptText, curationMode);
   const compiled = deps.compileCuratorPrompt(modePrompt, masterCv);
@@ -415,11 +436,7 @@ export async function runTailorCore(
     );
   } catch (error: unknown) {
     if (signal?.aborted) {
-      return {
-        ok: false,
-        error: "AI service error. Please try again.",
-        status: 503,
-      };
+      return abortCoreResult();
     }
     const message = error instanceof Error ? error.message : String(error);
     if (error instanceof ServiceError) {
@@ -432,11 +449,11 @@ export async function runTailorCore(
         status: 503,
       };
     }
-    return {
-      ok: false,
-      error: "AI service error. Please try again.",
-      status: 503,
-    };
+    throw error;
+  }
+
+  if (signal?.aborted) {
+    return abortCoreResult();
   }
 
   // 8. Extract + schema validate + size check
@@ -502,6 +519,9 @@ export async function runTailorCore(
   const sanitized = deps.sanitizeForResponse(schemaResult.data);
 
   const built = await deps.buildJsonDocxBase64(schemaResult.data);
+  if (signal?.aborted) {
+    return abortCoreResult();
+  }
   if (!built.ok) {
     console.error("Docx builder failed after valid curated JSON");
     return {

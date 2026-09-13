@@ -19,6 +19,7 @@ function decodeGmailBodyData(data: unknown): string | undefined {
 }
 
 const WHOLE_TAG_SKIP = new Set(["head", "script", "style"]);
+const RAW_TEXT_ELEMENTS = new Set(["script", "style"]);
 
 /** Named entities Gmail HTML commonly emits; numeric (dec/hex) covers the rest. */
 const NAMED_HTML_ENTITIES: Record<string, string> = {
@@ -65,13 +66,21 @@ function decodeHtmlEntities(text: string): string {
   );
 }
 
+function styleDeclaresClippingOverflow(style: string): boolean {
+  return /overflow(?:-(?:x|y))?\s*:\s*(?:hidden|clip|scroll)/i.test(style);
+}
+
+function styleDeclaresZeroMaxHeight(style: string): boolean {
+  return /max-height\s*:\s*0(?:px|em|rem|%)?(?=\s|;|$)/i.test(style);
+}
+
 function styleDeclaresHidden(style: string): boolean {
   return (
     /display\s*:\s*none/i.test(style) ||
     /visibility\s*:\s*hidden/i.test(style) ||
     /opacity\s*:\s*0(?:\.0*)?(?=\s|;|$)/i.test(style) ||
     /font-size\s*:\s*0(?:px|em|rem|%)?(?=\s|;|$)/i.test(style) ||
-    /max-height\s*:\s*0(?:px|em|rem|%)?(?=\s|;|$)/i.test(style)
+    (styleDeclaresZeroMaxHeight(style) && styleDeclaresClippingOverflow(style))
   );
 }
 
@@ -103,7 +112,7 @@ function omitHiddenHtml(html: string): string {
   let last = 0;
   let skipName: string | null = null;
   let skipDepth = 0;
-  let skipTailStart = 0;
+  let rawTextName: string | null = null;
   for (const match of html.matchAll(tokenRe)) {
     const index = match.index ?? 0;
     const raw = match[0];
@@ -118,6 +127,16 @@ function omitHiddenHtml(html: string): string {
     const isClose = raw.startsWith("</");
     const selfClosing = /\/\s*>$/.test(raw);
     if (skipDepth > 0) {
+      if (rawTextName !== null) {
+        if (isClose && name === rawTextName) {
+          rawTextName = null;
+        }
+        continue;
+      }
+      if (!isClose && !selfClosing && RAW_TEXT_ELEMENTS.has(name)) {
+        rawTextName = name;
+        continue;
+      }
       if (!isClose && name === "body" && skipName === "head") {
         skipDepth = 0;
         skipName = null;
@@ -138,15 +157,12 @@ function omitHiddenHtml(html: string): string {
       if (!selfClosing) {
         skipName = name;
         skipDepth = 1;
-        skipTailStart = last;
       }
       continue;
     }
     out += raw;
   }
-  if (skipDepth > 0) {
-    out += html.slice(skipTailStart);
-  } else {
+  if (skipDepth === 0) {
     out += html.slice(last);
   }
   return out;
@@ -166,8 +182,40 @@ export function htmlToText(html: string): string {
 
 type CollectedBodies = { plain: string[]; html: string[] };
 
+function isMimeAttachment(node: object): boolean {
+  const filename = Reflect.get(node, "filename");
+  if (typeof filename === "string" && filename.trim() !== "") {
+    return true;
+  }
+  const body = Reflect.get(node, "body");
+  if (body !== null && typeof body === "object") {
+    const attachmentId = Reflect.get(body, "attachmentId");
+    if (typeof attachmentId === "string" && attachmentId.trim() !== "") {
+      return true;
+    }
+  }
+  const headers = Reflect.get(node, "headers");
+  if (!Array.isArray(headers)) {
+    return false;
+  }
+  for (const header of headers) {
+    if (header === null || typeof header !== "object") continue;
+    const name = Reflect.get(header, "name");
+    const value = Reflect.get(header, "value");
+    if (typeof name !== "string" || typeof value !== "string") continue;
+    if (name.toLowerCase() !== "content-disposition") continue;
+    if (/(?:^|;)\s*attachment\b/i.test(value)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function walkMimeNode(node: unknown, acc: CollectedBodies): void {
   if (node === null || typeof node !== "object") {
+    return;
+  }
+  if (isMimeAttachment(node)) {
     return;
   }
   const mimeTypeRaw = Reflect.get(node, "mimeType");

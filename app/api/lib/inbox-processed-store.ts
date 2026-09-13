@@ -216,7 +216,7 @@ export async function isInboxProcessed(
 ): Promise<{ ok: true; processed: boolean } | { ok: false; error: string }> {
   const parsed = parseInboxMessageId(messageId);
   if (!parsed.ok) {
-    return { ok: true, processed: false };
+    return parsed;
   }
   const got = await callKv(() => kv().get(inboxProcessedKey(parsed.messageId)));
   if (!got.ok) {
