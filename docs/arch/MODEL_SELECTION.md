@@ -18,7 +18,7 @@ All models use the `provider/model` namespace (see [Provider/model namespace](./
 
 **Complete:** Live JSON quality via `npm run smoke` (dual artifacts; operator reviews the files). Historical markdown-era composites informed the initial `TAILOR_MODEL` default.
 
-**Deferred:** Anthropic Message Batches API (async submit/poll/retrieve). Do not build batch inside Next.js.
+**Deferred:** Anthropic Message Batches API (submit → periodic poll → retrieve). Do not block user-facing HTTP on poll loops. Durable batch-id state between cron ticks is the infra requirement — not a long-lived waiter on the model. This is **not** the inbox scan job (inbox uses sync `chat()` today). See [Pipeline enhancements — batch](./PIPELINE_ENHANCEMENTS.md#native-llm-batch-apis-deferred) and [Deployment hosting](./README.md#deployment-hosting-railway-vs-vercel).
 
 ## Provider strategy
 
@@ -27,7 +27,7 @@ OpenAI and Google models go through OpenRouter flex (`service_tier: flex`, overr
 - Default `chat()` model: `deepseek/deepseek-v4-pro`
 - CV generation uses a separate model (`TAILOR_MODEL` env var)
 - Optional `TAILOR_REASONING_EFFORT` pins thinking/reasoning for tailor-cv (unset = provider defaults). OpenRouter models get `reasoning.effort`; DeepSeek direct maps to `thinking` + `reasoning_effort` (see `.env.example`). Provider defaults differ sharply (e.g. Gemini 3.1 Pro mandatory medium; GPT-5.4 reasoning off by default; DeepSeek V4 Pro thinking high by default) — pin for fair model A/B.
-- Native batch APIs (Anthropic Message Batches, DeepSeek batch) are deferred — require async poll infrastructure
+- Native batch APIs (Anthropic Message Batches, DeepSeek batch) are deferred — require durable batch-id state and cron/CLI poll ticks, not a blocking sync waiter. Hosting the poller on Vercel cron is plausible; v1 sync tailor + inbox scan still default to Railway. See [Deployment hosting](./README.md#deployment-hosting-railway-vs-vercel).
 
 ## Evaluation
 

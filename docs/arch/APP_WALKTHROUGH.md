@@ -186,6 +186,12 @@ Prompt files cloned from the portfolio chat bot remain for a hypothetical future
 
 ---
 
+## Inbox runtime (not HTTP)
+
+Inbox scan is **not** a client of `POST /api/tailor-cv`. `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a Gmail payload, then calls `runTailorCore` in-process (strict `cv` + `replyText`, no Bearer, no public rate-limit buckets). A future `npm run inbox:scan` tsx CLI and Railway cron (M8.6) invoke the same library code — see [Pipeline enhancements — inbox scan runtime](./PIPELINE_ENHANCEMENTS.md#inbox-scan-runtime-current). Deferred native LLM batch APIs use submit/poll/retrieve (cron-friendly); inbox and HTTP tailor use **sync** `chat()` today — see [Deployment hosting](./README.md#deployment-hosting-railway-vs-vercel).
+
+---
+
 ## Planned but not implemented
 
-See [PIPELINE_ENHANCEMENTS](./PIPELINE_ENHANCEMENTS.md) (two-pass, critic) and [LEARNING_SYSTEM](./LEARNING_SYSTEM.md) (SQLite feedback). Recruiter reply text + Gmail drafts: [inbox worker product contract](../plans/2026-09-05-002-feat-inbox-worker-plan.md). Still deferred: selective RAG.
+See [PIPELINE_ENHANCEMENTS](./PIPELINE_ENHANCEMENTS.md) (exploratory two-pass/critic; [deferred LLM batch APIs](./PIPELINE_ENHANCEMENTS.md#native-llm-batch-apis-deferred)) and [LEARNING_SYSTEM](./LEARNING_SYSTEM.md) (SQLite feedback). Gmail draft attach (M8.5) and `inbox:scan` CLI: [inbox worker product contract](../plans/2026-09-05-002-feat-inbox-worker-plan.md). Still deferred: selective RAG.
