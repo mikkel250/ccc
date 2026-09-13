@@ -719,4 +719,45 @@ describe("runTailorCore — in-process curator path", () => {
     }
     assert.equal(chatSpy.mock.callCount(), 0);
   });
+
+  it("returns 422 when strict curator output is missing curated_cv", async () => {
+    mock.method(tailorCvDeps, "chat", async () => ({
+      content: JSON.stringify({ reply_text: DEFAULT_STRICT_REPLY }),
+      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+      model: "anthropic/sonnet",
+      finishReason: "stop",
+    }));
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 422);
+      assert.match(result.error, /curated_cv/);
+    }
+  });
+
+  it("returns 503 when chat aborts via signal without leaking AbortError", async () => {
+    mock.method(tailorCvDeps, "chat", async () => {
+      throw new DOMException("The operation was aborted", "AbortError");
+    });
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+      signal: controller.signal,
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "AI service error. Please try again.");
+      assert.doesNotMatch(result.error, /abort/i);
+    }
+  });
 });

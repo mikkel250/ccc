@@ -6,8 +6,11 @@ import {
   extractUnprocessedInboxMessage,
   inboxClaimKey,
   inboxProcessedKey,
+  INBOX_CLAIM_TOKEN_REQUIRED_ERROR,
   markInboxProcessed,
   parseInboxMessageId,
+  releaseInboxClaim,
+  renewInboxClaim,
   type InboxKv,
 } from "../app/api/lib/inbox-processed-store";
 
@@ -342,5 +345,108 @@ describe("inbox processed store", () => {
     }
     assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
     assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+  });
+});
+
+describe("releaseInboxClaim", () => {
+  let memory: ReturnType<typeof createMemoryKv>;
+
+  beforeEach(() => {
+    process.env.NODE_ENV = "test";
+    memory = createMemoryKv();
+    __injectInboxKvForTest(memory);
+  });
+
+  afterEach(() => {
+    __injectInboxKvForTest(null);
+  });
+
+  it("deletes the claim only when the token still owns the key", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+
+    const released = await releaseInboxClaim(ID, claimed.token);
+
+    assert.equal(released.ok, true);
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+  });
+
+  it("leaves a replacement claim intact when releasing with a stale token", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+    memory.store.set(inboxClaimKey(ID), "replacement-token");
+
+    const released = await releaseInboxClaim(ID, claimed.token);
+
+    assert.equal(released.ok, true);
+    assert.equal(memory.store.get(inboxClaimKey(ID)), "replacement-token");
+  });
+
+  it("rejects an empty claim token", async () => {
+    const result = await releaseInboxClaim(ID, "");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error, INBOX_CLAIM_TOKEN_REQUIRED_ERROR);
+    }
+  });
+});
+
+describe("renewInboxClaim", () => {
+  let memory: ReturnType<typeof createMemoryKv>;
+
+  beforeEach(() => {
+    process.env.NODE_ENV = "test";
+    memory = createMemoryKv();
+    __injectInboxKvForTest(memory);
+  });
+
+  afterEach(() => {
+    __injectInboxKvForTest(null);
+  });
+
+  it("returns renewed true when the token still owns the key", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+
+    const renewed = await renewInboxClaim(ID, claimed.token);
+
+    assert.equal(renewed.ok, true);
+    if (renewed.ok) {
+      assert.equal(renewed.renewed, true);
+    }
+  });
+
+  it("returns renewed false when ownership changed before renewal", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+    memory.store.set(inboxClaimKey(ID), "replacement-token");
+
+    const renewed = await renewInboxClaim(ID, claimed.token);
+
+    assert.equal(renewed.ok, true);
+    if (renewed.ok) {
+      assert.equal(renewed.renewed, false);
+    }
+    assert.equal(memory.store.get(inboxClaimKey(ID)), "replacement-token");
+  });
+
+  it("rejects an empty claim token", async () => {
+    const result = await renewInboxClaim(ID, "");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error, INBOX_CLAIM_TOKEN_REQUIRED_ERROR);
+    }
   });
 });
