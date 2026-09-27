@@ -670,6 +670,28 @@ describe("runTailorCore — in-process curator path", () => {
     }
   });
 
+  it("returns generic 503 when chat throws after the abort signal fired", async () => {
+    const abortController = new AbortController();
+    mock.method(tailorCvDeps, "chat", async () => {
+      throw new Error("OPENROUTER_API_KEY is not configured");
+    });
+    mock.method(tailorCvDeps, "isLlmServiceError", () => true);
+    abortController.abort();
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+      signal: abortController.signal,
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "AI service error. Please try again.");
+      assert.doesNotMatch(result.error, /OPENROUTER_API_KEY/);
+    }
+  });
+
   it("echoes namespaced TAILOR_MODEL instead of the provider model id", async () => {
     const previous = process.env.TAILOR_MODEL;
     process.env.TAILOR_MODEL = "anthropic/sonnet";
