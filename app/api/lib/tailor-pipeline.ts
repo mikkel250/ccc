@@ -373,6 +373,40 @@ function abortCoreResult(): TailorCoreResult {
   };
 }
 
+type Abortable<T> = { aborted: false; value: T } | { aborted: true };
+
+/** Settle when `signal` aborts, without waiting for `start` to finish. */
+async function awaitUnlessAborted<T>(
+  start: () => Promise<T>,
+  signal?: AbortSignal
+): Promise<Abortable<T>> {
+  if (!signal) {
+    return { aborted: false, value: await start() };
+  }
+  if (signal.aborted) {
+    return { aborted: true };
+  }
+  return new Promise((resolve, reject) => {
+    const onAbort = (): void => {
+      signal.removeEventListener("abort", onAbort);
+      resolve({ aborted: true });
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    start().then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        if (signal.aborted) resolve({ aborted: true });
+        else resolve({ aborted: false, value });
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        if (signal.aborted) resolve({ aborted: true });
+        else reject(error);
+      }
+    );
+  });
+}
+
 /**
  * Shared curator + DOCX path. No Bearer, no RATE_LIMIT_* buckets (R8).
  */
@@ -385,11 +419,20 @@ export async function runTailorCore(
   }
 ): Promise<TailorCoreResult> {
   const { jobDescription, curationMode, signal } = input;
+  if (signal?.aborted) {
+    return abortCoreResult();
+  }
 
   // 6. Prompt construction
   const masterCv = deps.requireMasterCv();
-  let { systemPrompt: promptText, langfusePrompt } =
-    await deps.getCuratorPrompt(curationMode);
+  const prompted = await awaitUnlessAborted(
+    () => deps.getCuratorPrompt(curationMode),
+    signal
+  );
+  if (prompted.aborted) {
+    return abortCoreResult();
+  }
+  let { systemPrompt: promptText, langfusePrompt } = prompted.value;
   if (
     curationMode === "strict" &&
     langfusePrompt?.isFallback !== true &&

@@ -23,9 +23,42 @@ const STRICT_JSON_KEY_REPLY = /"reply_text"\s*:/;
 const STRICT_PROHIBITS_REPLY_TEXT =
   /(?:\bnever\b|\bdo not\b|\bdon't\b|\bomit\b|\bwithout\b)(?:\s+\w+){0,6}\s+reply_text\b/i;
 
+const DEFAULT_PROMPT_FETCH_TIMEOUT_MS = 5000;
+
+/**
+ * Bound Langfuse prompt.get. The SDK uses 60s when fetchTimeoutMs is omitted.
+ */
+function curatorPromptFetchTimeoutMs(): number {
+  return Math.max(
+    1,
+    Math.floor(
+      getEnvNumber(
+        "LANGFUSE_PROMPT_FETCH_TIMEOUT_MS",
+        DEFAULT_PROMPT_FETCH_TIMEOUT_MS
+      )
+    )
+  );
+}
+
+/**
+ * Prohibition cues must see reply_text even when it sits inside wrapper syntax.
+ * "Never return the wrapper { curated_cv, reply_text }" would otherwise match
+ * STRICT_WRAPPER_OBJECT and be treated as a request.
+ */
+function promptProhibitsReplyText(promptText: string): boolean {
+  if (STRICT_PROHIBITS_REPLY_TEXT.test(promptText)) {
+    return true;
+  }
+  const bridged = promptText.replace(
+    new RegExp(STRICT_WRAPPER_OBJECT.source, "g"),
+    " reply_text "
+  );
+  return STRICT_PROHIBITS_REPLY_TEXT.test(bridged);
+}
+
 /** Live Langfuse strict prompts must request the wrapper, not bare CV JSON. */
 export function strictPromptRequestsReplyWrapper(promptText: string): boolean {
-  if (STRICT_PROHIBITS_REPLY_TEXT.test(promptText)) {
+  if (promptProhibitsReplyText(promptText)) {
     return false;
   }
   if (STRICT_WRAPPER_OBJECT.test(promptText)) {
@@ -207,6 +240,7 @@ export async function getCuratorPrompt(mode?: CurationMode): Promise<{
     const prompt = await client.prompt.get(promptName, {
       label: "production",
       cacheTtlSeconds: CURATOR_PROMPT_CACHE_TTL_SECONDS,
+      fetchTimeoutMs: curatorPromptFetchTimeoutMs(),
     });
 
     if (!isFlexible && !strictPromptRequestsReplyWrapper(prompt.prompt)) {

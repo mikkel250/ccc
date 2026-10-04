@@ -803,12 +803,26 @@ describe("runTailorCore — in-process curator path", () => {
         version: 3,
       },
     }));
-    const chatSpy = mock.method(tailorCvDeps, "chat", async () => ({
-      content: strictCuratorJson(FIXTURE_CURATED),
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-      model: "anthropic/sonnet",
-      finishReason: "stop",
-    }));
+    let seenPrompt = "";
+    let seenLangfuse: { version: number; isFallback?: boolean } | undefined;
+    const chatSpy = mock.method(
+      tailorCvDeps,
+      "chat",
+      async (
+        _messages: unknown,
+        systemPrompt: string,
+        options: { langfusePrompt: { version: number; isFallback?: boolean } }
+      ) => {
+        seenPrompt = systemPrompt;
+        seenLangfuse = options.langfusePrompt;
+        return {
+          content: strictCuratorJson(FIXTURE_CURATED),
+          usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+          model: "anthropic/sonnet",
+          finishReason: "stop",
+        };
+      }
+    );
 
     const result = await runTailorCore(tailorCvDeps, {
       jobDescription: "React role",
@@ -817,5 +831,74 @@ describe("runTailorCore — in-process curator path", () => {
 
     assert.equal(result.ok, true);
     assert.equal(chatSpy.mock.callCount(), 1);
+    assert.match(seenPrompt, /"reply_text"/);
+    assert.doesNotMatch(seenPrompt, /Emit curated JSON only\./);
+    assert.equal(seenLangfuse?.version, 0);
+    assert.equal(seenLangfuse?.isFallback, true);
+  });
+
+  it("returns 503 before prompt retrieval when the signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const promptSpy = mock.method(tailorCvDeps, "getCuratorPrompt", async () => {
+      throw new Error("getCuratorPrompt must not run when already aborted");
+    });
+    const compileSpy = mock.method(tailorCvDeps, "compileCuratorPrompt", () => {
+      throw new Error("compile must not run when already aborted");
+    });
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+      signal: controller.signal,
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "AI service error. Please try again.");
+    }
+    assert.equal(promptSpy.mock.callCount(), 0);
+    assert.equal(compileSpy.mock.callCount(), 0);
+  });
+
+  it("returns 503 before prompt compilation when aborted during retrieval", async () => {
+    const controller = new AbortController();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mock.method(tailorCvDeps, "getCuratorPrompt", async () => {
+      controller.abort();
+      await gate;
+      return {
+        systemPrompt: "Curate with {{MASTER_CV_JSON}}",
+        langfusePrompt: {
+          name: "cv-curator-json",
+          version: 1,
+          isFallback: true,
+        },
+      };
+    });
+    const compileSpy = mock.method(tailorCvDeps, "compileCuratorPrompt", () => {
+      throw new Error("compile must not run after abort during retrieval");
+    });
+
+    try {
+      const result = await runTailorCore(tailorCvDeps, {
+        jobDescription: "React role",
+        curationMode: "strict",
+        signal: controller.signal,
+      });
+
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.equal(result.status, 503);
+        assert.equal(result.error, "AI service error. Please try again.");
+      }
+      assert.equal(compileSpy.mock.callCount(), 0);
+    } finally {
+      release();
+    }
   });
 });

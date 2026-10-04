@@ -91,6 +91,15 @@ describe("curator-prompt", () => {
     );
   });
 
+  it("strictPromptRequestsReplyWrapper rejects a wrapper-shaped prohibition", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Never return the wrapper { curated_cv, reply_text }; emit curated_cv only."
+      ),
+      false
+    );
+  });
+
   it("has flexible pivot Langfuse prompt name", () => {
     assert.equal(FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME, "cv-curator-flexible-pivot");
   });
