@@ -6,8 +6,12 @@ import {
   extractUnprocessedInboxMessage,
   inboxClaimKey,
   inboxProcessedKey,
+  INBOX_CLAIM_TOKEN_REQUIRED_ERROR,
+  isInboxProcessed,
   markInboxProcessed,
   parseInboxMessageId,
+  releaseInboxClaim,
+  renewInboxClaim,
   type InboxKv,
 } from "../app/api/lib/inbox-processed-store";
 
@@ -103,6 +107,18 @@ describe("parseInboxMessageId", () => {
   it("accepts a Gmail-shaped id", () => {
     const result = parseInboxMessageId(ID);
     assert.equal(result.ok, true);
+  });
+
+  it("rejects ids longer than INBOX_MESSAGE_ID_MAX_CHARS", () => {
+    const saved = process.env.INBOX_MESSAGE_ID_MAX_CHARS;
+    process.env.INBOX_MESSAGE_ID_MAX_CHARS = "8";
+    const tooLong = parseInboxMessageId("123456789");
+    if (saved === undefined) delete process.env.INBOX_MESSAGE_ID_MAX_CHARS;
+    else process.env.INBOX_MESSAGE_ID_MAX_CHARS = saved;
+    assert.equal(tooLong.ok, false);
+    if (!tooLong.ok) {
+      assert.match(tooLong.error, /max length/i);
+    }
   });
 });
 
@@ -342,5 +358,64 @@ describe("inbox processed store", () => {
     }
     assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
     assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+  });
+
+  it("treats invalid message ids as not processed without touching Redis", async () => {
+    const result = await isInboxProcessed("bad:id");
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.processed, false);
+    }
+    assert.equal(memory.store.size, 0);
+  });
+
+  it("requires a claim token for release, renew, and processed mark", async () => {
+    for (const fn of [
+      () => releaseInboxClaim(ID, ""),
+      () => renewInboxClaim(ID, ""),
+      () => markInboxProcessed(ID, ""),
+    ]) {
+      const result = await fn();
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.equal(result.error, INBOX_CLAIM_TOKEN_REQUIRED_ERROR);
+      }
+    }
+  });
+
+  it("releases only the matching claim token", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+    const wrong = await releaseInboxClaim(ID, "not-the-token");
+    assert.equal(wrong.ok, true);
+    assert.equal(memory.store.get(inboxClaimKey(ID)), claimed.token);
+
+    const released = await releaseInboxClaim(ID, claimed.token);
+    assert.equal(released.ok, true);
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+  });
+
+  it("renewInboxClaim extends ownership only for the active token", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+    const lost = await renewInboxClaim(ID, "stale-token");
+    assert.equal(lost.ok, true);
+    if (lost.ok) {
+      assert.equal(lost.renewed, false);
+    }
+    assert.equal(memory.store.get(inboxClaimKey(ID)), claimed.token);
+
+    const renewed = await renewInboxClaim(ID, claimed.token);
+    assert.equal(renewed.ok, true);
+    if (renewed.ok) {
+      assert.equal(renewed.renewed, true);
+    }
+    assert.equal(memory.store.get(inboxClaimKey(ID)), claimed.token);
   });
 });
