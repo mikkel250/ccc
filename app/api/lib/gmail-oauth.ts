@@ -15,6 +15,22 @@ export type FetchLike = (
   init?: RequestInit
 ) => Promise<Response>;
 
+/**
+ * Referenced abort timer. AbortSignal.timeout() is unref'd, so a hung fetch
+ * that is the only pending work never fires the deadline.
+ */
+export function gmailAbortAfter(timeoutMs: number): {
+  signal: AbortSignal;
+  cancel: () => void;
+} {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timer),
+  };
+}
+
 export type GmailTokenSet = {
   accessToken: string;
   refreshToken?: string;
@@ -127,16 +143,19 @@ async function postTokenRequest(
   requireRefreshToken: boolean
 ): Promise<GmailOauthResult<GmailTokenSet>> {
   let response: Response;
+  const deadline = gmailAbortAfter(getGmailHttpTimeoutMs());
   try {
     response = await fetchImpl(tokenUrl, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
       redirect: "error",
-      signal: AbortSignal.timeout(getGmailHttpTimeoutMs()),
+      signal: deadline.signal,
     });
   } catch {
     return { ok: false, error: "Gmail token request failed" };
+  } finally {
+    deadline.cancel();
   }
   if (!response.ok) {
     return { ok: false, error: `Gmail token HTTP ${response.status}` };

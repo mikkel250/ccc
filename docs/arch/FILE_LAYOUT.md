@@ -39,12 +39,13 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── gmail-oauth.ts    # Authorize URL, callback, token exchange/refresh
 │           ├── gmail-list.ts     # Recruiter-label resolve + messages.list
 │           ├── inbox-config.ts   # Inbox Redis prefix / claim+processed TTLs
-│           ├── inbox-processed-store.ts # Lua claim vs terminal processed mark
+│           ├── inbox-processed-store.ts # SET NX claim vs token-owned processed mark
+│           ├── inbox-tailor.ts   # tailorLabeledMessage — claim+extract then runTailorCore
 │           ├── gmail-body.ts     # Gmail payload → JD (text/plain else html-to-text)
+│           ├── tailor-pipeline.ts # HTTP adapter (Bearer + rate-limit) + runTailorCore (no Bearer/rate-limit)
+│           ├── tailor-cv-deps.ts # Mockable pipeline dep bag
 │           ├── rate-limit.ts     # Dual IP + secret-hash rate limiter
 │           ├── tailor-cv-validation.ts  # Request body validation
-│           ├── tailor-pipeline.ts    # HTTP tailor orchestration (discriminated result)
-│           ├── tailor-cv-deps.ts     # ESM-mock seam for pipeline steps
 │           ├── errors.ts             # RateLimitError / ServiceError
 │           ├── eval-parse.ts         # extractStructuredJson (untrusted LLM text)
 │           ├── eval-defaults.ts      # Historical eval default CSV/model constants
@@ -75,6 +76,8 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── smoke-helpers.test.ts              # Artifact redaction
 │   ├── master-cv.test.ts / cv-schema.test.ts
 │   ├── tailor-auth.test.ts
+│   ├── tailor-pipeline.test.ts            # HTTP adapter + runTailorCore
+│   ├── inbox-tailor.test.ts               # Labeled-message in-process entry
 │   ├── route.test.ts                      # Tailor route (mocked curator)
 │   ├── cv-prompt*.test.ts                 # Legacy markdown prompt tests
 │   ├── markdown-docx.test.ts              # Legacy markdown→docx

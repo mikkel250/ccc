@@ -442,8 +442,25 @@ describe("isLlmServiceError", () => {
     assert.equal(isLlmServiceError("DeepSeek rate limit exceeded"), true);
   });
 
+  it("matches transient upstream failures that name no provider", () => {
+    assert.equal(isLlmServiceError("Request timed out."), true);
+    assert.equal(isLlmServiceError("Connection error."), true);
+    assert.equal(
+      isLlmServiceError("429 Rate limit reached for gpt-4o"),
+      true
+    );
+  });
+
   it("does not match unrelated errors", () => {
     assert.equal(isLlmServiceError("Validation failed"), false);
+    assert.equal(
+      isLlmServiceError("Rate limit policy document is outdated"),
+      false
+    );
+    assert.equal(
+      isLlmServiceError("curatorResponse.content is undefined"),
+      false
+    );
   });
 
   it("no longer matches removed All providers failed message", () => {

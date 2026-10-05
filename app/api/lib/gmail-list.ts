@@ -8,6 +8,7 @@ import {
   getGmailRecruiterLabel,
 } from "./gmail-config";
 import {
+  gmailAbortAfter,
   refreshGmailAccessToken,
   type FetchLike,
 } from "./gmail-oauth";
@@ -36,13 +37,16 @@ async function gmailGetJson(
   fetchImpl: FetchLike
 ): Promise<GmailListResult & { body?: unknown }> {
   let response: Response;
+  const deadline = gmailAbortAfter(getGmailHttpTimeoutMs());
   try {
     response = await fetchImpl(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
-      signal: AbortSignal.timeout(getGmailHttpTimeoutMs()),
+      signal: deadline.signal,
     });
   } catch {
     return { ok: false, error: "Gmail API request failed" };
+  } finally {
+    deadline.cancel();
   }
   if (!response.ok) {
     return { ok: false, error: `Gmail API HTTP ${response.status}` };
