@@ -26,6 +26,7 @@ import {
 } from "./cv-schema";
 import {
   CURATOR_LANGFUSE_PROMPT_NAME,
+  getCuratorPromptFallbackText,
   strictPromptRequestsReplyWrapper,
 } from "./curator-prompt";
 import {
@@ -334,7 +335,11 @@ export async function buildTailorResponse(
 
   const { jobDescription, curationMode } = validated;
 
-  const core = await runTailorCore(deps, { jobDescription, curationMode });
+  const core = await runTailorCore(deps, {
+    jobDescription,
+    curationMode,
+    signal: request.signal,
+  });
   if (!core.ok) {
     return core;
   }
@@ -360,6 +365,57 @@ export async function buildTailorResponse(
   return { ok: true, body: responseBody };
 }
 
+function isProgrammerError(error: unknown): boolean {
+  return (
+    error instanceof TypeError ||
+    error instanceof ReferenceError ||
+    error instanceof SyntaxError ||
+    error instanceof RangeError
+  );
+}
+
+function abortCoreResult(): TailorCoreResult {
+  return {
+    ok: false,
+    error: "AI service error. Please try again.",
+    status: 503,
+  };
+}
+
+type Abortable<T> = { aborted: false; value: T } | { aborted: true };
+
+/** Settle when `signal` aborts, without waiting for `start` to finish. */
+async function awaitUnlessAborted<T>(
+  start: () => Promise<T>,
+  signal?: AbortSignal
+): Promise<Abortable<T>> {
+  if (!signal) {
+    return { aborted: false, value: await start() };
+  }
+  if (signal.aborted) {
+    return { aborted: true };
+  }
+  return new Promise((resolve, reject) => {
+    const onAbort = (): void => {
+      signal.removeEventListener("abort", onAbort);
+      resolve({ aborted: true });
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    start().then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        if (signal.aborted) resolve({ aborted: true });
+        else resolve({ aborted: false, value });
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        if (signal.aborted) resolve({ aborted: true });
+        else reject(error);
+      }
+    );
+  });
+}
+
 /**
  * Shared curator + DOCX path. No Bearer, no RATE_LIMIT_* buckets (R8).
  */
@@ -372,17 +428,59 @@ export async function runTailorCore(
   }
 ): Promise<TailorCoreResult> {
   const { jobDescription, curationMode, signal } = input;
+  if (signal?.aborted) {
+    return abortCoreResult();
+  }
 
   // 6. Prompt construction
-  const masterCv = deps.requireMasterCv();
-  const { systemPrompt: promptText, langfusePrompt } =
-    await deps.getCuratorPrompt(curationMode);
+  let masterCv: unknown;
+  try {
+    masterCv = deps.requireMasterCv();
+  } catch (error: unknown) {
+    if (error instanceof ServiceError) {
+      return { ok: false, error: error.message, status: 503 };
+    }
+    throw error;
+  }
+  let prompted: Abortable<
+    Awaited<ReturnType<TailorPipelineDeps["getCuratorPrompt"]>>
+  >;
+  try {
+    prompted = await awaitUnlessAborted(
+      () => deps.getCuratorPrompt(curationMode),
+      signal
+    );
+  } catch (error: unknown) {
+    if (isProgrammerError(error)) {
+      throw error;
+    }
+    if (error instanceof ServiceError) {
+      return { ok: false, error: error.message, status: 503 };
+    }
+    return {
+      ok: false,
+      error: "AI service error. Please try again.",
+      status: 503,
+    };
+  }
+  if (prompted.aborted) {
+    return abortCoreResult();
+  }
+  let { systemPrompt: promptText, langfusePrompt } = prompted.value;
   if (
     curationMode === "strict" &&
     langfusePrompt?.isFallback !== true &&
     !strictPromptRequestsReplyWrapper(promptText)
   ) {
-    return { ok: false, error: "Curator prompt misconfigured", status: 503 };
+    console.warn(
+      "Live Langfuse strict prompt omitted the reply wrapper; using hardcoded fallback"
+    );
+    promptText = getCuratorPromptFallbackText();
+    langfusePrompt = {
+      name: langfusePrompt?.name ?? CURATOR_LANGFUSE_PROMPT_NAME,
+      version: 0,
+      isFallback: true,
+    };
   }
   const modePrompt = deps.applyCurationModePolicy(promptText, curationMode);
   const compiled = deps.compileCuratorPrompt(modePrompt, masterCv);
@@ -415,11 +513,7 @@ export async function runTailorCore(
     );
   } catch (error: unknown) {
     if (signal?.aborted) {
-      return {
-        ok: false,
-        error: "AI service error. Please try again.",
-        status: 503,
-      };
+      return abortCoreResult();
     }
     const message = error instanceof Error ? error.message : String(error);
     if (error instanceof ServiceError) {
@@ -432,11 +526,11 @@ export async function runTailorCore(
         status: 503,
       };
     }
-    return {
-      ok: false,
-      error: "AI service error. Please try again.",
-      status: 503,
-    };
+    throw error;
+  }
+
+  if (signal?.aborted) {
+    return abortCoreResult();
   }
 
   // 8. Extract + schema validate + size check
@@ -502,6 +596,9 @@ export async function runTailorCore(
   const sanitized = deps.sanitizeForResponse(schemaResult.data);
 
   const built = await deps.buildJsonDocxBase64(schemaResult.data);
+  if (signal?.aborted) {
+    return abortCoreResult();
+  }
   if (!built.ok) {
     console.error("Docx builder failed after valid curated JSON");
     return {

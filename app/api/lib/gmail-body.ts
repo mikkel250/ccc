@@ -19,6 +19,38 @@ function decodeGmailBodyData(data: unknown): string | undefined {
 }
 
 const WHOLE_TAG_SKIP = new Set(["head", "script", "style"]);
+const RAW_TEXT_ELEMENTS = new Set(["script", "style"]);
+/** Tags that end an unclosed head in HTML and start message content. */
+const HEAD_CONTENT_START = new Set([
+  "body",
+  "p",
+  "div",
+  "table",
+  "span",
+  "br",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+]);
+const VOID_HTML_ELEMENTS = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
+]);
 
 /** Named entities Gmail HTML commonly emits; numeric (dec/hex) covers the rest. */
 const NAMED_HTML_ENTITIES: Record<string, string> = {
@@ -65,24 +97,66 @@ function decodeHtmlEntities(text: string): string {
   );
 }
 
-function styleDeclaresHidden(style: string): boolean {
+function styleDeclaresClippingOverflow(style: string): boolean {
+  return /(?:^|;)\s*overflow(?:-(?:x|y))?\s*:\s*(?:hidden|clip|scroll)\b/i.test(
+    style
+  );
+}
+
+function styleDeclaresZeroMaxHeight(style: string): boolean {
+  return /max-height\s*:\s*0(?:px|em|rem|%)?(?=\s|;|$)/i.test(style);
+}
+
+function styleDeclaresSubtreeHidden(style: string): boolean {
   return (
     /display\s*:\s*none/i.test(style) ||
     /visibility\s*:\s*hidden/i.test(style) ||
     /opacity\s*:\s*0(?:\.0*)?(?=\s|;|$)/i.test(style) ||
-    /font-size\s*:\s*0(?:px|em|rem|%)?(?=\s|;|$)/i.test(style) ||
-    /max-height\s*:\s*0(?:px|em|rem|%)?(?=\s|;|$)/i.test(style)
+    (styleDeclaresZeroMaxHeight(style) && styleDeclaresClippingOverflow(style))
   );
 }
 
-function hiddenStyleInTag(raw: string): boolean {
+/** Layout wrappers use font-size:0; descendants can set a real size and stay visible. */
+function styleDeclaresFontSizeZero(style: string): boolean {
+  return /font-size\s*:\s*0+(?:\.0+)?(?:px|em|rem|%)?(?=\s|;|$)/i.test(style);
+}
+
+function styleDeclaresPositiveFontSize(style: string): boolean {
+  const match = style.match(
+    /font-size\s*:\s*([0-9]*\.?[0-9]+)(?:px|em|rem|%)?(?=\s|;|$)/i
+  );
+  if (match === null) {
+    return false;
+  }
+  const value = Number(match[1]);
+  return Number.isFinite(value) && value > 0;
+}
+
+function tagStyle(raw: string): string | undefined {
   const decoded = decodeHtmlEntities(raw);
   const quoted = decoded.match(/style\s*=\s*(["'])([^"']*)\1/i);
-  if (quoted && styleDeclaresHidden(quoted[2]!)) {
-    return true;
+  if (quoted) {
+    return quoted[2];
   }
   const unquoted = decoded.match(/style\s*=\s*([^>\s]+)/i);
-  return unquoted != null && styleDeclaresHidden(unquoted[1]!);
+  return unquoted?.[1];
+}
+
+function hiddenStyleInTag(raw: string): boolean {
+  const style = tagStyle(raw);
+  return style !== undefined && styleDeclaresSubtreeHidden(style);
+}
+
+type TextFrame = { name: string; hide: boolean };
+
+function nextTextHide(style: string | undefined, parentHide: boolean): boolean {
+  if (style !== undefined && styleDeclaresPositiveFontSize(style)) {
+    return false;
+  }
+  if (style !== undefined && styleDeclaresFontSizeZero(style)) {
+    return true;
+  }
+  return parentHide;
 }
 
 /** Hidden-content policy: drop boolean `hidden`, `aria-hidden="true"`, and hidden inline styles. */
@@ -103,11 +177,14 @@ function omitHiddenHtml(html: string): string {
   let last = 0;
   let skipName: string | null = null;
   let skipDepth = 0;
-  let skipTailStart = 0;
+  let rawTextName: string | null = null;
+  let headInnerDepth = 0;
+  const textFrames: TextFrame[] = [];
+  const textHidden = (): boolean => textFrames.at(-1)?.hide === true;
   for (const match of html.matchAll(tokenRe)) {
     const index = match.index ?? 0;
     const raw = match[0];
-    if (skipDepth === 0) {
+    if (skipDepth === 0 && !textHidden()) {
       out += html.slice(last, index);
     }
     last = index + raw.length;
@@ -118,11 +195,37 @@ function omitHiddenHtml(html: string): string {
     const isClose = raw.startsWith("</");
     const selfClosing = /\/\s*>$/.test(raw);
     if (skipDepth > 0) {
-      if (!isClose && name === "body" && skipName === "head") {
-        skipDepth = 0;
-        skipName = null;
-        out += raw;
+      if (rawTextName !== null) {
+        if (isClose && name === rawTextName) {
+          rawTextName = null;
+        }
         continue;
+      }
+      if (!isClose && !selfClosing && RAW_TEXT_ELEMENTS.has(name)) {
+        rawTextName = name;
+        continue;
+      }
+      if (skipName === "head" && rawTextName === null) {
+        const voidElement = selfClosing || VOID_HTML_ELEMENTS.has(name);
+        if (
+          !isClose &&
+          HEAD_CONTENT_START.has(name) &&
+          headInnerDepth === 0
+        ) {
+          skipDepth = 0;
+          skipName = null;
+          headInnerDepth = 0;
+          out += raw;
+          continue;
+        }
+        if (!isClose && !voidElement) {
+          headInnerDepth += 1;
+          continue;
+        }
+        if (isClose && headInnerDepth > 0 && name !== "head") {
+          headInnerDepth -= 1;
+          continue;
+        }
       }
       if (!isClose && !selfClosing && name === skipName) {
         skipDepth += 1;
@@ -130,23 +233,45 @@ function omitHiddenHtml(html: string): string {
         skipDepth -= 1;
         if (skipDepth === 0) {
           skipName = null;
+          headInnerDepth = 0;
         }
       }
       continue;
     }
+    const voidElement = selfClosing || VOID_HTML_ELEMENTS.has(name);
     if (!isClose && (WHOLE_TAG_SKIP.has(name) || isHiddenOpeningTag(raw))) {
-      if (!selfClosing) {
+      if (!voidElement) {
         skipName = name;
         skipDepth = 1;
-        skipTailStart = last;
+        if (name === "head") {
+          headInnerDepth = 0;
+        }
       }
       continue;
     }
+    if (isClose) {
+      while (
+        textFrames.length > 0 &&
+        textFrames[textFrames.length - 1]!.name !== name
+      ) {
+        textFrames.pop();
+      }
+      if (
+        textFrames.length > 0 &&
+        textFrames[textFrames.length - 1]!.name === name
+      ) {
+        textFrames.pop();
+      }
+    } else if (!voidElement) {
+      const parentHide = textFrames.at(-1)?.hide === true;
+      textFrames.push({
+        name,
+        hide: nextTextHide(tagStyle(raw), parentHide),
+      });
+    }
     out += raw;
   }
-  if (skipDepth > 0) {
-    out += html.slice(skipTailStart);
-  } else {
+  if (skipDepth === 0 && !textHidden()) {
     out += html.slice(last);
   }
   return out;
@@ -166,8 +291,49 @@ export function htmlToText(html: string): string {
 
 type CollectedBodies = { plain: string[]; html: string[] };
 
+function isMimeAttachment(node: object): boolean {
+  const filename = Reflect.get(node, "filename");
+  if (typeof filename === "string" && filename.trim() !== "") {
+    return true;
+  }
+  const body = Reflect.get(node, "body");
+  if (body !== null && typeof body === "object") {
+    const attachmentId = Reflect.get(body, "attachmentId");
+    if (typeof attachmentId === "string" && attachmentId.trim() !== "") {
+      return true;
+    }
+  }
+  const headers = Reflect.get(node, "headers");
+  if (!Array.isArray(headers)) {
+    return false;
+  }
+  for (const header of headers) {
+    if (header === null || typeof header !== "object") continue;
+    const name = Reflect.get(header, "name");
+    const value = Reflect.get(header, "value");
+    if (typeof name !== "string" || typeof value !== "string") continue;
+    if (name.toLowerCase() !== "content-disposition") continue;
+    if (/(?:^|;)\s*attachment\b/i.test(value)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function walkMimeNode(node: unknown, acc: CollectedBodies): void {
   if (node === null || typeof node !== "object") {
+    return;
+  }
+  // Attachment bytes are not the JD. Nested parts still are: a forwarded
+  // message/rfc822 is an attachment whose children hold the recruiter mail.
+  const attachment = isMimeAttachment(node);
+  if (attachment) {
+    const parts = Reflect.get(node, "parts");
+    if (Array.isArray(parts)) {
+      for (const part of parts) {
+        walkMimeNode(part, acc);
+      }
+    }
     return;
   }
   const mimeTypeRaw = Reflect.get(node, "mimeType");

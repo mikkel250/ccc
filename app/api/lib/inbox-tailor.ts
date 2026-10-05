@@ -3,6 +3,8 @@
  * Claim + extract, then runTailorCore. Does not mark processed (R10 / M8.5).
  * Returns claimToken on success so M8.5 can mark processed only while this
  * worker still owns the claim. Releases the claim on non-crash failures.
+ * A programmer error keeps the claim until the lease expires so the next
+ * scan does not pay for another model call.
  */
 import {
   extractUnprocessedInboxMessage,
@@ -14,6 +16,7 @@ import {
 } from "./inbox-processed-store";
 import { getInboxClaimTtlSeconds } from "./inbox-config";
 import { getTailorJdMaxChars } from "./cv-schema";
+import { ServiceError } from "./errors";
 import {
   runTailorCore,
   type TailorCoreSuccess,
@@ -24,7 +27,7 @@ export type TailorLabeledResult =
   | { ok: true; status: "tailored"; body: TailorCoreSuccess; claimToken: string }
   | { ok: true; status: "skipped-processed" }
   | { ok: true; status: "skipped-claimed" }
-  | { ok: false; error: string; status?: 422 | 503 };
+  | { ok: false; error: string; status?: 422 | 500 | 503 };
 
 function isInboxRedisError(error: string): boolean {
   return (
@@ -154,12 +157,27 @@ export async function tailorLabeledMessage(
       return { ok: false, error: leased.error, status: 503 };
     }
     core = leased.value;
-  } catch {
-    await releaseInboxClaim(input.messageId, extracted.claimToken);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof ServiceError || deps.isLlmServiceError(message)) {
+      await releaseInboxClaim(input.messageId, extracted.claimToken);
+      return {
+        ok: false,
+        error:
+          error instanceof ServiceError
+            ? error.message
+            : "AI service error. Please try again.",
+        status: 503,
+      };
+    }
+    console.error(
+      "Inbox tailor failed:",
+      error instanceof Error ? error.name : "Error"
+    );
     return {
       ok: false,
-      error: "AI service error. Please try again.",
-      status: 503,
+      error: "Internal server error. Please try again later.",
+      status: 500,
     };
   }
   if (!core.ok) {

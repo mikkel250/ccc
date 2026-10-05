@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tailorCvDeps } from "../app/api/lib/tailor-cv-deps";
+import { isLlmServiceError } from "../app/api/lib/llm";
 import {
   __injectInboxKvForTest,
   claimInboxMessage,
@@ -332,6 +333,45 @@ describe("tailorLabeledMessage", () => {
       assert.equal(result.error, "Inbox Redis timed out");
     }
     assert.equal(chatSpy.mock.callCount(), 0);
+  });
+
+  it("returns 500 and keeps the claim when chat throws a programmer error", async () => {
+    mock.method(tailorCvDeps, "chat", async () => {
+      throw new TypeError("curatorResponse.content is undefined");
+    });
+
+    const result = await tailorLabeledMessage(tailorCvDeps, {
+      messageId: ID,
+      message: plainMessage(JD),
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 500);
+      assert.equal(result.error, "Internal server error. Please try again later.");
+      assert.doesNotMatch(result.error, /curatorResponse/);
+    }
+    assert.equal(memory.store.has(inboxClaimKey(ID)), true);
+    assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
+  });
+
+  it("returns 503 and releases the claim when chat times out", async () => {
+    mock.method(tailorCvDeps, "isLlmServiceError", isLlmServiceError);
+    mock.method(tailorCvDeps, "chat", async () => {
+      throw new Error("Request timed out.");
+    });
+
+    const result = await tailorLabeledMessage(tailorCvDeps, {
+      messageId: ID,
+      message: plainMessage(JD),
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "AI service error. Please try again.");
+    }
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
   });
 
   it("returns 503 without leaking when getCuratorPrompt rejects", async () => {
