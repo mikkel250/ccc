@@ -15,6 +15,7 @@ import {
 } from "../../../lib/env";
 import { RateLimitError, ServiceError } from "./errors";
 import {
+  bearerTokenEquals,
   getConfiguredTailorApiKey,
   isTailorAuthBypassRequested,
   parseBearerToken,
@@ -241,9 +242,10 @@ export interface TailorPipelineDeps {
 }
 
 /**
- * Secret-bucket key material. When a key is configured, hash the presented
- * Bearer token (or a dedicated missing-auth sentinel) — never the configured
- * secret — so unauthenticated traffic cannot drain the legitimate key's quota.
+ * Secret-bucket key material. When a key is configured, hash the configured
+ * secret only for a matching Bearer. Missing and wrong tokens use shared
+ * sentinels so unauthenticated traffic cannot drain the legitimate key's
+ * quota and rotating wrong tokens cannot bypass the secret window.
  */
 function resolveSecretBucketKey(authorizationHeader: string | null): string {
   const configuredKey = getConfiguredTailorApiKey();
@@ -257,7 +259,10 @@ function resolveSecretBucketKey(authorizationHeader: string | null): string {
   if (!presented) {
     return hashTailorApiKeyForRateLimit("unauth:missing");
   }
-  return hashTailorApiKeyForRateLimit(presented);
+  if (bearerTokenEquals(presented, configuredKey)) {
+    return hashTailorApiKeyForRateLimit(configuredKey);
+  }
+  return hashTailorApiKeyForRateLimit("unauth:invalid");
 }
 
 // ---------------------------------------------------------------------------
@@ -280,7 +285,7 @@ export async function buildTailorResponse(
   }
 
   // 2. Rate limit (before auth so failed credential guesses consume IP +
-  // presented-token quota, not the configured key's secret bucket)
+  // invalid/missing-auth sentinel quota, not the configured key's secret bucket)
   const secretBucketKey = resolveSecretBucketKey(
     request.headers.get("authorization")
   );

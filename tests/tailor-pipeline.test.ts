@@ -216,7 +216,7 @@ describe("buildTailorResponse — pipeline orchestration", () => {
     ]);
   });
 
-  it("keys the secret bucket on the presented Bearer token, not the configured key", async () => {
+  it("keys wrong Bearer tokens onto a shared invalid-auth secret bucket", async () => {
     const secretKeys: string[] = [];
     mock.method(
       tailorCvDeps,
@@ -231,21 +231,30 @@ describe("buildTailorResponse — pipeline orchestration", () => {
       }
     );
 
-    const result = await buildTailorResponse(
+    const first = await buildTailorResponse(
       tailorCvDeps,
       buildPostRequest(VALID_BODY, {
         "x-forwarded-for": "198.51.100.42",
         authorization: "Bearer wrong-key",
       })
     );
-    assert.equal(result.ok, false);
-    if (!result.ok) assert.equal(result.status, 401);
-    assert.deepEqual(secretKeys, [
-      hashTailorApiKeyForRateLimit("wrong-key"),
-    ]);
+    const second = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(VALID_BODY, {
+        "x-forwarded-for": "198.51.100.43",
+        authorization: "Bearer another-wrong-key",
+      })
+    );
+    assert.equal(first.ok, false);
+    assert.equal(second.ok, false);
+    if (!first.ok) assert.equal(first.status, 401);
+    if (!second.ok) assert.equal(second.status, 401);
+    const invalidBucket = hashTailorApiKeyForRateLimit("unauth:invalid");
+    assert.deepEqual(secretKeys, [invalidBucket, invalidBucket]);
+    assert.notEqual(invalidBucket, hashTailorApiKeyForRateLimit(TEST_API_KEY));
     assert.notEqual(
-      secretKeys[0],
-      hashTailorApiKeyForRateLimit(TEST_API_KEY)
+      invalidBucket,
+      hashTailorApiKeyForRateLimit("unauth:missing")
     );
   });
 

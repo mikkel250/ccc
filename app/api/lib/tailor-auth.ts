@@ -63,7 +63,7 @@ export function getConfiguredTailorApiKey(): string | undefined {
   return getEnvString("TAILOR_API_KEY")?.trim() || undefined;
 }
 
-function bearerTokenEquals(presented: string, expected: string): boolean {
+export function bearerTokenEquals(presented: string, expected: string): boolean {
   const a = Buffer.from(presented, "utf8");
   const b = Buffer.from(expected, "utf8");
   if (a.length !== b.length) {
@@ -83,7 +83,8 @@ export function parseBearerToken(authorizationHeader: string | null): string | n
 /**
  * Authenticate a tailor request. Call before master load / LLM work that should
  * not run for anonymous callers. Rate limiting runs before this check; the
- * secret bucket is keyed on the presented token, not the configured secret.
+ * secret bucket uses the configured key only for a matching Bearer, and shared
+ * sentinels for missing or wrong tokens.
  */
 export function authenticateTailorRequest(
   authorizationHeader: string | null
