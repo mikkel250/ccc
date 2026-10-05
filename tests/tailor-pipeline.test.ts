@@ -942,11 +942,11 @@ describe("runTailorCore — in-process curator path", () => {
   });
 
   it("returns 503 when chat aborts via signal without leaking AbortError", async () => {
-    mock.method(tailorCvDeps, "chat", async () => {
+    const controller = new AbortController();
+    const chatSpy = mock.method(tailorCvDeps, "chat", async () => {
+      controller.abort();
       throw new DOMException("The operation was aborted", "AbortError");
     });
-    const controller = new AbortController();
-    controller.abort();
 
     const result = await runTailorCore(tailorCvDeps, {
       jobDescription: "React role",
@@ -954,6 +954,7 @@ describe("runTailorCore — in-process curator path", () => {
       signal: controller.signal,
     });
 
+    assert.equal(chatSpy.mock.callCount(), 1);
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.equal(result.status, 503);
