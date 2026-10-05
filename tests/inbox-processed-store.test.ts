@@ -186,6 +186,57 @@ describe("inbox processed store", () => {
     assert.equal(memory.store.size, 0);
   });
 
+  it("releases the claim when extraction fails so a retry can win", async () => {
+    const empty = { payload: { mimeType: "multipart/mixed", parts: [] } };
+    const failed = await extractUnprocessedInboxMessage(ID, empty);
+    assert.equal(failed.ok, false);
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+
+    const retry = await extractUnprocessedInboxMessage(ID, plainMessage("Need a GM"));
+    assert.equal(retry.ok, true);
+    if (retry.ok) {
+      assert.equal(retry.status, "extracted");
+    }
+  });
+
+  it("returns the extract error when claim release throws", async () => {
+    const empty = { payload: { mimeType: "multipart/mixed", parts: [] } };
+    memory.deleteIfValue = async () => {
+      throw new Error("Inbox Redis timed out");
+    };
+    const failed = await extractUnprocessedInboxMessage(ID, empty);
+    assert.deepEqual(failed, {
+      ok: false,
+      error: "Gmail message had no usable text body",
+    });
+    assert.equal(memory.store.has(inboxClaimKey(ID)), true);
+  });
+
+  it("logs and returns the extract error when claim release does not delete", async () => {
+    const empty = { payload: { mimeType: "multipart/mixed", parts: [] } };
+    memory.deleteIfValue = async () => false;
+    const errors: unknown[][] = [];
+    const orig = console.error;
+    console.error = (...args: unknown[]) => {
+      errors.push(args);
+    };
+    try {
+      const failed = await extractUnprocessedInboxMessage(ID, empty);
+      assert.deepEqual(failed, {
+        ok: false,
+        error: "Gmail message had no usable text body",
+      });
+    } finally {
+      console.error = orig;
+    }
+    assert.equal(memory.store.has(inboxClaimKey(ID)), true);
+    assert.ok(
+      errors.some((args) =>
+        args.some((arg) => typeof arg === "string" && arg.includes(ID))
+      )
+    );
+  });
+
   it("returns processed when a mark lands before the claim SET commits", async () => {
     const origSet = memory.set.bind(memory);
     memory.set = async (key, value, opts) => {
@@ -253,6 +304,21 @@ describe("inbox processed store", () => {
 
     assert.deepEqual(result, { ok: true, outcome: "lost" });
     assert.equal(memory.store.get(inboxClaimKey(ID)), "replacement-token");
+  });
+
+  it("returns a Redis error when marking processed times out", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+    memory.markProcessedIfOwned = async () => {
+      throw new Error("Inbox Redis timed out");
+    };
+    const marked = await markInboxProcessed(ID, claimed.token);
+    assert.deepEqual(marked, { ok: false, error: "Inbox Redis timed out" });
+    assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
+    assert.equal(memory.store.get(inboxClaimKey(ID)), claimed.token);
   });
 
   it("does not delete a replacement claim when a processed mark wins", async () => {

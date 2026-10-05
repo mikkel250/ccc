@@ -92,7 +92,9 @@ function decodeHtmlEntities(text: string): string {
       if (inner.startsWith("#")) {
         return codePointToChar(Number(inner.slice(1))) ?? entity;
       }
-      return NAMED_HTML_ENTITIES[inner] ?? entity;
+      return Object.hasOwn(NAMED_HTML_ENTITIES, inner)
+        ? NAMED_HTML_ENTITIES[inner]
+        : entity;
     }
   );
 }
