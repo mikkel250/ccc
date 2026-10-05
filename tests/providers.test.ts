@@ -23,15 +23,19 @@ describe("parseNamespacedProvider", () => {
   });
 
   it("rejects empty, dot, and double-dot path segments", () => {
-    assert.throws(() => parseNamespacedProvider("anthropic/"), /Invalid model/);
-    assert.throws(() => parseNamespacedProvider("/sonnet"), /Invalid model/);
+    assert.throws(() => parseNamespacedProvider("anthropic/"), /Invalid model string/);
+    assert.throws(() => parseNamespacedProvider("/sonnet"), /Invalid model string/);
+    assert.throws(
+      () => parseNamespacedProvider("openrouter//openai/gpt"),
+      /Invalid model string/
+    );
     assert.throws(
       () => parseNamespacedProvider("anthropic/../etc"),
-      /Invalid model/
+      /Invalid model string/
     );
     assert.throws(
       () => parseNamespacedProvider("anthropic/./sonnet"),
-      /Invalid model/
+      /Invalid model string/
     );
   });
 

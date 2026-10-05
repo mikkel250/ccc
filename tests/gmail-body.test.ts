@@ -350,7 +350,7 @@ describe("extractGmailJobDescription", () => {
   });
 
   it("treats empty or whitespace body data as missing text", () => {
-    for (const data of ["", "   "]) {
+    for (const data of ["", b64("   "), b64("\n\t ")]) {
       const result = extractGmailJobDescription({
         payload: {
           mimeType: "text/plain",
@@ -361,6 +361,16 @@ describe("extractGmailJobDescription", () => {
       if (!result.ok) {
         assert.match(result.error, /no usable text/);
       }
+    }
+    const htmlBlank = extractGmailJobDescription({
+      payload: {
+        mimeType: "text/html",
+        body: { data: b64("<p>   </p>") },
+      },
+    });
+    assert.equal(htmlBlank.ok, false);
+    if (!htmlBlank.ok) {
+      assert.match(htmlBlank.error, /no usable text/);
     }
   });
 

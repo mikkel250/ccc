@@ -216,6 +216,7 @@ describe("parseParityStatusJson", () => {
         "anthropic/sonnet": { ok: true },
         "deepseek/deepseek-v4-pro": { ok: false },
       },
+      pending: ["deepseek/deepseek-v4-pro"],
     });
     assert.equal(status.cells["anthropic/sonnet"]?.ok, true);
     assert.equal(status.cells["deepseek/deepseek-v4-pro"]?.ok, false);
