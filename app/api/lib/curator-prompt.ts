@@ -157,18 +157,44 @@ export function getCuratorPromptFallbackText(): string {
   return FALLBACK_PROMPT;
 }
 
+const CURATED_CV_OUTPUT_KEY = /(?:"curated_cv"|\bcurated_cv\b)\s*[:,}]/;
+const REPLY_TEXT_OUTPUT_KEY = /(?:"reply_text"|\breply_text\b)\s*[:,}]/;
+
 /**
- * Strict production text must ask for `{ curated_cv, reply_text }`.
- * A fetched prompt that does not is the previous bare-CV contract.
+ * True when one `{...}` object declares both strict output keys.
+ * Nested values are stripped so `"curated_cv": { ... }` still counts.
+ * Naming `reply_text` and `curated_cv` in prose is not the contract.
+ */
+function fetchedPromptRequestsStrictWrapper(fetchedPrompt: string): boolean {
+  const starts: number[] = [];
+  for (let i = 0; i < fetchedPrompt.length; i++) {
+    const ch = fetchedPrompt[i];
+    if (ch === "{") {
+      starts.push(i);
+      continue;
+    }
+    if (ch !== "}") continue;
+    const start = starts.pop();
+    if (start === undefined) continue;
+    const inner = fetchedPrompt.slice(start + 1, i).replace(/\{[^{}]*\}/g, "");
+    const body = `${inner}\n}`;
+    if (CURATED_CV_OUTPUT_KEY.test(body) && REPLY_TEXT_OUTPUT_KEY.test(body)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Strict production text must declare the output object `{ curated_cv, reply_text }`.
+ * A fetched prompt that only mentions those names is the previous bare-CV contract.
  */
 export function resolveFetchedCuratorPrompt(
   mode: CurationMode | undefined,
   fetchedPrompt: string,
   fallbackPrompt: string
 ): { systemPrompt: string; staleStrictContract: boolean } {
-  const requestsReplyWrapper =
-    fetchedPrompt.includes("reply_text") && fetchedPrompt.includes("curated_cv");
-  if (mode !== "flexible" && !requestsReplyWrapper) {
+  if (mode !== "flexible" && !fetchedPromptRequestsStrictWrapper(fetchedPrompt)) {
     return { systemPrompt: fallbackPrompt, staleStrictContract: true };
   }
   return { systemPrompt: fetchedPrompt, staleStrictContract: false };

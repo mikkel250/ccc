@@ -109,6 +109,36 @@ describe("curator-prompt", () => {
     assert.equal(omitted.systemPrompt, fallback);
   });
 
+  it("rejects a strict prompt that names both fields but requests bare CV JSON", () => {
+    const fallback = getCuratorPromptFallbackText();
+    const mentioned =
+      "Return bare CV JSON matching the master schema. " +
+      "The CV object is the entire response. " +
+      "Field names reply_text and curated_cv are not the output.";
+    const stale = resolveFetchedCuratorPrompt("strict", mentioned, fallback);
+    assert.equal(stale.staleStrictContract, true);
+    assert.equal(stale.systemPrompt, fallback);
+
+    const omittedMode = resolveFetchedCuratorPrompt(undefined, mentioned, fallback);
+    assert.equal(omittedMode.staleStrictContract, true);
+    assert.equal(omittedMode.systemPrompt, fallback);
+
+    const flexible = resolveFetchedCuratorPrompt("flexible", mentioned, fallback);
+    assert.equal(flexible.staleStrictContract, false);
+    assert.equal(flexible.systemPrompt, mentioned);
+
+    const explicit = [
+      "Return one JSON object.",
+      "{",
+      '  "curated_cv": { "name": "A" },',
+      '  "reply_text": "Thanks for reaching out."',
+      "}",
+    ].join("\n");
+    const current = resolveFetchedCuratorPrompt("strict", explicit, fallback);
+    assert.equal(current.staleStrictContract, false);
+    assert.equal(current.systemPrompt, explicit);
+  });
+
   it("getCuratorPrompt defaults to strict prompt when mode omitted", async () => {
     const result = await getCuratorPrompt();
     assert.equal(result.langfusePrompt?.name, "cv-curator-json");
