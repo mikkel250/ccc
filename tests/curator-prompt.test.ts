@@ -5,6 +5,7 @@ import {
   compileCuratorPrompt,
   getCuratorPromptFallbackText,
   getCuratorPrompt,
+  resolveFetchedCuratorPrompt,
   CURATOR_LANGFUSE_PROMPT_NAME,
   FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME,
 } from "../app/api/lib/curator-prompt";
@@ -12,6 +13,16 @@ import {
 describe("curator-prompt", () => {
   it("uses the JSON curator Langfuse prompt name", () => {
     assert.equal(CURATOR_LANGFUSE_PROMPT_NAME, "cv-curator-json");
+  });
+
+  it("fallback tells the model to follow the injected master schema, not a repo path", () => {
+    const text = getCuratorPromptFallbackText();
+    assert.match(
+      text,
+      /curated_cv must use exactly the master CV schema shown in <master_cv_json>/
+    );
+    assert.doesNotMatch(text, /master-cv\.schema\.json/);
+    assert.doesNotMatch(text, /keep this block synchronized/i);
   });
 
   it("fallback omits page-count and visual QA / docx operator steps", () => {
@@ -76,6 +87,26 @@ describe("curator-prompt", () => {
     assert.ok(result.systemPrompt.includes("Struan"));
     assert.equal(result.langfusePrompt?.name, "cv-curator-json");
     assert.equal(result.langfusePrompt?.isFallback, true);
+  });
+
+  it("uses the hardcoded strict prompt when a fetched production prompt omits reply_text", () => {
+    const fallback = getCuratorPromptFallbackText();
+    const bare = "Return a single JSON object matching the master CV schema.";
+    const stale = resolveFetchedCuratorPrompt("strict", bare, fallback);
+    assert.equal(stale.staleStrictContract, true);
+    assert.equal(stale.systemPrompt, fallback);
+
+    const current = resolveFetchedCuratorPrompt("strict", fallback, "other");
+    assert.equal(current.staleStrictContract, false);
+    assert.equal(current.systemPrompt, fallback);
+
+    const flexible = resolveFetchedCuratorPrompt("flexible", bare, fallback);
+    assert.equal(flexible.staleStrictContract, false);
+    assert.equal(flexible.systemPrompt, bare);
+
+    const omitted = resolveFetchedCuratorPrompt(undefined, bare, fallback);
+    assert.equal(omitted.staleStrictContract, true);
+    assert.equal(omitted.systemPrompt, fallback);
   });
 
   it("getCuratorPrompt defaults to strict prompt when mode omitted", async () => {

@@ -235,7 +235,24 @@ export async function extractUnprocessedInboxMessage(
   if (!extracted.ok) {
     const parsed = parseInboxMessageId(messageId);
     if (parsed.ok) {
-      await kv().deleteIfValue(inboxClaimKey(parsed.messageId), claimed.token);
+      try {
+        const released = await kv().deleteIfValue(
+          inboxClaimKey(parsed.messageId),
+          claimed.token
+        );
+        if (!released) {
+          console.error(
+            "Inbox claim release did not delete the claim after extract failure:",
+            parsed.messageId
+          );
+        }
+      } catch (err) {
+        console.error(
+          "Inbox claim release failed after extract failure:",
+          parsed.messageId,
+          err
+        );
+      }
     }
     return extracted;
   }

@@ -18,7 +18,10 @@ import {
 } from "../tests/helpers/rate-limit-mock";
 import { BUILDER_VERSION } from "../app/api/lib/json-docx-builder";
 import { getTailorJdMaxChars } from "../app/api/lib/cv-schema";
-import { strictCuratorJson } from "../tests/helpers/strict-curator";
+import {
+  DEFAULT_STRICT_REPLY,
+  strictCuratorJson,
+} from "../tests/helpers/strict-curator";
 
 const TEST_API_KEY = "test-tailor-api-key";
 
@@ -592,6 +595,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
         cv: string;
         curatedJson: unknown;
         builderVersion: string;
+        replyText: string;
         remaining: number;
         resetTime: number;
       };
@@ -599,6 +603,8 @@ describe("POST /api/tailor-cv — request hardening", () => {
       assert.ok(json.cv.length > 0);
       assert.ok(json.curatedJson);
       assert.equal(json.builderVersion, BUILDER_VERSION);
+      assert.equal(typeof json.replyText, "string");
+      assert.equal(json.replyText, DEFAULT_STRICT_REPLY);
       assert.equal(typeof json.remaining, "number");
       assert.equal(typeof json.resetTime, "number");
     });

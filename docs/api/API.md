@@ -124,7 +124,7 @@ Missing/invalid Bearer token (key is configured but presentation failed).
 
 #### 422 Unprocessable Entity
 
-Curator JSON parse/schema/size failure, builder failure, or oversize response — no `cv` / `curatedJson` in body.
+Curator JSON parse/schema/size failure, strict wrapper or `reply_text` validation (missing `curated_cv` wrapper, or missing, blank, or non-string `reply_text`), builder failure, or oversize response — no `cv`, `curatedJson`, or `replyText` in the body.
 
 #### 429 Too Many Requests
 

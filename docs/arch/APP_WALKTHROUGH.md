@@ -85,7 +85,7 @@ Resolves `MASTER_CV_JSON` (preferred) or `MASTER_CV_PATH` (non-world-readable), 
 | Compile | same | `compileCuratorPrompt(promptText, masterCv)` → `{ ok, systemPrompt }` (fails closed if `{{MASTER_CV_JSON}}` missing; `$`-safe inject) |
 | User message | same | `buildCuratorUserMessage(jd)` — JD in per-request nonce-delimited data channel |
 
-Langfuse prompt name: `cv-curator-json` (label `production`). Fallback is hardcoded and used only when Langfuse is unset or fetch fails — not when a live production prompt still emits the old shape. Publish the fallback text in the same release as a contract change: `npx tsx scripts/create-langfuse-prompts.ts`.
+Langfuse prompt name: `cv-curator-json` (label `production`). The hardcoded fallback is used when Langfuse is unset, the fetch fails, or the strict production text does not request `reply_text`. Publish the fallback text in the same release as a contract change, then recycle cached processes: `npx tsx scripts/create-langfuse-prompts.ts`.
 
 ### 6. Curator LLM
 

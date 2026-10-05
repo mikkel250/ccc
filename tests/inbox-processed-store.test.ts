@@ -142,6 +142,44 @@ describe("inbox processed store", () => {
     }
   });
 
+  it("returns the extract error when claim release throws", async () => {
+    const empty = { payload: { mimeType: "multipart/mixed", parts: [] } };
+    memory.deleteIfValue = async () => {
+      throw new Error("Inbox Redis timed out");
+    };
+    const failed = await extractUnprocessedInboxMessage(ID, empty);
+    assert.deepEqual(failed, {
+      ok: false,
+      error: "Gmail message had no usable text body",
+    });
+    assert.equal(memory.store.has(inboxClaimKey(ID)), true);
+  });
+
+  it("logs and returns the extract error when claim release does not delete", async () => {
+    const empty = { payload: { mimeType: "multipart/mixed", parts: [] } };
+    memory.deleteIfValue = async () => false;
+    const errors: unknown[][] = [];
+    const orig = console.error;
+    console.error = (...args: unknown[]) => {
+      errors.push(args);
+    };
+    try {
+      const failed = await extractUnprocessedInboxMessage(ID, empty);
+      assert.deepEqual(failed, {
+        ok: false,
+        error: "Gmail message had no usable text body",
+      });
+    } finally {
+      console.error = orig;
+    }
+    assert.equal(memory.store.has(inboxClaimKey(ID)), true);
+    assert.ok(
+      errors.some((args) =>
+        args.some((arg) => typeof arg === "string" && arg.includes(ID))
+      )
+    );
+  });
+
   it("returns processed when a mark lands before the claim SET commits", async () => {
     const origSet = memory.set.bind(memory);
     memory.set = async (key, value, opts) => {

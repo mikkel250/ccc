@@ -4,8 +4,9 @@
  * Usage: npx tsx scripts/create-langfuse-prompts.ts
  * Requires LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_BASE_URL in env.
  *
- * Run this in the same release as a curator-contract change. A live production
- * prompt that still emits bare CV JSON is served in preference to the fallback.
+ * Run this in the same release as a curator-contract change, then recycle
+ * processes still inside the prompt cache TTL. A strict production prompt that
+ * does not request reply_text is not served; those processes use the fallback.
  */
 import "dotenv/config";
 import { LangfuseClient } from "@langfuse/client";

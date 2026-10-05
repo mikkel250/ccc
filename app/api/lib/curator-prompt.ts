@@ -21,6 +21,7 @@ const CURATOR_PROMPT_CACHE_TTL_SECONDS = Math.max(
   Math.floor(getEnvNumber("LANGFUSE_CURATOR_PROMPT_CACHE_TTL_SECONDS", 300))
 );
 
+// Keep <output_format> aligned with references/json-curator/master-cv.schema.json.
 const FALLBACK_PROMPT = `<role>
 You are an elite CV/résumé strategist and ATS specialist. You structure every CV using
 Sam Struan's 8-part framework and curate content from the user's Master CV JSON.
@@ -129,8 +130,7 @@ Shape:
   "reply_text": "plain-text recruiter reply email body"
 }
 
-curated_cv MUST match hard constraints in references/json-curator/master-cv.schema.json
-(keep this block synchronized with that schema — do not invent fields):
+curated_cv must use exactly the master CV schema shown in <master_cv_json> (same keys and value types; do not add fields).
 The first non-whitespace character must be \`{\` and the last must be \`}\`.
 No Alignment Snapshot, Change Log, Keyword Bank, cut audit, markdown fences, or
 conversational filler before or after the JSON.
@@ -155,6 +155,23 @@ ${MASTER_CV_JSON_PLACEHOLDER}
 /** Hardcoded fallback (kept in sync with Langfuse prompt cv-curator-json). */
 export function getCuratorPromptFallbackText(): string {
   return FALLBACK_PROMPT;
+}
+
+/**
+ * Strict production text must ask for `{ curated_cv, reply_text }`.
+ * A fetched prompt that does not is the previous bare-CV contract.
+ */
+export function resolveFetchedCuratorPrompt(
+  mode: CurationMode | undefined,
+  fetchedPrompt: string,
+  fallbackPrompt: string
+): { systemPrompt: string; staleStrictContract: boolean } {
+  const requestsReplyWrapper =
+    fetchedPrompt.includes("reply_text") && fetchedPrompt.includes("curated_cv");
+  if (mode !== "flexible" && !requestsReplyWrapper) {
+    return { systemPrompt: fallbackPrompt, staleStrictContract: true };
+  }
+  return { systemPrompt: fetchedPrompt, staleStrictContract: false };
 }
 
 export async function getCuratorPrompt(mode?: CurationMode): Promise<{
@@ -187,8 +204,27 @@ export async function getCuratorPrompt(mode?: CurationMode): Promise<{
       cacheTtlSeconds: CURATOR_PROMPT_CACHE_TTL_SECONDS,
     });
 
+    const resolved = resolveFetchedCuratorPrompt(
+      mode,
+      prompt.prompt,
+      fallbackPrompt
+    );
+    if (resolved.staleStrictContract) {
+      console.warn(
+        `Langfuse prompt "${promptName}" production does not request the strict reply wrapper; using hardcoded fallback`
+      );
+      return {
+        systemPrompt: resolved.systemPrompt,
+        langfusePrompt: {
+          name: promptName,
+          version: 0,
+          isFallback: true,
+        },
+      };
+    }
+
     return {
-      systemPrompt: prompt.prompt,
+      systemPrompt: resolved.systemPrompt,
       langfusePrompt: { name: prompt.name, version: prompt.version },
     };
   } catch (error) {
