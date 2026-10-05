@@ -1,21 +1,12 @@
 import { describe, it, afterEach, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { ServiceError } from "../app/api/lib/errors";
 import {
-  getGmailAuthBindHost,
-  getGmailAuthTimeoutMs,
-  getGmailClientId,
-  getGmailHttpTimeoutMs,
-  getGmailListMaxResults,
-  getGmailOauthScope,
-  getGmailRefreshToken,
-} from "../app/api/lib/gmail-config";
-import {
+  __clearGmailAccessTokenCacheForTest,
   buildGmailAuthUrl,
   exchangeGmailAuthCode,
+  generateGmailPkcePair,
   parseOAuthCallback,
   refreshGmailAccessToken,
-  resolveGmailAccessToken,
 } from "../app/api/lib/gmail-oauth";
 
 const KEYS = [
@@ -27,72 +18,15 @@ const KEYS = [
   "GMAIL_AUTH_BIND_HOST",
   "GMAIL_LIST_MAX_RESULTS",
   "GMAIL_LIST_MAX_RESULTS_LIMIT",
+  "GMAIL_OAUTH_AUTH_URL",
   "GMAIL_OAUTH_TOKEN_URL",
+  "GMAIL_API_BASE_URL",
   "GMAIL_HTTP_TIMEOUT_MS",
   "GMAIL_AUTH_TIMEOUT_MS",
+  "GMAIL_TOKEN_CACHE_SAFETY_MARGIN_MS",
 ] as const;
 
 const saved: Record<string, string | undefined> = {};
-
-describe("gmail-config", () => {
-  beforeEach(() => {
-    for (const key of KEYS) {
-      saved[key] = process.env[key];
-    }
-    process.env.GMAIL_CLIENT_ID = "client-id";
-    process.env.GMAIL_CLIENT_SECRET = "client-secret";
-    process.env.GMAIL_REFRESH_TOKEN = "refresh-token";
-    process.env.GMAIL_RECRUITER_LABEL = "Recruiter";
-  });
-
-  afterEach(() => {
-    for (const key of KEYS) {
-      const previous = saved[key];
-      if (previous === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = previous;
-      }
-    }
-  });
-
-  it("throws ServiceError naming the key when GMAIL_CLIENT_ID is missing", () => {
-    delete process.env.GMAIL_CLIENT_ID;
-    assert.throws(() => getGmailClientId(), ServiceError);
-    assert.throws(() => getGmailClientId(), /GMAIL_CLIENT_ID/);
-  });
-
-  it("throws ServiceError naming the key when GMAIL_REFRESH_TOKEN is missing", () => {
-    delete process.env.GMAIL_REFRESH_TOKEN;
-    assert.throws(() => getGmailRefreshToken(), /GMAIL_REFRESH_TOKEN/);
-  });
-
-  it("defaults OAuth scope to gmail.modify", () => {
-    delete process.env.GMAIL_OAUTH_SCOPE;
-    assert.equal(
-      getGmailOauthScope(),
-      "https://www.googleapis.com/auth/gmail.modify"
-    );
-  });
-
-  it("rejects a non-loopback GMAIL_AUTH_BIND_HOST", () => {
-    process.env.GMAIL_AUTH_BIND_HOST = "0.0.0.0";
-    assert.throws(() => getGmailAuthBindHost(), /127\.0\.0\.1/);
-  });
-
-  it("caps list maxResults at the configured limit", () => {
-    process.env.GMAIL_LIST_MAX_RESULTS = "9999";
-    process.env.GMAIL_LIST_MAX_RESULTS_LIMIT = "100";
-    assert.equal(getGmailListMaxResults(), 100);
-  });
-
-  it("reads GMAIL_HTTP_TIMEOUT_MS and GMAIL_AUTH_TIMEOUT_MS from env", () => {
-    process.env.GMAIL_HTTP_TIMEOUT_MS = "1234";
-    process.env.GMAIL_AUTH_TIMEOUT_MS = "5678";
-    assert.equal(getGmailHttpTimeoutMs(), 1234);
-    assert.equal(getGmailAuthTimeoutMs(), 5678);
-  });
-});
 
 describe("gmail-oauth", () => {
   beforeEach(() => {
@@ -103,6 +37,7 @@ describe("gmail-oauth", () => {
     process.env.GMAIL_CLIENT_SECRET = "client-secret";
     process.env.GMAIL_REFRESH_TOKEN = "refresh-token";
     process.env.GMAIL_OAUTH_TOKEN_URL = "https://oauth.example.test/token";
+    __clearGmailAccessTokenCacheForTest();
   });
 
   afterEach(() => {
@@ -116,7 +51,8 @@ describe("gmail-oauth", () => {
     }
   });
 
-  it("builds an offline consent URL with gmail.modify", () => {
+  it("builds an offline consent URL with gmail.modify and PKCE", () => {
+    const { codeVerifier, codeChallenge } = generateGmailPkcePair();
     const url = new URL(
       buildGmailAuthUrl({
         clientId: "client-id",
@@ -124,16 +60,20 @@ describe("gmail-oauth", () => {
         scope: "https://www.googleapis.com/auth/gmail.modify",
         state: "abc",
         authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+        codeChallenge,
       })
     );
     assert.equal(url.searchParams.get("access_type"), "offline");
     assert.equal(url.searchParams.get("prompt"), "consent");
     assert.equal(url.searchParams.get("state"), "abc");
     assert.equal(url.searchParams.get("redirect_uri"), "http://127.0.0.1:1234");
+    assert.equal(url.searchParams.get("code_challenge"), codeChallenge);
+    assert.equal(url.searchParams.get("code_challenge_method"), "S256");
     assert.match(
       url.searchParams.get("scope") ?? "",
       /gmail\.modify/
     );
+    assert.ok(codeVerifier.length >= 43);
   });
 
   it("rejects a callback with a mismatched state", () => {
@@ -154,15 +94,48 @@ describe("gmail-oauth", () => {
     }
   });
 
+  it("rejects a callback with error=access_denied", () => {
+    const url = new URL(
+      "http://127.0.0.1:1234/?error=access_denied&state=s"
+    );
+    const result = parseOAuthCallback(url, "s");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /authorization failed/);
+      assert.doesNotMatch(result.error, /access_denied/);
+    }
+  });
+
+  it("rejects a matching state with a missing code", () => {
+    const url = new URL("http://127.0.0.1:1234/?state=s");
+    const result = parseOAuthCallback(url, "s");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /missing authorization code/);
+    }
+  });
+
+  it("rejects a matching state with a blank code", () => {
+    const url = new URL("http://127.0.0.1:1234/?code=%20&state=s");
+    const result = parseOAuthCallback(url, "s");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /missing authorization code/);
+    }
+  });
+
   it("exchanges an auth code and requires refresh_token", async () => {
+    const { codeVerifier } = generateGmailPkcePair();
     const result = await exchangeGmailAuthCode({
       code: "the-code",
       redirectUri: "http://127.0.0.1:1234",
+      codeVerifier,
       fetchImpl: async (_input, init) => {
         assert.equal(init?.method, "POST");
         const body = String(init?.body);
         assert.match(body, /grant_type=authorization_code/);
         assert.match(body, /code=the-code/);
+        assert.match(body, /code_verifier=/);
         return new Response(
           JSON.stringify({
             access_token: "access",
@@ -179,9 +152,11 @@ describe("gmail-oauth", () => {
   });
 
   it("fails closed when the auth-code grant omits refresh_token", async () => {
+    const { codeVerifier } = generateGmailPkcePair();
     const result = await exchangeGmailAuthCode({
       code: "the-code",
       redirectUri: "http://127.0.0.1:1234",
+      codeVerifier,
       fetchImpl: async () =>
         new Response(JSON.stringify({ access_token: "access" }), {
           status: 200,
@@ -190,33 +165,6 @@ describe("gmail-oauth", () => {
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.match(result.error, /refresh_token/);
-    }
-  });
-
-  it("returns a provided access token without posting a refresh", async () => {
-    const result = await resolveGmailAccessToken({
-      accessToken: "already-fresh",
-      fetchImpl: async () => {
-        throw new Error("token POST must not run when accessToken is set");
-      },
-    });
-    assert.equal(result.ok, true);
-    if (result.ok) {
-      assert.equal(result.data.accessToken, "already-fresh");
-    }
-  });
-
-  it("refreshes when the provided access token is blank", async () => {
-    const result = await resolveGmailAccessToken({
-      accessToken: "   ",
-      fetchImpl: async () =>
-        new Response(JSON.stringify({ access_token: "new-access" }), {
-          status: 200,
-        }),
-    });
-    assert.equal(result.ok, true);
-    if (result.ok) {
-      assert.equal(result.data.accessToken, "new-access");
     }
   });
 
@@ -249,35 +197,77 @@ describe("gmail-oauth", () => {
     }
   });
 
-  it("rejects an OAuth error callback and a missing code", () => {
-    const denied = parseOAuthCallback(
-      new URL("http://127.0.0.1:1234/?error=access_denied&state=expected"),
-      "expected"
-    );
-    assert.equal(denied.ok, false);
-    if (!denied.ok) {
-      assert.match(denied.error, /authorization failed/);
-    }
-    const missing = parseOAuthCallback(
-      new URL("http://127.0.0.1:1234/?state=expected"),
-      "expected"
-    );
-    assert.equal(missing.ok, false);
-    if (!missing.ok) {
-      assert.match(missing.error, /missing authorization code/);
-    }
+  it("rejects token redirects with the normalized request error", async () => {
+    let redirect: RequestRedirect | undefined;
+    const result = await refreshGmailAccessToken({
+      fetchImpl: async (_input, init) => {
+        redirect = init?.redirect;
+        throw new TypeError("redirect rejected");
+      },
+    });
+    assert.equal(redirect, "error");
+    assert.deepEqual(result, {
+      ok: false,
+      error: "Gmail token request failed",
+    });
   });
 
-  it("rejects a token payload that omits access_token", async () => {
+  it("fails closed when the token response is not valid JSON", async () => {
+    const { codeVerifier } = generateGmailPkcePair();
     const result = await exchangeGmailAuthCode({
       code: "the-code",
       redirectUri: "http://127.0.0.1:1234",
+      codeVerifier,
       fetchImpl: async () =>
-        new Response(JSON.stringify({ refresh_token: "r" }), { status: 200 }),
+        ({
+          ok: true,
+          status: 200,
+          json: async () => {
+            throw new SyntaxError("Unexpected token");
+          },
+        }) as unknown as Response,
+    });
+    assert.deepEqual(result, {
+      ok: false,
+      error: "Gmail token response was not valid JSON",
+    });
+  });
+
+  it("fails closed when the token JSON omits access_token", async () => {
+    const result = await refreshGmailAccessToken({
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ token_type: "Bearer" }), { status: 200 }),
     });
     assert.equal(result.ok, false);
     if (!result.ok) {
-      assert.match(result.error, /access_token/);
+      assert.match(result.error, /missing access_token/);
+    }
+  });
+
+  it("fails closed when the token body stalls after headers", async () => {
+    process.env.GMAIL_HTTP_TIMEOUT_MS = "20";
+    const result = await refreshGmailAccessToken({
+      fetchImpl: async (_input, init) => {
+        const signal = init?.signal;
+        return {
+          ok: true,
+          status: 200,
+          json: () =>
+            new Promise((_resolve, reject) => {
+              const fail = () =>
+                reject(new DOMException("Aborted", "AbortError"));
+              if (signal?.aborted) {
+                fail();
+                return;
+              }
+              signal?.addEventListener("abort", fail);
+            }),
+        } as unknown as Response;
+      },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /token request failed/);
     }
   });
 
@@ -306,26 +296,60 @@ describe("gmail-oauth", () => {
     }
   });
 
-  it("fails closed when the token body stalls after headers", async () => {
-    process.env.GMAIL_HTTP_TIMEOUT_MS = "50";
-    const result = await refreshGmailAccessToken({
-      fetchImpl: async (_input, init) => {
-        const response = new Response("{}", { status: 200 });
-        response.json = () =>
-          new Promise((_resolve, reject) => {
-            const abort = () => reject(new DOMException("Aborted", "AbortError"));
-            if (init?.signal?.aborted) {
-              abort();
-              return;
-            }
-            init?.signal?.addEventListener("abort", abort, { once: true });
-          });
-        return response;
-      },
-    });
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.match(result.error, /token request failed/);
+  it("reuses a cached access token until the safety margin before expiry", async () => {
+    process.env.GMAIL_TOKEN_CACHE_SAFETY_MARGIN_MS = "1000";
+    let tokenPosts = 0;
+    const fetchImpl = async () => {
+      tokenPosts += 1;
+      return new Response(
+        JSON.stringify({ access_token: "cached-access", expires_in: 3600 }),
+        { status: 200 }
+      );
+    };
+    const first = await refreshGmailAccessToken({ fetchImpl });
+    const second = await refreshGmailAccessToken({ fetchImpl });
+    assert.equal(first.ok, true);
+    assert.equal(second.ok, true);
+    if (first.ok && second.ok) {
+      assert.equal(first.data.accessToken, "cached-access");
+      assert.equal(second.data.accessToken, "cached-access");
     }
+    assert.equal(tokenPosts, 1);
+  });
+
+  it("refreshes again once remaining lifetime is within the safety margin", async () => {
+    process.env.GMAIL_TOKEN_CACHE_SAFETY_MARGIN_MS = "2000";
+    let tokenPosts = 0;
+    const fetchImpl = async () => {
+      tokenPosts += 1;
+      return new Response(
+        JSON.stringify({
+          access_token: tokenPosts === 1 ? "first-access" : "second-access",
+          expires_in: 10,
+        }),
+        { status: 200 }
+      );
+    };
+    const first = await refreshGmailAccessToken({
+      fetchImpl,
+      nowMs: 0,
+    });
+    const stillCached = await refreshGmailAccessToken({
+      fetchImpl,
+      nowMs: 7_999,
+    });
+    const afterMargin = await refreshGmailAccessToken({
+      fetchImpl,
+      nowMs: 8_000,
+    });
+    assert.equal(first.ok, true);
+    assert.equal(stillCached.ok, true);
+    assert.equal(afterMargin.ok, true);
+    if (first.ok && stillCached.ok && afterMargin.ok) {
+      assert.equal(first.data.accessToken, "first-access");
+      assert.equal(stillCached.data.accessToken, "first-access");
+      assert.equal(afterMargin.data.accessToken, "second-access");
+    }
+    assert.equal(tokenPosts, 2);
   });
 });

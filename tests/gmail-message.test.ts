@@ -52,6 +52,86 @@ describe("parseGmailReplyHeaders", () => {
     assert.equal(result.ok, false);
   });
 
+  it("fails closed when threadId is missing", () => {
+    const result = parseGmailReplyHeaders({
+      payload: {
+        headers: [{ name: "From", value: "recruiter@example.com" }],
+      },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /threadId/);
+    }
+  });
+
+  it("fails closed when threadId is blank", () => {
+    const result = parseGmailReplyHeaders({
+      threadId: "  ",
+      payload: {
+        headers: [{ name: "From", value: "recruiter@example.com" }],
+      },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /threadId/);
+    }
+  });
+
+  it("fails closed when payload.headers is missing", () => {
+    const result = parseGmailReplyHeaders({
+      threadId: "t1",
+      payload: {},
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /From/);
+    }
+  });
+
+  it("fails closed when From is blank", () => {
+    const result = parseGmailReplyHeaders({
+      threadId: "t1",
+      payload: { headers: [{ name: "From", value: "   " }] },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /From/);
+    }
+  });
+
+  it("fails closed when From is not a string", () => {
+    const result = parseGmailReplyHeaders({
+      threadId: "t1",
+      payload: { headers: [{ name: "From", value: 42 }] },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /From/);
+    }
+  });
+
+  it("fails closed when Reply-To is blank and From is missing", () => {
+    const result = parseGmailReplyHeaders({
+      threadId: "t1",
+      payload: { headers: [{ name: "Reply-To", value: "" }] },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /From/);
+    }
+  });
+
+  it("fails closed when Reply-To is not a string and From is missing", () => {
+    const result = parseGmailReplyHeaders({
+      threadId: "t1",
+      payload: { headers: [{ name: "Reply-To", value: null }] },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /From/);
+    }
+  });
+
   it("prefers Reply-To over From", () => {
     const result = parseGmailReplyHeaders({
       threadId: "t1",
@@ -86,6 +166,7 @@ describe("parseGmailReplyHeaders", () => {
       assert.equal(result.headers.to.includes("\r"), false);
       assert.equal(result.headers.subject.includes("\n"), false);
       assert.equal(result.headers.inReplyTo?.includes("\r"), false);
+      assert.equal(result.headers.inReplyTo?.includes("\n"), false);
     }
   });
 });

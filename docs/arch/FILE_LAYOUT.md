@@ -35,21 +35,25 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── markdown-docx.ts  # Legacy markdown → .docx (not tailor hot path)
 │           ├── cv-prompt.ts      # Legacy markdown tailor prompt (not hot path)
 │           ├── redis.ts          # Shared Upstash Redis client singleton
-│           ├── inbox-config.ts   # Inbox Redis prefix / claim+processed TTLs / scan backoff
-│           ├── inbox-processed-store.ts # SET NX claim vs token-owned processed mark
-│           ├── inbox-tailor.ts   # tailorLabeledMessage — claim+extract then runTailorCore
-│           ├── inbox-scan.ts     # list → tailor → draft → processed (inbox:scan job)
-│           ├── gmail-body.ts     # Gmail payload → JD (text/plain else html-to-text)
 │           ├── gmail-config.ts   # Gmail OAuth/API env getters
-│           ├── gmail-oauth.ts    # Authorize URL, callback, token exchange/refresh/resolve
+│           ├── gmail-oauth.ts    # Authorize URL, PKCE, callback, token exchange/refresh
 │           ├── gmail-list.ts     # Recruiter-label resolve + messages.list
 │           ├── gmail-http.ts     # Injected-fetch Gmail JSON GET/POST + shared JSON/MIME helpers
 │           ├── gmail-message.ts  # messages.get + reply headers
 │           ├── gmail-drafts.ts   # RFC2822 MIME + drafts.create / thread reuse
+│           ├── gmail-body.ts     # Gmail payload → JD (text/plain else html-to-text)
+│           ├── inbox-config.ts   # Inbox Redis prefix / claim+processed TTLs / scan backoff
+│           ├── inbox-processed-store.ts # SET NX message claim, thread claim, token-owned processed mark
+│           ├── inbox-tailor.ts   # tailorLabeledMessage — claim+extract then runTailorCore
+│           ├── inbox-scan.ts     # list → tailor → one thread draft → processed (inbox:scan job)
 │           ├── tailor-pipeline.ts # HTTP adapter (Bearer + rate-limit) + runTailorCore (no Bearer/rate-limit)
 │           ├── tailor-cv-deps.ts # Mockable pipeline dep bag
 │           ├── rate-limit.ts     # Dual IP + secret-hash rate limiter
 │           ├── tailor-cv-validation.ts  # Request body validation
+│           ├── errors.ts             # RateLimitError / ServiceError
+│           ├── eval-parse.ts         # extractStructuredJson (untrusted LLM text)
+│           ├── eval-defaults.ts      # Historical eval default CSV/model constants
+│           ├── eval-model-validation.ts
 │           ├── eval-schema.ts     # Historical eval types/prompts (markdown-era)
 │           ├── eval-extract.ts    # JD metadata extraction (legacy eval helpers)
 │           ├── eval-format.ts     # 8-part format compliance checker
@@ -62,7 +66,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── providers.ts              # Provider type + KNOWN_PROVIDERS leaf registry
 │   └── formatDate.ts             # Date formatting utility
 ├── scripts/
-│   ├── create-langfuse-prompts.ts  # Upload prompts to Langfuse
+│   ├── create-langfuse-prompts.ts  # Publish cv-curator-json (production) from the fallback text
 │   ├── e2e-tailor-cv.ts           # npm run smoke — live API + artifacts
 │   ├── gmail-auth.ts              # npm run gmail:auth — mint GMAIL_REFRESH_TOKEN
 │   ├── gmail-list.ts              # npm run gmail:list — labeled message ids

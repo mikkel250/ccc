@@ -98,6 +98,7 @@ Fast, no server, no API keys:
 ```bash
 npm test
 npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
+npm run lint              # eslint; production `any` and Jest/Vitest/Sinon imports are errors
 ```
 
 | File | Covers |
@@ -114,16 +115,18 @@ npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 | `tests/curator-prompt.test.ts` | Curator prompt contract |
 | `tests/knowledge-base.test.ts` | Legacy KB helpers (not tailor hot path) |
 | `tests/rate-limit.test.ts` | Dual IP + secret rate limits |
-| `tests/gmail-body.test.ts` | Gmail payload → JD (`text/plain` else html-to-text) |
-| `tests/inbox-processed-store.test.ts` | Claim SET NX vs token-owned processed mark (missing/stolen claim cannot mark) / crash recovery / Redis timeout results |
-| `tests/inbox-tailor.test.ts` | In-process strict tailor from labeled payload; lease renewal abort on lost claim |
-| `tests/gmail-oauth.test.ts` | Gmail OAuth URL, callback, token exchange/refresh/resolve |
+| `tests/gmail-oauth.test.ts` | Gmail OAuth URL, PKCE, callback, token exchange/refresh |
+| `tests/gmail-http.test.ts` | Gmail JSON fetch timeout + shared JSON/MIME helpers |
 | `tests/gmail-list.test.ts` | Recruiter-label resolve + `messages.list` |
 | `tests/gmail-auth.test.ts` | `gmail:auth` / `gmail:list` CLI helpers |
+| `tests/gmail-body.test.ts` | Gmail payload → JD (`text/plain` else html-to-text) |
 | `tests/gmail-message.test.ts` | Reply headers from a Gmail message resource |
 | `tests/gmail-drafts.test.ts` | MIME + draft create vs thread reuse |
-| `tests/inbox-scan.test.ts` | Scan job: draft, reuse, 422 skip, claim release on tailor/draft failure, processed skip, one token refresh per unprocessed message |
-| `tests/inbox-scan-railway.test.ts` | Railway cron toml vs always-on API toml
+| `tests/inbox-processed-store.test.ts` | Claim SET NX vs token-owned processed mark; thread claim; crash recovery / Redis timeout |
+| `tests/inbox-tailor.test.ts` | In-process strict tailor from labeled payload; lease renewal abort on lost claim |
+| `tests/inbox-scan.test.ts` | Scan job: one thread draft, reuse, 422 skip, processed skip |
+| `tests/inbox-scan-cli.test.ts` | `inbox:scan` preloads the master CV and exits non-zero on tailor, draft, or fetch failure |
+| `tests/inbox-scan-railway.test.ts` | Railway cron toml vs always-on API toml |
 | `tests/route.test.ts` | Auth, curator cutover, dual response |
 | `tests/tailor-cv-validation.test.ts` | Request body + JD size validation |
 
@@ -152,9 +155,9 @@ Requires a running server and `TAILOR_API_KEY`. Master CV (`MASTER_CV_JSON` / `M
 Requires a Google Cloud Desktop OAuth client with the Gmail API enabled. Tokens stay in env; do not commit them.
 
 ```bash
-npm run gmail:auth   # loopback consent; prints GMAIL_REFRESH_TOKEN=
+npm run gmail:auth   # loopback consent; writes GMAIL_REFRESH_TOKEN= to a mode-0600 file and prints that path
 npm run gmail:list   # lists { id, threadId } for GMAIL_RECRUITER_LABEL
-npm run inbox:scan   # preload MASTER_CV_* in this process, then tailor labeled mail; create or reuse a Gmail reply draft
+npm run inbox:scan   # requires INBOX_SCAN_ENABLED=1; preloads MASTER_CV_* in this process, then tailor labeled mail; create or reuse a Gmail reply draft
 ```
 
 Railway (M8.6): add a **second service** from this repo, set its config-as-code path to `railway.inbox-scan.toml`, and copy the same secrets (`GMAIL_*`, `MASTER_CV_*`, LLM keys, Upstash). That service runs `npm run inbox:scan` at 05:00 UTC and must exit. Do not put `cronSchedule` on the always-on API `railway.toml`.

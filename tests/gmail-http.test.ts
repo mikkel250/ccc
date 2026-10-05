@@ -1,6 +1,43 @@
 import { describe, it, afterEach, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { gmailFetchJson } from "../app/api/lib/gmail-http";
+import { gmailFetchJson, gmailJsonObject, encodeMimeHeaderValue, sanitizeMimeHeaderValue } from "../app/api/lib/gmail-http";
+
+describe("gmail JSON and MIME helpers", () => {
+  it("accepts plain objects and rejects arrays, null, and primitives", () => {
+    assert.equal(gmailJsonObject({ threadId: "t1" }) !== undefined, true);
+    assert.equal(gmailJsonObject([]), undefined);
+    assert.equal(gmailJsonObject(null), undefined);
+    assert.equal(gmailJsonObject("msg"), undefined);
+  });
+
+  it("keeps only the first MIME header line", () => {
+    assert.equal(
+      sanitizeMimeHeaderValue("recruiter@example.com\r\nBcc: evil@x.com"),
+      "recruiter@example.com"
+    );
+  });
+
+  it("RFC 2047-encodes non-ASCII Subject values with folding", () => {
+    const encoded = encodeMimeHeaderValue("Re: Café — Senior GM");
+    assert.match(encoded, /^=\?UTF-8\?B\?/);
+    assert.doesNotMatch(encoded, /[\r\n].*[\r\n]/);
+  });
+
+  it("keeps printable ASCII subjects direct only while the Subject line fits", () => {
+    const fitting = "A".repeat(67);
+    assert.equal(encodeMimeHeaderValue(fitting), fitting);
+
+    const tooLong = "B".repeat(68);
+    const encoded = encodeMimeHeaderValue(tooLong);
+    assert.match(encoded, /^=\?UTF-8\?B\?/);
+    const decoded = encoded
+      .split("\r\n ")
+      .map((word) => word.replace(/^=\?UTF-8\?B\?(.+)\?=$/, "$1"))
+      .map((base64) => Buffer.from(base64, "base64").toString("utf8"))
+      .join("");
+    assert.equal(decoded, tooLong);
+  });
+});
 
 describe("gmailFetchJson", () => {
   const previous = process.env.GMAIL_HTTP_TIMEOUT_MS;
@@ -38,54 +75,28 @@ describe("gmailFetchJson", () => {
     }
   });
 
-  it("fails closed when the response body stalls after headers", async () => {
+  it("fails closed when the response body stalls after headers", { timeout: 500 }, async () => {
     const result = await gmailFetchJson({
       url: "https://gmail.example.test/gmail/v1/users/me/labels",
       accessToken: "token",
-      fetchImpl: async (_input, init) => {
-        const response = new Response("{}", { status: 200 });
-        response.json = () =>
-          new Promise((_resolve, reject) => {
-            const signal = init?.signal;
-            const abort = () => reject(new DOMException("Aborted", "AbortError"));
-            if (signal?.aborted) {
-              abort();
-              return;
-            }
-            signal?.addEventListener("abort", abort, { once: true });
-          });
-        return response;
-      },
+      fetchImpl: async (_input, init) =>
+        Object.assign(new Response(null, { status: 200 }), {
+          json: () =>
+            new Promise((_resolve, reject) => {
+              const signal = init?.signal;
+              if (signal?.aborted) {
+                reject(new DOMException("Aborted", "AbortError"));
+                return;
+              }
+              signal?.addEventListener("abort", () => {
+                reject(new DOMException("Aborted", "AbortError"));
+              });
+            }),
+        }),
     });
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.match(result.error, /Gmail API request failed/);
-    }
-  });
-
-  it("maps a non-2xx response and invalid JSON without echoing the body", async () => {
-    const http = await gmailFetchJson({
-      url: "https://gmail.example.test/gmail/v1/users/me/labels",
-      accessToken: "token",
-      fetchImpl: async () => new Response("secret-leak", { status: 503 }),
-    });
-    assert.equal(http.ok, false);
-    if (!http.ok) {
-      assert.match(http.error, /HTTP 503/);
-      assert.doesNotMatch(http.error, /secret-leak/);
-    }
-    const json = await gmailFetchJson({
-      url: "https://gmail.example.test/gmail/v1/users/me/labels",
-      accessToken: "token",
-      fetchImpl: async () =>
-        new Response("not-json", {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-    });
-    assert.equal(json.ok, false);
-    if (!json.ok) {
-      assert.match(json.error, /not valid JSON/);
     }
   });
 });

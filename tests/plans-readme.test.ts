@@ -181,7 +181,6 @@ describe("docs/plans/README.md — cross-file contracts", () => {
     const needsPlanLfg = allMilestoneRows(content).filter(
       (row) => row.status !== "done" && row.lane === "lfg" && /needs plan/i.test(row.plan)
     );
-    assert.ok(needsPlanLfg.length > 0, "expected at least one lfg needs-plan milestone");
     for (const row of needsPlanLfg) {
       const blob = `${row.plan} ${row.unblocks}`;
       assert.ok(

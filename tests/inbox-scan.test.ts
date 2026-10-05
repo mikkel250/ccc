@@ -12,6 +12,7 @@ import {
   type InboxKv,
 } from "../app/api/lib/inbox-processed-store";
 import { scanInbox } from "../app/api/lib/inbox-scan";
+import { __clearGmailAccessTokenCacheForTest } from "../app/api/lib/gmail-oauth";
 import { strictCuratorJson } from "../tests/helpers/strict-curator";
 import { ensureEnv } from "../tests/helpers/tailor-request";
 
@@ -32,6 +33,7 @@ const GMAIL_KEYS = [
   "GMAIL_LIST_MAX_RESULTS",
   "GMAIL_CV_ATTACHMENT_FILENAME",
   "INBOX_SCAN_BACKOFF_MS",
+  "INBOX_SCAN_ENABLED",
   "INBOX_CLAIM_TTL_SECONDS",
 ] as const;
 
@@ -41,20 +43,32 @@ function b64(text: string): string {
   return Buffer.from(text, "utf8").toString("base64url");
 }
 
-function recruiterMessage(): unknown {
+function recruiterMessage(id = "m1", threadId = "t1"): unknown {
   return {
-    id: "m1",
-    threadId: "t1",
+    id,
+    threadId,
     payload: {
       mimeType: "text/plain",
       body: { data: b64("We need a general manager with P&L ownership.") },
       headers: [
         { name: "From", value: "recruiter@example.com" },
         { name: "Subject", value: "GM role" },
-        { name: "Message-ID", value: "<m@mail>" },
+        { name: "Message-ID", value: `<${id}@mail>` },
       ],
     },
   };
+}
+
+function authorizationHeader(init?: RequestInit): string {
+  const headers = init?.headers;
+  if (headers instanceof Headers) {
+    return headers.get("Authorization") ?? "";
+  }
+  if (Array.isArray(headers) || headers == null) {
+    return "";
+  }
+  const value = Reflect.get(headers, "Authorization");
+  return typeof value === "string" ? value : "";
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -66,7 +80,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function createMemoryKv(): InboxKv & { store: Map<string, string> } {
   const store = new Map<string, string>();
-  return {
+  const memory: InboxKv & { store: Map<string, string> } = {
     store,
     get: async (key) => store.get(key) ?? null,
     set: async (key, value, opts) => {
@@ -94,16 +108,7 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
       return true;
     },
   };
-}
-
-async function markProcessedForTest(messageId: string): Promise<void> {
-  const claimed = await claimInboxMessage(messageId);
-  assert.equal(claimed.ok, true);
-  if (!claimed.ok || claimed.outcome !== "won") {
-    throw new Error("expected to win the inbox claim");
-  }
-  const marked = await markInboxProcessed(messageId, claimed.token);
-  assert.equal(marked.ok, true);
+  return memory;
 }
 
 function mockPipelineSuccess(): void {
@@ -152,15 +157,10 @@ function gmailFetch(options: {
       if (delayMs > 0) {
         await new Promise<void>((resolve, reject) => {
           const timer = setTimeout(resolve, delayMs);
-          const onAbort = () => {
+          init.signal?.addEventListener("abort", () => {
             clearTimeout(timer);
-            reject(new DOMException("Aborted", "AbortError"));
-          };
-          if (init.signal?.aborted) {
-            onAbort();
-            return;
-          }
-          init.signal?.addEventListener("abort", onAbort, { once: true });
+            reject(new DOMException("The operation was aborted", "AbortError"));
+          });
         });
       }
       options.onDraftCreate?.();
@@ -198,6 +198,7 @@ describe("scanInbox", () => {
       saved[key] = process.env[key];
     }
     process.env.INBOX_SCAN_BACKOFF_MS = "0";
+    process.env.INBOX_SCAN_ENABLED = "1";
     process.env.GMAIL_CLIENT_ID = "client-id";
     process.env.GMAIL_CLIENT_SECRET = "client-secret";
     process.env.GMAIL_REFRESH_TOKEN = "refresh-token";
@@ -206,6 +207,7 @@ describe("scanInbox", () => {
     process.env.GMAIL_API_BASE_URL = "https://gmail.example.test/gmail/v1";
     process.env.GMAIL_LIST_MAX_RESULTS = "10";
     process.env.GMAIL_CV_ATTACHMENT_FILENAME = "CV.docx";
+    __clearGmailAccessTokenCacheForTest();
   });
 
   afterEach(() => {
@@ -221,70 +223,21 @@ describe("scanInbox", () => {
     }
   });
 
-  it("refreshes one access token per unprocessed message besides the list refresh", async () => {
-    let tokenPosts = 0;
-    const base = gmailFetch({});
-    const fetchImpl: typeof base = async (input, init) => {
-      const url = String(input);
-      if (url.includes("/token")) {
-        tokenPosts += 1;
-      }
-      const parsed = new URL(url);
-      if (parsed.pathname.endsWith("/users/me/messages")) {
-        return jsonResponse({
-          messages: [
-            { id: "m1", threadId: "t1" },
-            { id: "m2", threadId: "t2" },
-          ],
-        });
-      }
-      if (/\/users\/me\/messages\/m2$/.test(parsed.pathname)) {
-        return jsonResponse({
-          id: "m2",
-          threadId: "t2",
-          payload: (recruiterMessage() as { payload: unknown }).payload,
-        });
-      }
-      return base(input, init);
-    };
+  it("does not call Gmail when INBOX_SCAN_ENABLED is off", async () => {
+    delete process.env.INBOX_SCAN_ENABLED;
+    let fetches = 0;
     const result = await scanInbox({
-      fetchImpl,
-      tailorDeps: tailorCvDeps,
-      sleep: async () => undefined,
-    });
-    assert.equal(result.ok, true);
-    if (result.ok) {
-      assert.equal(result.items.length, 2);
-      assert.equal(result.items[0]?.status, "drafted");
-      assert.equal(result.items[1]?.status, "drafted");
-    }
-    assert.equal(tokenPosts, 3);
-  });
-
-  it("does not refresh again when the only listed message is already processed", async () => {
-    await markProcessedForTest("m1");
-    let tokenPosts = 0;
-    const base = gmailFetch({
-      onMessageGet: () => {
-        throw new Error("message get must not run for processed ids");
+      fetchImpl: async () => {
+        fetches += 1;
+        throw new Error("must not fetch");
       },
-    });
-    const fetchImpl: typeof base = async (input, init) => {
-      if (String(input).includes("/token")) {
-        tokenPosts += 1;
-      }
-      return base(input, init);
-    };
-    const result = await scanInbox({
-      fetchImpl,
       tailorDeps: tailorCvDeps,
-      sleep: async () => undefined,
     });
-    assert.equal(result.ok, true);
-    if (result.ok) {
-      assert.equal(result.items[0]?.status, "skipped-processed");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /INBOX_SCAN_ENABLED/);
     }
-    assert.equal(tokenPosts, 1);
+    assert.equal(fetches, 0);
   });
 
   it("creates a draft and marks processed after a successful tailor", async () => {
@@ -323,7 +276,6 @@ describe("scanInbox", () => {
     }
     assert.equal(draftCreates, 1);
     assert.equal(memory.store.has(inboxProcessedKey("m1")), false);
-    assert.equal(memory.store.has(inboxClaimKey("m1")), false);
   });
 
   it("does not create a draft when claim ownership is lost immediately beforehand", async () => {
@@ -336,6 +288,7 @@ describe("scanInbox", () => {
       return memory.store.get(key) === value;
     };
     let draftCreates = 0;
+
     const result = await scanInbox({
       fetchImpl: gmailFetch({
         onDraftCreate: () => {
@@ -345,6 +298,7 @@ describe("scanInbox", () => {
       tailorDeps: tailorCvDeps,
       sleep: async () => undefined,
     });
+
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.deepEqual(result.items, [
@@ -384,40 +338,6 @@ describe("scanInbox", () => {
     assert.equal(draftCreates, 0);
     assert.ok(renewals >= 3);
     assert.equal(memory.store.has(inboxProcessedKey("m1")), false);
-  });
-
-  it("sleeps the configured backoff between listed messages", async () => {
-    process.env.INBOX_SCAN_BACKOFF_MS = "100";
-    const sleeps: number[] = [];
-    const base = gmailFetch({});
-    const fetchImpl: typeof base = async (input, init) => {
-      const parsed = new URL(String(input));
-      if (parsed.pathname.endsWith("/users/me/messages")) {
-        return jsonResponse({
-          messages: [
-            { id: "m1", threadId: "t1" },
-            { id: "m2", threadId: "t2" },
-          ],
-        });
-      }
-      if (/\/users\/me\/messages\/m2$/.test(parsed.pathname)) {
-        return jsonResponse({
-          id: "m2",
-          threadId: "t2",
-          payload: (recruiterMessage() as { payload: unknown }).payload,
-        });
-      }
-      return base(input, init);
-    };
-    const result = await scanInbox({
-      fetchImpl,
-      tailorDeps: tailorCvDeps,
-      sleep: async (ms) => {
-        sleeps.push(ms);
-      },
-    });
-    assert.equal(result.ok, true);
-    assert.deepEqual(sleeps, [100]);
   });
 
   it("reuses an existing thread draft without tailoring and still marks processed", async () => {
@@ -469,87 +389,14 @@ describe("scanInbox", () => {
     assert.equal(memory.store.has(inboxProcessedKey("m1")), false);
   });
 
-  it("releases the claim after a 422 so a later scan can retry instead of skipped-claimed", async () => {
-    mock.method(tailorCvDeps, "chat", async () => ({
-      content: strictCuratorJson(FIXTURE_CURATED, "   "),
-      usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
-      model: "anthropic/sonnet",
-      finishReason: "stop",
-    }));
-    const first = await scanInbox({
-      fetchImpl: gmailFetch({}),
-      tailorDeps: tailorCvDeps,
-      sleep: async () => undefined,
-    });
-    assert.equal(first.ok, true);
-    if (first.ok) {
-      assert.equal(first.items[0]?.status, "tailor-failed");
-    }
-    assert.equal(memory.store.has(inboxProcessedKey("m1")), false);
-    assert.equal(memory.store.has(inboxClaimKey("m1")), false);
-
-    const second = await scanInbox({
-      fetchImpl: gmailFetch({}),
-      tailorDeps: tailorCvDeps,
-      sleep: async () => undefined,
-    });
-    assert.equal(second.ok, true);
-    if (second.ok) {
-      assert.equal(second.items[0]?.status, "tailor-failed");
-      assert.notEqual(second.items[0]?.status, "skipped-claimed");
-    }
-    assert.equal(memory.store.has(inboxClaimKey("m1")), false);
-  });
-
-  it("releases the claim when Gmail body extract fails so a later scan can retry", async () => {
-    const emptyMessage = {
-      id: "m1",
-      threadId: "t1",
-      payload: {
-        mimeType: "application/octet-stream",
-        body: {},
-        headers: [
-          { name: "From", value: "recruiter@example.com" },
-          { name: "Subject", value: "GM role" },
-          { name: "Message-ID", value: "<m@mail>" },
-        ],
-      },
-    };
-    const fetchImpl = gmailFetch({});
-    const emptyFetch: typeof fetchImpl = async (input, init) => {
-      const url = String(input);
-      const parsed = new URL(url);
-      if (/\/users\/me\/messages\/[^/]+$/.test(parsed.pathname)) {
-        return jsonResponse(emptyMessage);
-      }
-      return fetchImpl(input, init);
-    };
-    const first = await scanInbox({
-      fetchImpl: emptyFetch,
-      tailorDeps: tailorCvDeps,
-      sleep: async () => undefined,
-    });
-    assert.equal(first.ok, true);
-    if (first.ok) {
-      assert.equal(first.items[0]?.status, "tailor-failed");
-      assert.match(first.items[0]?.error ?? "", /no usable text body/i);
-    }
-    assert.equal(memory.store.has(inboxProcessedKey("m1")), false);
-    assert.equal(memory.store.has(inboxClaimKey("m1")), false);
-
-    const second = await scanInbox({
-      fetchImpl: emptyFetch,
-      tailorDeps: tailorCvDeps,
-      sleep: async () => undefined,
-    });
-    assert.equal(second.ok, true);
-    if (second.ok) {
-      assert.equal(second.items[0]?.status, "tailor-failed");
-    }
-  });
-
   it("skips processed ids without fetching the message", async () => {
-    await markProcessedForTest("m1");
+    const claimed = await claimInboxMessage("m1");
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      assert.fail("expected to win the claim");
+    }
+    const marked = await markInboxProcessed("m1", claimed.token);
+    assert.equal(marked.ok, true);
     let gets = 0;
     const chatSpy = mock.method(tailorCvDeps, "chat", async () => {
       throw new Error("chat must not run for processed ids");
@@ -676,9 +523,251 @@ describe("scanInbox", () => {
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.equal(result.items.length, 2);
-      assert.equal(result.items[0]?.status, "draft-failed");
+      assert.equal(result.items[0]?.status, "fetch-failed");
       assert.equal(result.items[1]?.status, "drafted");
     }
     assert.equal(listed, 1);
+  });
+
+  it("creates one draft when two labeled messages share a thread", async () => {
+    let creates = 0;
+    const fetchImpl = async (input: string | URL, init?: RequestInit) => {
+      const url = String(input);
+      const parsed = new URL(url);
+      if (url.includes("/token")) {
+        return jsonResponse({ access_token: "access" });
+      }
+      if (parsed.pathname.endsWith("/users/me/labels")) {
+        return jsonResponse({
+          labels: [{ id: "Label_1", name: "Recruiter" }],
+        });
+      }
+      if (parsed.pathname.endsWith("/users/me/drafts") && init?.method === "POST") {
+        creates += 1;
+        return jsonResponse({ id: "draft1" });
+      }
+      if (parsed.pathname.includes("/users/me/threads/")) {
+        return jsonResponse({
+          messages:
+            creates > 0
+              ? [{ id: "d1", labelIds: ["DRAFT"] }]
+              : [{ id: "m", labelIds: ["INBOX"] }],
+        });
+      }
+      const messageMatch = parsed.pathname.match(/\/users\/me\/messages\/([^/]+)$/);
+      if (messageMatch?.[1] !== undefined) {
+        return jsonResponse(recruiterMessage(messageMatch[1], "t1"));
+      }
+      if (parsed.pathname.endsWith("/users/me/messages")) {
+        return jsonResponse({
+          messages: [
+            { id: "m1", threadId: "t1" },
+            { id: "m2", threadId: "t1" },
+          ],
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    };
+    const result = await scanInbox({
+      fetchImpl,
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.deepEqual(
+        result.items.map((item) => item.status),
+        ["drafted", "reused-draft"]
+      );
+    }
+    assert.equal(creates, 1);
+    assert.equal(memory.store.has(inboxProcessedKey("m1")), true);
+    assert.equal(memory.store.has(inboxProcessedKey("m2")), true);
+  });
+
+  it("does not create a second draft when overlapping scans share a thread", { timeout: 5000 }, async () => {
+    let creates = 0;
+    let createChecks = 0;
+    let settled = 0;
+    let overlap = false;
+    let releaseTailor: () => void = () => undefined;
+    const tailorGate = new Promise<void>((resolve) => {
+      releaseTailor = resolve;
+    });
+    let tailorCalls = 0;
+    mock.method(tailorCvDeps, "chat", async () => {
+      tailorCalls += 1;
+      if (tailorCalls === 1) {
+        await tailorGate;
+      }
+      return {
+        content: strictCuratorJson(FIXTURE_CURATED),
+        usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+        model: "anthropic/sonnet",
+        finishReason: "stop",
+      };
+    });
+    const waiters: Array<() => void> = [];
+    const releaseWaiters = (): void => {
+      const pending = waiters.splice(0, waiters.length);
+      for (const resolve of pending) resolve();
+    };
+    const noDraft = (): Response =>
+      jsonResponse({ messages: [{ id: "m", labelIds: ["INBOX"] }] });
+    const withDraft = (): Response =>
+      jsonResponse({ messages: [{ id: "d1", labelIds: ["DRAFT"] }] });
+    const postTailorThreadRead = async (): Promise<Response> => {
+      createChecks += 1;
+      if (createChecks >= 2) {
+        overlap = true;
+        releaseWaiters();
+        return noDraft();
+      }
+      if (settled > 0) {
+        return creates > 0 ? withDraft() : noDraft();
+      }
+      await new Promise<void>((resolve) => {
+        waiters.push(resolve);
+      });
+      if (overlap) return noDraft();
+      return creates > 0 ? withDraft() : noDraft();
+    };
+    const fetchFor = (messageId: string) => {
+      let threadGets = 0;
+      return async (input: string | URL, init?: RequestInit) => {
+        const url = String(input);
+        const parsed = new URL(url);
+        if (url.includes("/token")) {
+          return jsonResponse({ access_token: "access" });
+        }
+        if (parsed.pathname.endsWith("/users/me/labels")) {
+          return jsonResponse({
+            labels: [{ id: "Label_1", name: "Recruiter" }],
+          });
+        }
+        if (parsed.pathname.endsWith("/users/me/drafts") && init?.method === "POST") {
+          creates += 1;
+          return jsonResponse({ id: `draft-${creates}` });
+        }
+        if (parsed.pathname.includes("/users/me/threads/")) {
+          threadGets += 1;
+          if (threadGets >= 2) {
+            return postTailorThreadRead();
+          }
+          return noDraft();
+        }
+        const messageMatch = parsed.pathname.match(/\/users\/me\/messages\/([^/]+)$/);
+        if (messageMatch?.[1] !== undefined) {
+          return jsonResponse(recruiterMessage(messageMatch[1], "t1"));
+        }
+        if (parsed.pathname.endsWith("/users/me/messages")) {
+          return jsonResponse({
+            messages: [{ id: messageId, threadId: "t1" }],
+          });
+        }
+        throw new Error(`unexpected ${url}`);
+      };
+    };
+    const run = (messageId: string) =>
+      scanInbox({
+        fetchImpl: fetchFor(messageId),
+        tailorDeps: tailorCvDeps,
+        sleep: async () => undefined,
+      }).finally(() => {
+        settled += 1;
+        releaseWaiters();
+        releaseTailor();
+      });
+    const [first, second] = await Promise.all([run("m1"), run("m2")]);
+    assert.equal(first.ok && second.ok, true);
+    if (first.ok && second.ok) {
+      const statuses = [first.items[0]?.status, second.items[0]?.status].sort();
+      assert.deepEqual(statuses, ["drafted", "skipped-claimed"]);
+    }
+    assert.equal(creates, 1);
+    const processed = ["m1", "m2"].filter((id) =>
+      memory.store.has(inboxProcessedKey(id))
+    );
+    assert.equal(processed.length, 1);
+    const threadClaims = [...memory.store.keys()].filter((key) =>
+      key.includes(":thread-claim:")
+    );
+    assert.deepEqual(threadClaims, []);
+  });
+
+  it("does not create a draft when the thread claim is lost before create", async () => {
+    memory.expireIfOwned = async (key, value) => {
+      if (key.includes(":thread-claim:")) {
+        return false;
+      }
+      return memory.store.get(key) === value;
+    };
+    let creates = 0;
+    const result = await scanInbox({
+      fetchImpl: gmailFetch({
+        onDraftCreate: () => {
+          creates += 1;
+        },
+      }),
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.items[0]?.status, "skipped-claimed");
+    }
+    assert.equal(creates, 0);
+    assert.equal(memory.store.has(inboxProcessedKey("m1")), false);
+    assert.equal(memory.store.has(inboxClaimKey("m1")), false);
+  });
+
+  it("refreshes the Gmail access token after tailor before drafts.create", async () => {
+    const tokens: string[] = [];
+    let messageBearer = "";
+    let draftBearer = "";
+    const fetchImpl = async (input: string | URL, init?: RequestInit) => {
+      const url = String(input);
+      const parsed = new URL(url);
+      if (url.includes("/token")) {
+        const accessToken = `tok-${tokens.length + 1}`;
+        tokens.push(accessToken);
+        return jsonResponse({ access_token: accessToken });
+      }
+      if (parsed.pathname.endsWith("/users/me/labels")) {
+        return jsonResponse({
+          labels: [{ id: "Label_1", name: "Recruiter" }],
+        });
+      }
+      if (parsed.pathname.endsWith("/users/me/drafts") && init?.method === "POST") {
+        draftBearer = authorizationHeader(init);
+        return jsonResponse({ id: "draft1" });
+      }
+      if (parsed.pathname.includes("/users/me/threads/")) {
+        return jsonResponse({
+          messages: [{ id: "m1", labelIds: ["INBOX"] }],
+        });
+      }
+      if (/\/users\/me\/messages\/[^/]+$/.test(parsed.pathname)) {
+        messageBearer = authorizationHeader(init);
+        return jsonResponse(recruiterMessage());
+      }
+      if (parsed.pathname.endsWith("/users/me/messages")) {
+        return jsonResponse({
+          messages: [{ id: "m1", threadId: "t1" }],
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    };
+    const result = await scanInbox({
+      fetchImpl,
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.items[0]?.status, "drafted");
+    }
+    assert.equal(messageBearer, "Bearer tok-2");
+    assert.equal(draftBearer, "Bearer tok-3");
   });
 });

@@ -84,6 +84,7 @@ async function fetchForStage(
   }
 }
 
+/** Validate the health and tailor endpoints and normalize a successful smoke result. */
 export async function verifySmokePipeline(
   jd: string,
   options: SmokePipelineOptions

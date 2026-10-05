@@ -29,7 +29,10 @@ export function inboxScanCliExitCode(
   }
   if (
     result.items.some(
-      (item) => item.status === "tailor-failed" || item.status === "draft-failed"
+      (item) =>
+        item.status === "tailor-failed" ||
+        item.status === "draft-failed" ||
+        item.status === "fetch-failed"
     )
   ) {
     return 1;

@@ -7,6 +7,7 @@ import {
   getInboxRedisPrefix,
   getInboxRedisTimeoutMs,
   getInboxScanBackoffMs,
+  isInboxScanEnabled,
 } from "../app/api/lib/inbox-config";
 
 const KEYS = [
@@ -16,6 +17,7 @@ const KEYS = [
   "INBOX_MESSAGE_ID_MAX_CHARS",
   "INBOX_REDIS_TIMEOUT_MS",
   "INBOX_SCAN_BACKOFF_MS",
+  "INBOX_SCAN_ENABLED",
 ] as const;
 
 describe("inbox-config", () => {
@@ -45,6 +47,7 @@ describe("inbox-config", () => {
     assert.equal(getInboxMessageIdMaxChars(), 128);
     assert.equal(getInboxRedisTimeoutMs(), 2000);
     assert.equal(getInboxScanBackoffMs(), 1000);
+    assert.equal(isInboxScanEnabled(), false);
   });
 
   it("reads environment overrides", () => {
@@ -55,12 +58,14 @@ describe("inbox-config", () => {
     process.env.INBOX_MESSAGE_ID_MAX_CHARS = "64";
     process.env.INBOX_REDIS_TIMEOUT_MS = "1500";
     process.env.INBOX_SCAN_BACKOFF_MS = "0";
+    process.env.INBOX_SCAN_ENABLED = "1";
     assert.equal(getInboxRedisPrefix(), "ccc-inbox");
     assert.equal(getInboxClaimTtlSeconds(), 60);
     assert.equal(getInboxProcessedTtlSeconds(), 86400);
     assert.equal(getInboxMessageIdMaxChars(), 64);
     assert.equal(getInboxRedisTimeoutMs(), 1500);
     assert.equal(getInboxScanBackoffMs(), 0);
+    assert.equal(isInboxScanEnabled(), true);
   });
 
   it("clamps invalid zero and negative bounds", () => {
@@ -69,11 +74,21 @@ describe("inbox-config", () => {
     process.env.INBOX_PROCESSED_TTL_SECONDS = "-5";
     process.env.INBOX_MESSAGE_ID_MAX_CHARS = "0";
     process.env.INBOX_REDIS_TIMEOUT_MS = "-1";
-    process.env.INBOX_SCAN_BACKOFF_MS = "-10";
+    process.env.INBOX_SCAN_BACKOFF_MS = "-1";
     assert.equal(getInboxClaimTtlSeconds(), 1);
     assert.equal(getInboxProcessedTtlSeconds(), 0);
     assert.equal(getInboxMessageIdMaxChars(), 1);
     assert.equal(getInboxRedisTimeoutMs(), 1);
     assert.equal(getInboxScanBackoffMs(), 0);
+    process.env.INBOX_REDIS_TIMEOUT_MS = "not-a-number";
+    assert.equal(getInboxRedisTimeoutMs(), 2000);
+  });
+
+  it("keeps inbox scan disabled unless INBOX_SCAN_ENABLED is on", () => {
+    capture("INBOX_SCAN_ENABLED");
+    delete process.env.INBOX_SCAN_ENABLED;
+    assert.equal(isInboxScanEnabled(), false);
+    process.env.INBOX_SCAN_ENABLED = "false";
+    assert.equal(isInboxScanEnabled(), false);
   });
 });

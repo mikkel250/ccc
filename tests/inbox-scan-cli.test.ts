@@ -32,7 +32,7 @@ describe("inboxScanCliExitCode", () => {
     assert.equal(inboxScanCliExitCode({ ok: false, error: "gmail down" }), 1);
   });
 
-  it("is 1 when any item is tailor-failed or draft-failed", () => {
+  it("is 1 when any item is tailor-failed, draft-failed, or fetch-failed", () => {
     assert.equal(
       inboxScanCliExitCode({
         ok: true,
@@ -50,12 +50,24 @@ describe("inboxScanCliExitCode", () => {
       }),
       1
     );
+    assert.equal(
+      inboxScanCliExitCode({
+        ok: true,
+        items: [{ messageId: "d", status: "fetch-failed" }],
+      }),
+      1
+    );
   });
 });
 
 describe("runInboxScanCli master CV preload", () => {
   const saved: Record<string, string | undefined> = {};
-  const keys = ["MASTER_CV_JSON", "MASTER_CV_PATH", "GMAIL_REFRESH_TOKEN"] as const;
+  const keys = [
+    "MASTER_CV_JSON",
+    "MASTER_CV_PATH",
+    "GMAIL_REFRESH_TOKEN",
+    "INBOX_SCAN_ENABLED",
+  ] as const;
 
   beforeEach(() => {
     __resetMasterCvCacheForTest();
@@ -75,6 +87,7 @@ describe("runInboxScanCli master CV preload", () => {
 
   it("fills the cache before scan so requireMasterCv can serve the master", async () => {
     process.env.MASTER_CV_JSON = JSON.stringify(validCv);
+    process.env.INBOX_SCAN_ENABLED = "1";
     await assert.rejects(
       () => runInboxScanCli(),
       (error: unknown) => {

@@ -70,6 +70,28 @@ describe("gmail draft MIME and reuse", () => {
     assert.doesNotMatch(headerBlock, /Cc: evil/);
   });
 
+  it("RFC 2047 encodes and folds a long non-ASCII subject", () => {
+    const rfc = buildReplyRfc822({
+      to: "recruiter@example.com",
+      subject: `Re: ${"Grøn lederrolle ".repeat(8)}`,
+      body: "Thanks",
+      attachmentFilename: "CV.docx",
+      docxBase64: "QQ==",
+      boundary: "ccc-test",
+    });
+    const subjectLines = rfc
+      .split("\r\n")
+      .filter((line) => line.startsWith("Subject: ") || line.startsWith(" =?UTF-8?B?"));
+    assert.equal(subjectLines.length > 1, true);
+    assert.equal(subjectLines.every((line) => line.length <= 76), true);
+    assert.equal(subjectLines.every((line) => /^(Subject: | )=\?UTF-8\?B\?.+\?=$/.test(line)), true);
+    const decoded = subjectLines
+      .map((line) => line.replace(/^(?:Subject: | )=\?UTF-8\?B\?(.+)\?=$/, "$1"))
+      .map((encoded) => Buffer.from(encoded, "base64").toString("utf8"))
+      .join("");
+    assert.equal(decoded, `Re: ${"Grøn lederrolle ".repeat(8)}`.trim());
+  });
+
   it("detects a DRAFT-labeled thread message", () => {
     assert.equal(
       threadContainsDraft({
@@ -171,69 +193,6 @@ describe("ensureReplyDraft", () => {
     const rfc = Buffer.from(body.message.raw, "base64url").toString("utf8");
     assert.match(rfc, /Thanks for reaching out\./);
     assert.match(rfc, /filename="CV\.docx"/);
-  });
-
-  it("skips token refresh when an access token is provided", async () => {
-    let tokenPosts = 0;
-    const result = await ensureReplyDraft({
-      sourceMessage: sourceMessage(),
-      replyText: "Thanks for reaching out.",
-      docxBase64: "QQ==",
-      boundary: "ccc-test",
-      accessToken: "already-fresh",
-      fetchImpl: async (input, init) => {
-        const url = String(input);
-        if (url.includes("/token")) {
-          tokenPosts += 1;
-          throw new Error("token refresh must not run when accessToken is set");
-        }
-        if (url.includes("/threads/t1")) {
-          return jsonResponse({
-            messages: [{ id: "m1", labelIds: ["INBOX"] }],
-          });
-        }
-        if (url.endsWith("/users/me/drafts") && init?.method === "POST") {
-          return jsonResponse({ id: "draft1" });
-        }
-        throw new Error(`unexpected ${url}`);
-      },
-    });
-    assert.equal(result.ok, true);
-    if (result.ok) {
-      assert.equal(result.status, "created");
-    }
-    assert.equal(tokenPosts, 0);
-  });
-
-  it("reuses a caller-supplied access token and draft state without token/thread GETs", async () => {
-    const urls: string[] = [];
-    const result = await ensureReplyDraft({
-      sourceMessage: sourceMessage(),
-      replyText: "Thanks for reaching out.",
-      docxBase64: "QQ==",
-      boundary: "ccc-test",
-      accessToken: "prefetched-access",
-      hasDraft: false,
-      fetchImpl: async (input, init) => {
-        const url = String(input);
-        urls.push(url);
-        if (url.includes("/token") || url.includes("/threads/")) {
-          throw new Error(`must not refetch ${url}`);
-        }
-        if (url.endsWith("/users/me/drafts") && init?.method === "POST") {
-          const auth = init.headers && Reflect.get(init.headers, "Authorization");
-          assert.equal(auth, "Bearer prefetched-access");
-          return jsonResponse({ id: "draft1" });
-        }
-        throw new Error(`unexpected ${url}`);
-      },
-    });
-    assert.equal(result.ok, true);
-    if (result.ok) {
-      assert.equal(result.status, "created");
-    }
-    assert.equal(urls.some((u) => u.includes("/token")), false);
-    assert.equal(urls.some((u) => u.includes("/threads/")), false);
   });
 
   it("does not create a stub draft when reply text is blank", async () => {

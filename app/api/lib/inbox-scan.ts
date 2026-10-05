@@ -1,18 +1,22 @@
 /**
  * Local/Railway inbox scan: list → tailor → draft → processed (R9–R13).
+ * A per-thread Redis claim is held from before tailor through drafts.create.
  * Railway cron wiring is M8.6; this module is the shared job.
  */
 import { tailorCvDeps } from "./tailor-cv-deps";
 import { listLabeledRecruiterMail } from "./gmail-list";
-import { getGmailMessage } from "./gmail-message";
+import { getGmailMessage, parseGmailReplyHeaders } from "./gmail-message";
 import { ensureReplyDraft, gmailThreadHasDraft } from "./gmail-drafts";
-import { getInboxScanBackoffMs } from "./inbox-config";
+import { getInboxScanBackoffMs, isInboxScanEnabled } from "./inbox-config";
 import {
   claimInboxMessage,
+  claimInboxThread,
+  INBOX_CLAIM_LOST_ERROR,
   isInboxProcessed,
   markInboxProcessed,
   releaseInboxClaim,
-  INBOX_CLAIM_LOST_ERROR,
+  releaseInboxThreadClaim,
+  renewInboxThreadClaim,
 } from "./inbox-processed-store";
 import { tailorLabeledMessage, withClaimLease } from "./inbox-tailor";
 import type { TailorPipelineDeps } from "./tailor-pipeline";
@@ -24,6 +28,7 @@ export type InboxScanItemStatus =
   | "drafted"
   | "reused-draft"
   | "tailor-failed"
+  | "fetch-failed"
   | "draft-failed";
 
 export type InboxScanItem = {
@@ -47,18 +52,19 @@ async function defaultSleep(ms: number): Promise<void> {
 
 async function scanOneMessage(params: {
   messageId: string;
-  threadId: string;
   fetchImpl: FetchLike;
   deps: TailorPipelineDeps;
 }): Promise<InboxScanItem> {
-  const { messageId, threadId, fetchImpl, deps } = params;
+  const { messageId, fetchImpl, deps } = params;
   let claimToken: string | undefined;
+  let threadClaimToken: string | undefined;
+  let claimedThreadId: string | undefined;
   try {
     const processed = await isInboxProcessed(messageId);
     if (!processed.ok) {
       return {
         messageId,
-        status: "draft-failed",
+        status: "fetch-failed",
         error: processed.error,
       };
     }
@@ -69,7 +75,7 @@ async function scanOneMessage(params: {
     if (!token.ok) {
       return {
         messageId,
-        status: "draft-failed",
+        status: "fetch-failed",
         error: token.error,
       };
     }
@@ -82,12 +88,21 @@ async function scanOneMessage(params: {
     if (!fetched.ok) {
       return {
         messageId,
-        status: "draft-failed",
+        status: "fetch-failed",
         error: fetched.error,
       };
     }
+    const replyHeaders = parseGmailReplyHeaders(fetched.message);
+    if (!replyHeaders.ok) {
+      return {
+        messageId,
+        status: "draft-failed",
+        error: replyHeaders.error,
+      };
+    }
+    const replyThreadId = replyHeaders.headers.threadId;
     const existing = await gmailThreadHasDraft({
-      threadId,
+      threadId: replyThreadId,
       fetchImpl,
       accessToken,
     });
@@ -115,7 +130,6 @@ async function scanOneMessage(params: {
       }
       const marked = await markInboxProcessed(messageId, claimed.token);
       if (!marked.ok) {
-        await releaseInboxClaim(messageId, claimed.token);
         return {
           messageId,
           status: "draft-failed",
@@ -124,6 +138,19 @@ async function scanOneMessage(params: {
       }
       return { messageId, status: "reused-draft" };
     }
+    const threadClaim = await claimInboxThread(replyThreadId);
+    if (!threadClaim.ok) {
+      return {
+        messageId,
+        status: "draft-failed",
+        error: threadClaim.error,
+      };
+    }
+    if (threadClaim.outcome !== "won") {
+      return { messageId, status: "skipped-claimed" };
+    }
+    threadClaimToken = threadClaim.token;
+    claimedThreadId = replyThreadId;
     const tailored = await tailorLabeledMessage(deps, {
       messageId,
       message: fetched.message,
@@ -144,15 +171,22 @@ async function scanOneMessage(params: {
     const leased = await withClaimLease(
       messageId,
       tailored.claimToken,
-      (signal) =>
-        ensureReplyDraft({
+      async (signal) => {
+        const threadRenewed = await renewInboxThreadClaim(
+          replyThreadId,
+          threadClaim.token
+        );
+        if (!threadRenewed.ok || !threadRenewed.renewed) {
+          return threadRenewed;
+        }
+        return ensureReplyDraft({
           sourceMessage: fetched.message,
           replyText: tailored.body.replyText ?? "",
           docxBase64: tailored.body.cv,
           fetchImpl,
-          accessToken,
           signal,
-        })
+        });
+      }
     );
     if (leased.ok && "status" in leased) {
       return { messageId, status: "skipped-claimed" };
@@ -181,9 +215,12 @@ async function scanOneMessage(params: {
         error: drafted.error,
       };
     }
+    if (!("status" in drafted)) {
+      await releaseInboxClaim(messageId, tailored.claimToken);
+      return { messageId, status: "skipped-claimed" };
+    }
     const marked = await markInboxProcessed(messageId, tailored.claimToken);
     if (!marked.ok) {
-      await releaseInboxClaim(messageId, tailored.claimToken);
       return {
         messageId,
         status: "draft-failed",
@@ -205,6 +242,10 @@ async function scanOneMessage(params: {
       status: "draft-failed",
       error: errorMessage,
     };
+  } finally {
+    if (threadClaimToken !== undefined && claimedThreadId !== undefined) {
+      await releaseInboxThreadClaim(claimedThreadId, threadClaimToken);
+    }
   }
 }
 
@@ -213,6 +254,12 @@ export async function scanInbox(params?: {
   tailorDeps?: TailorPipelineDeps;
   sleep?: (ms: number) => Promise<void>;
 }): Promise<InboxScanResult> {
+  if (!isInboxScanEnabled()) {
+    return {
+      ok: false,
+      error: "Inbox scan is disabled (set INBOX_SCAN_ENABLED=1)",
+    };
+  }
   const fetchImpl = params?.fetchImpl ?? fetch;
   const deps = params?.tailorDeps ?? tailorCvDeps;
   const sleep = params?.sleep ?? defaultSleep;
@@ -227,7 +274,6 @@ export async function scanInbox(params?: {
     items.push(
       await scanOneMessage({
         messageId: listedMessage.id,
-        threadId: listedMessage.threadId,
         fetchImpl,
         deps,
       })

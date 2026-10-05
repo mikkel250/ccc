@@ -16,13 +16,28 @@ const DEFAULT_CV_ATTACHMENT_FILENAME = "CV.docx";
 const CV_ATTACHMENT_FILENAME_RE = /^[A-Za-z0-9._-]+$/;
 const DEFAULT_HTTP_TIMEOUT_MS = 15_000;
 const DEFAULT_AUTH_TIMEOUT_MS = 300_000;
+const DEFAULT_TOKEN_CACHE_SAFETY_MARGIN_MS = 60_000;
 
+/** Read a required environment variable or name it in a configuration error. */
 function requireEnv(key: string): string {
   const value = getEnvString(key);
   if (value === undefined) {
     throw new ServiceError(`${key} is not set`);
   }
   return value;
+}
+
+/** Validate an outbound endpoint before credentials can be sent to it. */
+function requireHttpsUrl(key: string, fallback: string): string {
+  const raw = getEnvString(key, fallback) ?? fallback;
+  try {
+    if (new URL(raw).protocol === "https:") {
+      return raw;
+    }
+  } catch {
+    // Use the same configuration error for invalid and insecure URLs.
+  }
+  throw new ServiceError(`${key} must be a valid HTTPS URL`);
 }
 
 export function getGmailClientId(): string {
@@ -42,22 +57,20 @@ export function getGmailRecruiterLabel(): string {
 }
 
 export function getGmailOauthAuthUrl(): string {
-  return getEnvString("GMAIL_OAUTH_AUTH_URL", DEFAULT_OAUTH_AUTH_URL)!;
+  return requireHttpsUrl("GMAIL_OAUTH_AUTH_URL", DEFAULT_OAUTH_AUTH_URL);
 }
 
 export function getGmailOauthTokenUrl(): string {
-  return getEnvString("GMAIL_OAUTH_TOKEN_URL", DEFAULT_OAUTH_TOKEN_URL)!;
+  return requireHttpsUrl("GMAIL_OAUTH_TOKEN_URL", DEFAULT_OAUTH_TOKEN_URL);
 }
 
 export function getGmailApiBaseUrl(): string {
-  return getEnvString("GMAIL_API_BASE_URL", DEFAULT_GMAIL_API_BASE_URL)!.replace(
-    /\/+$/,
-    ""
-  );
+  return requireHttpsUrl("GMAIL_API_BASE_URL", DEFAULT_GMAIL_API_BASE_URL);
 }
 
 export function getGmailOauthScope(): string {
-  return getEnvString("GMAIL_OAUTH_SCOPE", DEFAULT_OAUTH_SCOPE)!;
+  return getEnvString("GMAIL_OAUTH_SCOPE", DEFAULT_OAUTH_SCOPE) ??
+    DEFAULT_OAUTH_SCOPE;
 }
 
 export function getGmailListMaxResults(): number {
@@ -74,7 +87,9 @@ export function getGmailListMaxResults(): number {
 
 /** Loopback bind host for gmail:auth. Non-loopback values are rejected (R16). */
 export function getGmailAuthBindHost(): string {
-  const raw = getEnvString("GMAIL_AUTH_BIND_HOST", DEFAULT_AUTH_BIND_HOST)!;
+  const raw =
+    getEnvString("GMAIL_AUTH_BIND_HOST", DEFAULT_AUTH_BIND_HOST) ??
+    DEFAULT_AUTH_BIND_HOST;
   if (raw !== "127.0.0.1" && raw !== "::1") {
     throw new ServiceError(
       "GMAIL_AUTH_BIND_HOST must be 127.0.0.1 or ::1"
@@ -103,4 +118,21 @@ export function getGmailHttpTimeoutMs(): number {
 /** Max wait for the gmail:auth loopback callback (default 5 minutes). */
 export function getGmailAuthTimeoutMs(): number {
   return Math.max(1, getEnvNumber("GMAIL_AUTH_TIMEOUT_MS", DEFAULT_AUTH_TIMEOUT_MS));
+}
+
+/** Refresh cached access tokens this many ms before Google expires_in (default 60s). */
+export function getGmailTokenCacheSafetyMarginMs(): number {
+  return Math.max(
+    0,
+    getEnvNumber(
+      "GMAIL_TOKEN_CACHE_SAFETY_MARGIN_MS",
+      DEFAULT_TOKEN_CACHE_SAFETY_MARGIN_MS
+    )
+  );
+}
+
+/** Optional destination for gmail:auth refresh-token output (mode 0600). When unset, stdout only. */
+export function getGmailRefreshTokenOutputPath(): string | undefined {
+  const value = getEnvString("GMAIL_REFRESH_TOKEN_OUTPUT_PATH");
+  return value === undefined || value.trim() === "" ? undefined : value.trim();
 }

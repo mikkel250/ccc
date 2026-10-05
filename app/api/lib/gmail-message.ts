@@ -4,7 +4,7 @@
 import { getGmailApiBaseUrl } from "./gmail-config";
 import { gmailFetchJson, gmailJsonObject, sanitizeMimeHeaderValue } from "./gmail-http";
 import {
-  resolveGmailAccessToken,
+  refreshGmailAccessToken,
   type FetchLike,
 } from "./gmail-oauth";
 import { parseInboxMessageId } from "./inbox-processed-store";
@@ -45,16 +45,6 @@ function headerValue(headers: unknown, name: string): string | undefined {
   return undefined;
 }
 
-function formatReplySubject(subjectRaw: string | undefined): string {
-  if (subjectRaw === undefined) {
-    return "Re:";
-  }
-  if (/^re:\s*/i.test(subjectRaw)) {
-    return subjectRaw;
-  }
-  return `Re: ${subjectRaw}`;
-}
-
 export function parseGmailReplyHeaders(message: unknown): GmailReplyHeadersResult {
   const root = gmailJsonObject(message);
   if (root === undefined) {
@@ -74,7 +64,13 @@ export function parseGmailReplyHeaders(message: unknown): GmailReplyHeadersResul
   if (to === undefined) {
     return { ok: false, error: "Gmail message missing From header" };
   }
-  const subject = formatReplySubject(headerValue(headers, "Subject"));
+  const subjectRaw = headerValue(headers, "Subject");
+  const subject =
+    subjectRaw === undefined
+      ? "Re:"
+      : /^re:\s*/i.test(subjectRaw)
+        ? subjectRaw
+        : `Re: ${subjectRaw}`;
   const messageId = headerValue(headers, "Message-ID") ?? headerValue(headers, "Message-Id");
   return {
     ok: true,
@@ -97,21 +93,22 @@ export async function getGmailMessage(params: {
     return parsed;
   }
   const fetchImpl = params.fetchImpl ?? fetch;
-  const token = await resolveGmailAccessToken({
-    fetchImpl,
-    accessToken: params.accessToken,
-  });
-  if (!token.ok) {
-    return { ok: false, error: token.error };
+  let accessToken = params.accessToken;
+  if (accessToken === undefined) {
+    const token = await refreshGmailAccessToken({ fetchImpl });
+    if (!token.ok) {
+      return { ok: false, error: token.error };
+    }
+    accessToken = token.data.accessToken;
   }
-  const base = getGmailApiBaseUrl();
+  const base = getGmailApiBaseUrl().replace(/\/+$/, "");
   const url = new URL(
     `${base}/users/me/messages/${encodeURIComponent(parsed.messageId)}`
   );
   url.searchParams.set("format", "full");
   const res = await gmailFetchJson({
     url: url.toString(),
-    accessToken: token.data.accessToken,
+    accessToken,
     fetchImpl,
   });
   if (!res.ok) {
