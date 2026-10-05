@@ -52,6 +52,7 @@ function helloThen(
   });
 }
 
+/** Build a successful strict tailor fetch dependency with a valid DOCX payload. */
 async function okTailorFetch() {
   const docx = await markdownToDocxBase64("# CV\n- bullet");
   return {
