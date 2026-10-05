@@ -98,7 +98,7 @@ export async function listLabeledRecruiterMail(params?: {
   if (!token.ok) {
     return { ok: false, error: token.error };
   }
-  const base = getGmailApiBaseUrl();
+  const base = getGmailApiBaseUrl().replace(/\/+$/, "");
   const labelsRes = await gmailFetchJson({
     url: `${base}/users/me/labels`,
     accessToken: token.data.accessToken,
