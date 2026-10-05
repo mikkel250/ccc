@@ -133,6 +133,7 @@ export async function ensureReplyDraft(params: {
   accessToken?: string;
   /** Prefetched draft presence from gmailThreadHasDraft; skips the thread GET when set with accessToken. */
   hasDraft?: boolean;
+  signal?: AbortSignal;
 }): Promise<EnsureReplyDraftResult> {
   const replyText = params.replyText.trim();
   if (replyText === "") {
@@ -168,6 +169,7 @@ export async function ensureReplyDraft(params: {
       url: threadUrl,
       accessToken,
       fetchImpl,
+      signal: params.signal,
     });
     if (!threadRes.ok) {
       return { ok: false, error: threadRes.error };
@@ -200,6 +202,7 @@ export async function ensureReplyDraft(params: {
     accessToken,
     fetchImpl,
     method: "POST",
+    signal: params.signal,
     jsonBody: {
       message: {
         threadId: headers.headers.threadId,

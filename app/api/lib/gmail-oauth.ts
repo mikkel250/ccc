@@ -98,33 +98,55 @@ function parseTokenPayload(
   };
 }
 
+/** Referenced deadline. AbortSignal.timeout() is unref'd and will not fire as the only pending work. */
+export function gmailAbortAfter(timeoutMs: number): {
+  signal: AbortSignal;
+  cancel: () => void;
+} {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+  return {
+    signal: controller.signal,
+    cancel: () => {
+      clearTimeout(timer);
+    },
+  };
+}
+
 async function postTokenRequest(
   body: URLSearchParams,
   fetchImpl: FetchLike,
   tokenUrl: string,
   requireRefreshToken: boolean
 ): Promise<GmailOauthResult<GmailTokenSet>> {
-  let response: Response;
+  const deadline = gmailAbortAfter(getGmailHttpTimeoutMs());
   try {
-    response = await fetchImpl(tokenUrl, {
+    const response = await fetchImpl(tokenUrl, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
-      signal: AbortSignal.timeout(getGmailHttpTimeoutMs()),
+      signal: deadline.signal,
     });
+    if (!response.ok) {
+      return { ok: false, error: `Gmail token HTTP ${response.status}` };
+    }
+    let parsed: unknown;
+    try {
+      parsed = await response.json();
+    } catch {
+      if (deadline.signal.aborted) {
+        return { ok: false, error: "Gmail token request failed" };
+      }
+      return { ok: false, error: "Gmail token response was not valid JSON" };
+    }
+    return parseTokenPayload(parsed, requireRefreshToken);
   } catch {
     return { ok: false, error: "Gmail token request failed" };
+  } finally {
+    deadline.cancel();
   }
-  if (!response.ok) {
-    return { ok: false, error: `Gmail token HTTP ${response.status}` };
-  }
-  let parsed: unknown;
-  try {
-    parsed = await response.json();
-  } catch {
-    return { ok: false, error: "Gmail token response was not valid JSON" };
-  }
-  return parseTokenPayload(parsed, requireRefreshToken);
 }
 
 export async function exchangeGmailAuthCode(

@@ -32,6 +32,7 @@ const GMAIL_KEYS = [
   "GMAIL_LIST_MAX_RESULTS",
   "GMAIL_CV_ATTACHMENT_FILENAME",
   "INBOX_SCAN_BACKOFF_MS",
+  "INBOX_CLAIM_TTL_SECONDS",
 ] as const;
 
 const saved: Record<string, string | undefined> = {};
@@ -75,9 +76,6 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
       }
       store.set(key, value);
       return "OK";
-    },
-    del: async (key) => {
-      store.delete(key);
     },
     deleteIfValue: async (key, value) => {
       if (store.get(key) !== value) {
@@ -136,6 +134,7 @@ function gmailFetch(options: {
   threadDraft?: boolean;
   onDraftCreate?: () => void;
   onMessageGet?: () => void;
+  delayDraftMs?: number;
 }): (input: string | URL, init?: RequestInit) => Promise<Response> {
   return async (input, init) => {
     const url = String(input);
@@ -149,6 +148,21 @@ function gmailFetch(options: {
       });
     }
     if (parsed.pathname.endsWith("/users/me/drafts") && init?.method === "POST") {
+      const delayMs = options.delayDraftMs ?? 0;
+      if (delayMs > 0) {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, delayMs);
+          const onAbort = () => {
+            clearTimeout(timer);
+            reject(new DOMException("Aborted", "AbortError"));
+          };
+          if (init.signal?.aborted) {
+            onAbort();
+            return;
+          }
+          init.signal?.addEventListener("abort", onAbort, { once: true });
+        });
+      }
       options.onDraftCreate?.();
       return jsonResponse({ id: "draft1" });
     }
@@ -288,6 +302,122 @@ describe("scanInbox", () => {
     }
     assert.equal(draftCreates, 1);
     assert.equal(memory.store.has(inboxProcessedKey("m1")), true);
+  });
+
+  it("does not report drafted when the processed mark fails", async () => {
+    memory.markProcessedIfOwned = async () => false;
+    let draftCreates = 0;
+    const result = await scanInbox({
+      fetchImpl: gmailFetch({
+        onDraftCreate: () => {
+          draftCreates += 1;
+        },
+      }),
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.items[0]?.status, "draft-failed");
+      assert.match(result.items[0]?.error ?? "", /claim/i);
+    }
+    assert.equal(draftCreates, 1);
+    assert.equal(memory.store.has(inboxProcessedKey("m1")), false);
+    assert.equal(memory.store.has(inboxClaimKey("m1")), false);
+  });
+
+  it("does not create a draft when claim ownership is lost immediately beforehand", async () => {
+    let renewals = 0;
+    memory.expireIfOwned = async (key, value) => {
+      renewals += 1;
+      if (renewals === 2) {
+        memory.store.set(key, "replacement-token");
+      }
+      return memory.store.get(key) === value;
+    };
+    let draftCreates = 0;
+    const result = await scanInbox({
+      fetchImpl: gmailFetch({
+        onDraftCreate: () => {
+          draftCreates += 1;
+        },
+      }),
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.deepEqual(result.items, [
+        { messageId: "m1", status: "skipped-claimed" },
+      ]);
+    }
+    assert.equal(renewals, 2);
+    assert.equal(draftCreates, 0);
+    assert.equal(memory.store.has(inboxProcessedKey("m1")), false);
+  });
+
+  it("stops drafting when claim ownership is lost while the draft request is in flight", async () => {
+    process.env.INBOX_CLAIM_TTL_SECONDS = "1";
+    let renewals = 0;
+    memory.expireIfOwned = async (key, value) => {
+      renewals += 1;
+      if (renewals >= 3) {
+        memory.store.set(key, "replacement-token");
+      }
+      return memory.store.get(key) === value;
+    };
+    let draftCreates = 0;
+    const result = await scanInbox({
+      fetchImpl: gmailFetch({
+        onDraftCreate: () => {
+          draftCreates += 1;
+        },
+        delayDraftMs: 900,
+      }),
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.notEqual(result.items[0]?.status, "drafted");
+    }
+    assert.equal(draftCreates, 0);
+    assert.ok(renewals >= 3);
+    assert.equal(memory.store.has(inboxProcessedKey("m1")), false);
+  });
+
+  it("sleeps the configured backoff between listed messages", async () => {
+    process.env.INBOX_SCAN_BACKOFF_MS = "100";
+    const sleeps: number[] = [];
+    const base = gmailFetch({});
+    const fetchImpl: typeof base = async (input, init) => {
+      const parsed = new URL(String(input));
+      if (parsed.pathname.endsWith("/users/me/messages")) {
+        return jsonResponse({
+          messages: [
+            { id: "m1", threadId: "t1" },
+            { id: "m2", threadId: "t2" },
+          ],
+        });
+      }
+      if (/\/users\/me\/messages\/m2$/.test(parsed.pathname)) {
+        return jsonResponse({
+          id: "m2",
+          threadId: "t2",
+          payload: (recruiterMessage() as { payload: unknown }).payload,
+        });
+      }
+      return base(input, init);
+    };
+    const result = await scanInbox({
+      fetchImpl,
+      tailorDeps: tailorCvDeps,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(sleeps, [100]);
   });
 
   it("reuses an existing thread draft without tailoring and still marks processed", async () => {

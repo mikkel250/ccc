@@ -25,6 +25,7 @@ describe("gmail-auth CLI helpers", () => {
       gmailAuthRedirectUri("127.0.0.1", 4242),
       "http://127.0.0.1:4242"
     );
+    assert.equal(gmailAuthRedirectUri("::1", 4242), "http://[::1]:4242");
   });
 
   it("prints the refresh token as an env assignment", () => {
@@ -83,6 +84,40 @@ describe("gmail-auth CLI helpers", () => {
       if (previousBind === undefined) delete process.env.GMAIL_AUTH_BIND_HOST;
       else process.env.GMAIL_AUTH_BIND_HOST = previousBind;
     }
+  });
+
+  it("keeps waiting after a stray code callback and accepts the matching state", async () => {
+    process.env.GMAIL_CLIENT_ID = "client-id";
+    process.env.GMAIL_CLIENT_SECRET = "client-secret";
+    process.env.GMAIL_OAUTH_TOKEN_URL = "https://oauth.example.test/token";
+    process.env.GMAIL_AUTH_BIND_HOST = "127.0.0.1";
+    process.env.GMAIL_AUTH_TIMEOUT_MS = "3000";
+    let authorize = "";
+    const pending = runGmailAuthCli({
+      openUrl: (url) => {
+        authorize = url;
+      },
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({ access_token: "a", refresh_token: "r" }),
+          { status: 200 }
+        ),
+    });
+    const started = Date.now();
+    while (authorize === "" && Date.now() - started < 2000) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const authUrl = new URL(authorize);
+    const redirect = authUrl.searchParams.get("redirect_uri");
+    const state = authUrl.searchParams.get("state");
+    assert.ok(redirect);
+    assert.ok(state);
+    const stray = await fetch(`${redirect}/?code=nope&state=wrong`);
+    assert.equal(stray.status, 400);
+    const matched = await fetch(`${redirect}/?code=yes&state=${state}`);
+    assert.equal(matched.status, 200);
+    const result = await pending;
+    assert.equal(result.ok, true);
   });
 });
 

@@ -249,6 +249,38 @@ describe("gmail-oauth", () => {
     }
   });
 
+  it("rejects an OAuth error callback and a missing code", () => {
+    const denied = parseOAuthCallback(
+      new URL("http://127.0.0.1:1234/?error=access_denied&state=expected"),
+      "expected"
+    );
+    assert.equal(denied.ok, false);
+    if (!denied.ok) {
+      assert.match(denied.error, /authorization failed/);
+    }
+    const missing = parseOAuthCallback(
+      new URL("http://127.0.0.1:1234/?state=expected"),
+      "expected"
+    );
+    assert.equal(missing.ok, false);
+    if (!missing.ok) {
+      assert.match(missing.error, /missing authorization code/);
+    }
+  });
+
+  it("rejects a token payload that omits access_token", async () => {
+    const result = await exchangeGmailAuthCode({
+      code: "the-code",
+      redirectUri: "http://127.0.0.1:1234",
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ refresh_token: "r" }), { status: 200 }),
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /access_token/);
+    }
+  });
+
   it("fails closed when the token POST is aborted by the HTTP timeout", async () => {
     process.env.GMAIL_HTTP_TIMEOUT_MS = "20";
     const result = await refreshGmailAccessToken({
@@ -266,6 +298,29 @@ describe("gmail-oauth", () => {
         return new Response(JSON.stringify({ access_token: "new-access" }), {
           status: 200,
         });
+      },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /token request failed/);
+    }
+  });
+
+  it("fails closed when the token body stalls after headers", async () => {
+    process.env.GMAIL_HTTP_TIMEOUT_MS = "50";
+    const result = await refreshGmailAccessToken({
+      fetchImpl: async (_input, init) => {
+        const response = new Response("{}", { status: 200 });
+        response.json = () =>
+          new Promise((_resolve, reject) => {
+            const abort = () => reject(new DOMException("Aborted", "AbortError"));
+            if (init?.signal?.aborted) {
+              abort();
+              return;
+            }
+            init?.signal?.addEventListener("abort", abort, { once: true });
+          });
+        return response;
       },
     });
     assert.equal(result.ok, false);

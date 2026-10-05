@@ -91,6 +91,15 @@ export async function runGmailAuthCli(params?: {
       });
       server.on("request", (req: IncomingMessage, res: ServerResponse) => {
         const url = requestUrl(req, bindHost, address.port);
+        const callbackState = url.searchParams.get("state");
+        const hasCode = (url.searchParams.get("code") ?? "").trim() !== "";
+        const hasError = (url.searchParams.get("error") ?? "").length > 0;
+        if (callbackState !== state || (!hasCode && !hasError)) {
+          res.statusCode = 400;
+          res.setHeader("Content-Type", "text/plain; charset=utf-8");
+          res.end("Ignored.");
+          return;
+        }
         res.statusCode = 200;
         res.setHeader("Content-Type", "text/plain; charset=utf-8");
         res.end("You can close this tab and return to the terminal.");

@@ -12,8 +12,9 @@ import {
   isInboxProcessed,
   markInboxProcessed,
   releaseInboxClaim,
+  INBOX_CLAIM_LOST_ERROR,
 } from "./inbox-processed-store";
-import { tailorLabeledMessage } from "./inbox-tailor";
+import { tailorLabeledMessage, withClaimLease } from "./inbox-tailor";
 import type { TailorPipelineDeps } from "./tailor-pipeline";
 import { refreshGmailAccessToken, type FetchLike } from "./gmail-oauth";
 
@@ -114,6 +115,7 @@ async function scanOneMessage(params: {
       }
       const marked = await markInboxProcessed(messageId, claimed.token);
       if (!marked.ok) {
+        await releaseInboxClaim(messageId, claimed.token);
         return {
           messageId,
           status: "draft-failed",
@@ -139,14 +141,38 @@ async function scanOneMessage(params: {
         error: tailored.error,
       };
     }
-    const drafted = await ensureReplyDraft({
-      sourceMessage: fetched.message,
-      replyText: tailored.body.replyText ?? "",
-      docxBase64: tailored.body.cv,
-      fetchImpl,
-      accessToken,
-      hasDraft: existing.hasDraft,
-    });
+    const leased = await withClaimLease(
+      messageId,
+      tailored.claimToken,
+      (signal) =>
+        ensureReplyDraft({
+          sourceMessage: fetched.message,
+          replyText: tailored.body.replyText ?? "",
+          docxBase64: tailored.body.cv,
+          fetchImpl,
+          accessToken,
+          signal,
+        })
+    );
+    if (leased.ok && "status" in leased) {
+      return { messageId, status: "skipped-claimed" };
+    }
+    if (!leased.ok) {
+      if (leased.error !== INBOX_CLAIM_LOST_ERROR) {
+        await releaseInboxClaim(messageId, tailored.claimToken);
+      }
+      return {
+        messageId,
+        status:
+          leased.error === INBOX_CLAIM_LOST_ERROR
+            ? "skipped-claimed"
+            : "draft-failed",
+        ...(leased.error === INBOX_CLAIM_LOST_ERROR
+          ? {}
+          : { error: leased.error }),
+      };
+    }
+    const drafted = leased.value;
     if (!drafted.ok) {
       await releaseInboxClaim(messageId, tailored.claimToken);
       return {
@@ -157,6 +183,7 @@ async function scanOneMessage(params: {
     }
     const marked = await markInboxProcessed(messageId, tailored.claimToken);
     if (!marked.ok) {
+      await releaseInboxClaim(messageId, tailored.claimToken);
       return {
         messageId,
         status: "draft-failed",
