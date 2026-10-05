@@ -812,7 +812,7 @@ describe("runTailorCore — in-process curator path", () => {
     }
   });
 
-  it("preserves ServiceError messages from chat without leaking provider secrets", async () => {
+  it("passes ServiceError messages from chat through verbatim as 503", async () => {
     mock.method(tailorCvDeps, "chat", async () => {
       throw new ServiceError("Master CV is not loaded.");
     });
