@@ -11,9 +11,8 @@ Required: `Authorization: Bearer <TAILOR_API_KEY>`.
 | Presenter | Notes |
 |-----------|--------|
 | Smoke CLI (`npm run smoke`) | Operator / manual live-API path |
-| `gmail:auth` / `gmail:list` | Local operator CLIs (not HTTP). Mint `GMAIL_REFRESH_TOKEN`; list messages with `GMAIL_RECRUITER_LABEL`. Seekers never hold Gmail tokens. |
 
-The inbox worker is **not** an HTTP presenter: `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a labeled payload then calls `runTailorCore` (strict `cv` + `replyText`, no Bearer, no `RATE_LIMIT_*` buckets, no `remaining`/`resetTime`). Success carries `claimToken` so a later draft step can mark processed only while that token still owns the Redis claim. Non-crash extract/JD/tailor failures release the claim. A programmer error from the tailor keeps the claim until the lease expires. Product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`. Seekers and browsers never hold the key.
+The inbox worker is **not** an HTTP presenter: `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a labeled payload then calls `runTailorCore` (strict `cv` + `replyText`, no Bearer, no `RATE_LIMIT_*` buckets, no `remaining`/`resetTime`). Success carries `claimToken` so the draft step can mark processed only while that token still owns the Redis claim. Non-crash extract/JD/tailor failures release the claim. A programmer error from the tailor keeps the claim until the lease expires. Overlapping scans take one Redis claim per Gmail thread and hold it through `drafts.create`, and the scan refreshes the Gmail access token again after tailor, before the draft request. Product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`. Seekers and browsers never hold the key.
 
 Missing/invalid Bearer → **401**. Unset/`TAILOR_API_KEY` misconfiguration, production bypass hard-block, or other auth-gate unavailability → **503** (fail closed; not all auth failures are 401). Deployed environments fail closed when `TAILOR_API_KEY` is unset. Local insecure bypass (`TAILOR_AUTH_INSECURE_BYPASS=1`) is hard-blocked when production markers are set.
 

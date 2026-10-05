@@ -8,6 +8,7 @@ import {
   getGmailHttpTimeoutMs,
   getGmailOauthTokenUrl,
   getGmailRefreshToken,
+  getGmailTokenCacheSafetyMarginMs,
 } from "./gmail-config";
 
 export type FetchLike = (
@@ -39,6 +40,22 @@ export type GmailTokenSet = {
 export type GmailOauthResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string };
+
+type CachedAccessToken = {
+  accessToken: string;
+  expiresAtMs: number;
+};
+
+const accessTokenCache = new Map<string, CachedAccessToken>();
+
+export function __clearGmailAccessTokenCacheForTest(): void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error(
+      "__clearGmailAccessTokenCacheForTest is only available in the test environment"
+    );
+  }
+  accessTokenCache.clear();
+}
 
 export type GmailPkcePair = {
   codeVerifier: string;
@@ -96,11 +113,26 @@ export function parseOAuthCallback(
   return { ok: true, data: code };
 }
 
+function parseExpiresIn(raw: unknown): number | undefined {
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+    return raw;
+  }
+  if (typeof raw === "string" && raw.trim() !== "") {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+type ParsedGmailToken = GmailTokenSet & { expiresInSeconds?: number };
+
 /** Validate the token fields returned by the OAuth token endpoint. */
 function parseTokenPayload(
   raw: unknown,
   requireRefreshToken: boolean
-): GmailOauthResult<GmailTokenSet> {
+): GmailOauthResult<ParsedGmailToken> {
   if (raw === null || typeof raw !== "object") {
     return { ok: false, error: "Gmail token response was not an object" };
   }
@@ -109,6 +141,7 @@ function parseTokenPayload(
     return { ok: false, error: "Gmail token response missing access_token" };
   }
   const refreshToken = Reflect.get(raw, "refresh_token");
+  const expiresInSeconds = parseExpiresIn(Reflect.get(raw, "expires_in"));
   if (requireRefreshToken) {
     if (typeof refreshToken !== "string" || refreshToken.trim() === "") {
       return {
@@ -121,6 +154,7 @@ function parseTokenPayload(
       data: {
         accessToken: accessToken.trim(),
         refreshToken: refreshToken.trim(),
+        ...(expiresInSeconds !== undefined ? { expiresInSeconds } : {}),
       },
     };
   }
@@ -131,6 +165,7 @@ function parseTokenPayload(
       ...(typeof refreshToken === "string" && refreshToken.trim() !== ""
         ? { refreshToken: refreshToken.trim() }
         : {}),
+      ...(expiresInSeconds !== undefined ? { expiresInSeconds } : {}),
     },
   };
 }
@@ -141,7 +176,7 @@ async function postTokenRequest(
   fetchImpl: FetchLike,
   tokenUrl: string,
   requireRefreshToken: boolean
-): Promise<GmailOauthResult<GmailTokenSet>> {
+): Promise<GmailOauthResult<ParsedGmailToken>> {
   const deadline = gmailAbortAfter(getGmailHttpTimeoutMs());
   try {
     let response: Response;
@@ -174,6 +209,36 @@ async function postTokenRequest(
   }
 }
 
+function cacheAccessToken(
+  refreshToken: string,
+  accessToken: string,
+  expiresInSeconds: number | undefined,
+  nowMs: number
+): void {
+  if (expiresInSeconds === undefined) {
+    return;
+  }
+  const safetyMarginMs = getGmailTokenCacheSafetyMarginMs();
+  const expiresAtMs =
+    nowMs + Math.max(0, expiresInSeconds * 1000 - safetyMarginMs);
+  accessTokenCache.set(refreshToken, { accessToken, expiresAtMs });
+}
+
+function readCachedAccessToken(
+  refreshToken: string,
+  nowMs: number
+): string | undefined {
+  const cached = accessTokenCache.get(refreshToken);
+  if (cached === undefined) {
+    return undefined;
+  }
+  if (nowMs >= cached.expiresAtMs) {
+    accessTokenCache.delete(refreshToken);
+    return undefined;
+  }
+  return cached.accessToken;
+}
+
 /** Exchange a Gmail authorization code for access and refresh tokens. */
 export async function exchangeGmailAuthCode(
   params: {
@@ -203,18 +268,42 @@ export async function exchangeGmailAuthCode(
 export async function refreshGmailAccessToken(params?: {
   fetchImpl?: FetchLike;
   refreshToken?: string;
+  nowMs?: number;
 }): Promise<GmailOauthResult<GmailTokenSet>> {
   const refreshToken = params?.refreshToken ?? getGmailRefreshToken();
+  const nowMs = params?.nowMs ?? Date.now();
+  const cached = readCachedAccessToken(refreshToken, nowMs);
+  if (cached !== undefined) {
+    return { ok: true, data: { accessToken: cached } };
+  }
   const body = new URLSearchParams({
     grant_type: "refresh_token",
     refresh_token: refreshToken,
     client_id: getGmailClientId(),
     client_secret: getGmailClientSecret(),
   });
-  return postTokenRequest(
+  const token = await postTokenRequest(
     body,
     params?.fetchImpl ?? fetch,
     getGmailOauthTokenUrl(),
     false
   );
+  if (!token.ok) {
+    return token;
+  }
+  cacheAccessToken(
+    refreshToken,
+    token.data.accessToken,
+    token.data.expiresInSeconds,
+    nowMs
+  );
+  return {
+    ok: true,
+    data: {
+      accessToken: token.data.accessToken,
+      ...(token.data.refreshToken !== undefined
+        ? { refreshToken: token.data.refreshToken }
+        : {}),
+    },
+  };
 }

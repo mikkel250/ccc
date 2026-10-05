@@ -12,8 +12,11 @@ const DEFAULT_OAUTH_SCOPE =
 const DEFAULT_LIST_MAX_RESULTS = 50;
 const DEFAULT_LIST_MAX_RESULTS_LIMIT = 500;
 const DEFAULT_AUTH_BIND_HOST = "127.0.0.1";
+const DEFAULT_CV_ATTACHMENT_FILENAME = "CV.docx";
+const CV_ATTACHMENT_FILENAME_RE = /^[A-Za-z0-9._-]+$/;
 const DEFAULT_HTTP_TIMEOUT_MS = 15_000;
 const DEFAULT_AUTH_TIMEOUT_MS = 300_000;
+const DEFAULT_TOKEN_CACHE_SAFETY_MARGIN_MS = 60_000;
 
 /** Read a required environment variable or name it in a configuration error. */
 function requireEnv(key: string): string {
@@ -95,6 +98,18 @@ export function getGmailAuthBindHost(): string {
   return raw;
 }
 
+/** Attachment filename for inbox reply drafts. Path separators rejected. */
+export function getGmailCvAttachmentFilename(): string {
+  const raw = getEnvString(
+    "GMAIL_CV_ATTACHMENT_FILENAME",
+    DEFAULT_CV_ATTACHMENT_FILENAME
+  )!;
+  if (raw.includes("..") || !CV_ATTACHMENT_FILENAME_RE.test(raw)) {
+    throw new ServiceError("GMAIL_CV_ATTACHMENT_FILENAME is not a valid filename");
+  }
+  return raw;
+}
+
 /** Abort hung Gmail REST and token POSTs (default 15s). */
 export function getGmailHttpTimeoutMs(): number {
   return Math.max(1, getEnvNumber("GMAIL_HTTP_TIMEOUT_MS", DEFAULT_HTTP_TIMEOUT_MS));
@@ -103,6 +118,17 @@ export function getGmailHttpTimeoutMs(): number {
 /** Max wait for the gmail:auth loopback callback (default 5 minutes). */
 export function getGmailAuthTimeoutMs(): number {
   return Math.max(1, getEnvNumber("GMAIL_AUTH_TIMEOUT_MS", DEFAULT_AUTH_TIMEOUT_MS));
+}
+
+/** Refresh cached access tokens this many ms before Google expires_in (default 60s). */
+export function getGmailTokenCacheSafetyMarginMs(): number {
+  return Math.max(
+    0,
+    getEnvNumber(
+      "GMAIL_TOKEN_CACHE_SAFETY_MARGIN_MS",
+      DEFAULT_TOKEN_CACHE_SAFETY_MARGIN_MS
+    )
+  );
 }
 
 /** Optional destination for gmail:auth refresh-token output (mode 0600). When unset, stdout only. */

@@ -1,6 +1,7 @@
 /**
- * Redis claim vs processed marks for Gmail messageIds (R10, R12).
- * Claim is SET NX and is not the terminal processed mark.
+ * Redis claim vs processed marks for Gmail message ids (R10, R12).
+ * Message claim is SET NX and is not the terminal processed mark.
+ * Thread claim serializes drafts.create for one Gmail thread.
  */
 import { randomBytes } from "node:crypto";
 import {
@@ -191,24 +192,40 @@ export function inboxClaimKey(messageId: string): string {
   return `${getInboxRedisPrefix()}:claim:${messageId}`;
 }
 
+export function inboxThreadClaimKey(threadId: string): string {
+  return `${getInboxRedisPrefix()}:thread-claim:${threadId}`;
+}
+
 export function inboxProcessedKey(messageId: string): string {
   return `${getInboxRedisPrefix()}:processed:${messageId}`;
+}
+
+function parseInboxKeyId(
+  value: unknown,
+  noun: "messageId" | "threadId"
+): { ok: true; id: string } | { ok: false; error: string } {
+  const label = noun === "messageId" ? "Gmail messageId" : "Gmail threadId";
+  if (typeof value !== "string" || value.trim() === "") {
+    return { ok: false, error: `${label} is required` };
+  }
+  const id = value.trim();
+  if (id.length > getInboxMessageIdMaxChars()) {
+    return { ok: false, error: `${label} exceeds configured max length` };
+  }
+  if (!MESSAGE_ID_RE.test(id)) {
+    return { ok: false, error: `${label} contains unsupported characters` };
+  }
+  return { ok: true, id };
 }
 
 export function parseInboxMessageId(
   value: unknown
 ): { ok: true; messageId: string } | { ok: false; error: string } {
-  if (typeof value !== "string" || value.trim() === "") {
-    return { ok: false, error: "Gmail messageId is required" };
+  const parsed = parseInboxKeyId(value, "messageId");
+  if (!parsed.ok) {
+    return parsed;
   }
-  const messageId = value.trim();
-  if (messageId.length > getInboxMessageIdMaxChars()) {
-    return { ok: false, error: "Gmail messageId exceeds configured max length" };
-  }
-  if (!MESSAGE_ID_RE.test(messageId)) {
-    return { ok: false, error: "Gmail messageId contains unsupported characters" };
-  }
-  return { ok: true, messageId };
+  return { ok: true, messageId: parsed.id };
 }
 
 export async function isInboxProcessed(
@@ -336,6 +353,104 @@ export async function renewInboxClaim(
   const renewed = await callKv(() =>
     kv().expireIfOwned(
       inboxClaimKey(parsed.messageId),
+      claimToken,
+      getInboxClaimTtlSeconds()
+    )
+  );
+  if (!renewed.ok) {
+    return renewed;
+  }
+  return { ok: true, renewed: renewed.value };
+}
+
+export async function claimInboxThread(
+  threadId: string
+): Promise<
+  | { ok: true; outcome: "won"; token: string }
+  | { ok: true; outcome: "lost" }
+  | { ok: false; error: string }
+> {
+  const parsed = parseInboxKeyId(threadId, "threadId");
+  if (!parsed.ok) {
+    return parsed;
+  }
+  const token = randomBytes(16).toString("hex");
+  const claimKey = inboxThreadClaimKey(parsed.id);
+  const store = kv();
+  let set: "OK" | null = null;
+  let setTimedOut = false;
+  try {
+    set = await store.set(claimKey, token, {
+      nx: true,
+      ex: getInboxClaimTtlSeconds(),
+    });
+  } catch (err) {
+    if (!isInboxRedisTimeout(err)) {
+      return inboxRedisFailure(err);
+    }
+    setTimedOut = true;
+  }
+  let claimed = set === "OK";
+  if (!claimed) {
+    const existing = await callKv(() => store.get(claimKey));
+    if (!existing.ok) {
+      return existing;
+    }
+    if (existing.value === token) {
+      claimed = true;
+    } else if (existing.value != null) {
+      return { ok: true, outcome: "lost" };
+    } else if (setTimedOut) {
+      return { ok: false, error: INBOX_REDIS_TIMEOUT_ERROR };
+    }
+  }
+  if (!claimed) {
+    return { ok: true, outcome: "lost" };
+  }
+  const currentClaim = await callKv(() => store.get(claimKey));
+  if (!currentClaim.ok) {
+    return currentClaim;
+  }
+  if (currentClaim.value === token) {
+    return { ok: true, outcome: "won", token };
+  }
+  return { ok: true, outcome: "lost" };
+}
+
+export async function releaseInboxThreadClaim(
+  threadId: string,
+  claimToken: string
+): Promise<{ ok: true; deleted: boolean } | { ok: false; error: string }> {
+  const parsed = parseInboxKeyId(threadId, "threadId");
+  if (!parsed.ok) {
+    return parsed;
+  }
+  if (typeof claimToken !== "string" || claimToken === "") {
+    return { ok: false, error: INBOX_CLAIM_TOKEN_REQUIRED_ERROR };
+  }
+  const released = await callKv(() =>
+    kv().deleteIfValue(inboxThreadClaimKey(parsed.id), claimToken)
+  );
+  if (!released.ok) {
+    return released;
+  }
+  return { ok: true, deleted: released.value };
+}
+
+export async function renewInboxThreadClaim(
+  threadId: string,
+  claimToken: string
+): Promise<{ ok: true; renewed: boolean } | { ok: false; error: string }> {
+  const parsed = parseInboxKeyId(threadId, "threadId");
+  if (!parsed.ok) {
+    return parsed;
+  }
+  if (typeof claimToken !== "string" || claimToken === "") {
+    return { ok: false, error: INBOX_CLAIM_TOKEN_REQUIRED_ERROR };
+  }
+  const renewed = await callKv(() =>
+    kv().expireIfOwned(
+      inboxThreadClaimKey(parsed.id),
       claimToken,
       getInboxClaimTtlSeconds()
     )

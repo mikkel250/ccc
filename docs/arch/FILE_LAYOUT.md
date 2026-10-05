@@ -36,12 +36,16 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── cv-prompt.ts      # Legacy markdown tailor prompt (not hot path)
 │           ├── redis.ts          # Shared Upstash Redis client singleton
 │           ├── gmail-config.ts   # Gmail OAuth/API env getters
-│           ├── gmail-oauth.ts    # Authorize URL, callback, token exchange/refresh
+│           ├── gmail-oauth.ts    # Authorize URL, PKCE, callback, token exchange/refresh
 │           ├── gmail-list.ts     # Recruiter-label resolve + messages.list
-│           ├── inbox-config.ts   # Inbox Redis prefix / claim+processed TTLs
-│           ├── inbox-processed-store.ts # SET NX claim vs token-owned processed mark
-│           ├── inbox-tailor.ts   # tailorLabeledMessage — claim+extract then runTailorCore
+│           ├── gmail-http.ts     # Injected-fetch Gmail JSON GET/POST + shared JSON/MIME helpers
+│           ├── gmail-message.ts  # messages.get + reply headers
+│           ├── gmail-drafts.ts   # RFC2822 MIME + drafts.create / thread reuse
 │           ├── gmail-body.ts     # Gmail payload → JD (text/plain else html-to-text)
+│           ├── inbox-config.ts   # Inbox Redis prefix / claim+processed TTLs
+│           ├── inbox-processed-store.ts # SET NX message claim, thread claim, token-owned processed mark
+│           ├── inbox-tailor.ts   # tailorLabeledMessage — claim+extract then runTailorCore
+│           ├── inbox-scan.ts     # list → tailor → one thread draft → processed
 │           ├── tailor-pipeline.ts # HTTP adapter (Bearer + rate-limit) + runTailorCore (no Bearer/rate-limit)
 │           ├── tailor-cv-deps.ts # Mockable pipeline dep bag
 │           ├── rate-limit.ts     # Dual IP + secret-hash rate limiter
@@ -66,6 +70,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── e2e-tailor-cv.ts           # npm run smoke — live API + artifacts
 │   ├── gmail-auth.ts              # npm run gmail:auth — mint GMAIL_REFRESH_TOKEN
 │   ├── gmail-list.ts              # npm run gmail:list — labeled message ids
+│   ├── inbox-scan.ts              # npm run inbox:scan — draft replies + mark processed
 │   ├── regen-docx.ts              # npm run regen-docx — mechanical rebuild
 │   ├── seed-eval-results.ts       # Seed historical eval-results artifacts
 │   └── verify-rate-limit.ts       # Live Upstash rate-limit check
@@ -78,6 +83,8 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── tailor-auth.test.ts
 │   ├── tailor-pipeline.test.ts            # HTTP adapter + runTailorCore
 │   ├── inbox-tailor.test.ts               # Labeled-message in-process entry
+│   ├── inbox-scan.test.ts                 # Scan: draft/reuse/processed/skip
+│   ├── gmail-drafts.test.ts               # MIME + draft create vs reuse
 │   ├── route.test.ts                      # Tailor route (mocked curator)
 │   ├── cv-prompt*.test.ts                 # Legacy markdown prompt tests
 │   ├── markdown-docx.test.ts              # Legacy markdown→docx

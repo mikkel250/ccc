@@ -4,8 +4,10 @@ import {
   __injectInboxKvForTest,
   claimInboxMessage,
   extractUnprocessedInboxMessage,
+  claimInboxThread,
   inboxClaimKey,
   inboxProcessedKey,
+  inboxThreadClaimKey,
   isInboxProcessed,
   markInboxProcessed,
   parseInboxMessageId,
@@ -522,5 +524,34 @@ describe("inbox processed store", () => {
     const result = await renewInboxClaim(ID, claimed.token);
     assert.deepEqual(result, { ok: false, error: INBOX_REDIS_UNAVAILABLE_ERROR });
     assert.equal(memory.store.get(inboxClaimKey(ID)), claimed.token);
+  });
+
+  it("lets only one concurrent thread claim win", async () => {
+    const [first, second] = await Promise.all([
+      claimInboxThread("thread-1"),
+      claimInboxThread("thread-1"),
+    ]);
+    assert.equal(first.ok && second.ok, true);
+    if (first.ok && second.ok) {
+      const outcomes = [first.outcome, second.outcome].sort();
+      assert.deepEqual(outcomes, ["lost", "won"]);
+    }
+    assert.equal(memory.store.has(inboxThreadClaimKey("thread-1")), true);
+    assert.equal(memory.store.has(inboxClaimKey("thread-1")), false);
+  });
+
+  it("keeps a thread claim off the message claim key", async () => {
+    const thread = await claimInboxThread(ID);
+    const message = await claimInboxMessage(ID);
+    assert.equal(thread.ok, true);
+    assert.equal(message.ok, true);
+    if (thread.ok && message.ok) {
+      assert.equal(thread.outcome, "won");
+      assert.equal(message.outcome, "won");
+    }
+    assert.notEqual(
+      memory.store.get(inboxThreadClaimKey(ID)),
+      memory.store.get(inboxClaimKey(ID))
+    );
   });
 });

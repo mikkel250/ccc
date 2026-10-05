@@ -50,7 +50,8 @@ buildTailorResponse (tailor-pipeline.ts) via tailor-cv/route.ts
   ├── capped body read + validateTailorCvBody
   ├── requireMasterCv (MASTER_CV_JSON / MASTER_CV_PATH)
   ├── getCuratorPrompt()        → Langfuse ("cv-curator-json", label: production)
-  │     └── fallback: hardcoded prompt in curator-prompt.ts
+  │     └── fallback: hardcoded prompt in curator-prompt.ts when Langfuse is unset,
+  │         the fetch fails, or the strict production text omits `reply_text`
   ├── applyCurationModePolicy + compileCuratorPrompt
   ├── chat(..., { model: getTailorModel(), langfusePrompt })
   ├── extractStructuredJson → validateCvJson → size cap
@@ -64,7 +65,7 @@ See [Pipeline enhancements](./PIPELINE_ENHANCEMENTS.md) for the two-pass pipelin
 
 - **Master CV injection**: The canonical master CV JSON is injected into the curator prompt. No selective retrieval in MVP. Fine-grained RAG and metadata tagging are explicitly rejected in v1 to preserve architectural simplicity.
 - **Multi-Tenant Road Map & Isolation (Future)**: When scaling to a multi-user model, user career data will remain strictly isolated at the level of private Markdown files (rather than shared database entries). Onboarding will utilize an automated ingestion pipeline featuring an "Onboarding Iceberg Principle"—extracting unpolished, under-the-radar scale, team size, budget, and impact metrics typically pruned from a single uploaded CV, converting them to high-fidelity Markdown blocks using an agentic conversation flow.
-- **Word .docx output**: LLM produces schema-validated curated JSON; server mechanically builds `.docx` via the `docx` npm package. Returns as base64. Later inbox rows decode and attach to Gmail drafts (not shipped yet).
+- **Word .docx output**: LLM produces schema-validated curated JSON; server mechanically builds `.docx` via the `docx` npm package. Returns as base64. The inbox worker decodes and attaches it to a Gmail reply draft.
 - **OpenRouter flex is transport- and vendor-gated, not a shared request-builder flag.** `ChatOptions.openRouterFlex` (default `OPENROUTER_FLEX_ENABLED=true`) is read only by `callOpenRouter`. Direct OpenAI/Google/Anthropic/DeepSeek wrappers ignore it — they never attach `service_tier`. On OpenRouter, `service_tier: flex` is attached only when the API model vendor is `openai` or `google`. OpenRouter **restricts routing to flex endpoints** when that field is set, so sending it on `openrouter/deepseek/…` (or Qwen/MiniMax/etc.) is not a no-op. Anthropic stays on the direct API (Message Batches deferred). There is no global always-flex setting and no provider fallback chain in `chat()`.
 - **Provider/model namespace for all LLM routing**: Every model identifier is `provider/model`. The first `/`-delimited segment names the provider (`KNOWN_PROVIDERS`); the remainder is the model ID passed to that provider's API. No bare aliases (e.g. `sonnet`, `gpt-4o`) — `anthropic/sonnet` is a namespaced family alias resolved inside `callAnthropic`. Adding a **model** is an env/config change. Adding a **provider** still needs one `dispatchProvider` case plus an integration function (SDK call shape). Do not infer provider from model-name conventions.
 - **Separate model**: CV generation uses `TAILOR_MODEL`; generic `chat()` defaults use `AI_MODEL`. There is no production chat-bot route yet.

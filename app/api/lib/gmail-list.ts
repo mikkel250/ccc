@@ -3,12 +3,11 @@
  */
 import {
   getGmailApiBaseUrl,
-  getGmailHttpTimeoutMs,
   getGmailListMaxResults,
   getGmailRecruiterLabel,
 } from "./gmail-config";
+import { gmailFetchJson, gmailJsonObject } from "./gmail-http";
 import {
-  gmailAbortAfter,
   refreshGmailAccessToken,
   type FetchLike,
 } from "./gmail-oauth";
@@ -22,61 +21,15 @@ export type GmailListResult =
   | { ok: true; messages: GmailListedMessage[] }
   | { ok: false; error: string };
 
-type GmailJsonFetchResult =
-  | { ok: true; body: unknown }
-  | { ok: false; error: string };
-
-/** Narrow an unknown JSON value to a non-array object. */
-function jsonObject(raw: unknown): object | undefined {
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-    return undefined;
-  }
-  return raw;
-}
-
-/** Fetch and decode one authenticated Gmail API JSON response. */
-async function gmailGetJson(
-  url: string,
-  accessToken: string,
-  fetchImpl: FetchLike
-): Promise<GmailJsonFetchResult> {
-  const deadline = gmailAbortAfter(getGmailHttpTimeoutMs());
-  try {
-    let response: Response;
-    try {
-      response = await fetchImpl(url, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-        signal: deadline.signal,
-      });
-    } catch {
-      return { ok: false, error: "Gmail API request failed" };
-    }
-    if (!response.ok) {
-      return { ok: false, error: `Gmail API HTTP ${response.status}` };
-    }
-    try {
-      return { ok: true, body: await response.json() };
-    } catch {
-      if (deadline.signal.aborted) {
-        return { ok: false, error: "Gmail API request failed" };
-      }
-      return { ok: false, error: "Gmail API response was not valid JSON" };
-    }
-  } finally {
-    deadline.cancel();
-  }
-}
-
 export type GmailLabelMatch =
   | { ok: true; labelId: string }
   | { ok: false; error: string };
 
-/** Resolve an operator label name to its Gmail label ID. */
 export function matchGmailLabelId(
   labelsRaw: unknown,
   wantedName: string
 ): GmailLabelMatch {
-  const root = jsonObject(labelsRaw);
+  const root = gmailJsonObject(labelsRaw);
   const labels = root === undefined ? undefined : Reflect.get(root, "labels");
   if (!Array.isArray(labels)) {
     return { ok: false, error: "Gmail labels list was not an array" };
@@ -105,11 +58,10 @@ export function matchGmailLabelId(
   return { ok: false, error: "Gmail recruiter label not found" };
 }
 
-/** Validate a Gmail messages response and extract message identifiers. */
 export function parseGmailMessageList(
   raw: unknown
 ): GmailListResult {
-  const root = jsonObject(raw);
+  const root = gmailJsonObject(raw);
   if (root === undefined) {
     return { ok: false, error: "Gmail messages response was not an object" };
   }
@@ -138,7 +90,6 @@ export function parseGmailMessageList(
   return { ok: true, messages };
 }
 
-/** List the first bounded page of messages carrying the recruiter label. */
 export async function listLabeledRecruiterMail(params?: {
   fetchImpl?: FetchLike;
 }): Promise<GmailListResult> {
@@ -148,11 +99,11 @@ export async function listLabeledRecruiterMail(params?: {
     return { ok: false, error: token.error };
   }
   const base = getGmailApiBaseUrl().replace(/\/+$/, "");
-  const labelsRes = await gmailGetJson(
-    `${base}/users/me/labels`,
-    token.data.accessToken,
-    fetchImpl
-  );
+  const labelsRes = await gmailFetchJson({
+    url: `${base}/users/me/labels`,
+    accessToken: token.data.accessToken,
+    fetchImpl,
+  });
   if (!labelsRes.ok) {
     return { ok: false, error: labelsRes.error };
   }
@@ -164,11 +115,11 @@ export async function listLabeledRecruiterMail(params?: {
   const listUrl = new URL(`${base}/users/me/messages`);
   listUrl.searchParams.set("labelIds", matched.labelId);
   listUrl.searchParams.set("maxResults", String(maxResults));
-  const listRes = await gmailGetJson(
-    listUrl.toString(),
-    token.data.accessToken,
-    fetchImpl
-  );
+  const listRes = await gmailFetchJson({
+    url: listUrl.toString(),
+    accessToken: token.data.accessToken,
+    fetchImpl,
+  });
   if (!listRes.ok) {
     return { ok: false, error: listRes.error };
   }

@@ -33,10 +33,10 @@ app/api/tailor-cv/route.ts
           ├── validateCvJson()        app/api/lib/cv-schema.ts
           └── buildJsonDocxBase64()   app/api/lib/json-docx-builder.ts
     │
-    ▼ 200 { cv, curatedJson, builderVersion, model, usage, remaining, resetTime [, replyText] }
+    ▼ 200 { cv, curatedJson, builderVersion, model, usage, remaining, resetTime [, replyText (strict-only)] }
 ```
 
-Inbox is not this HTTP client. `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a Gmail payload, then `runTailorCore` (same curator + mechanical `.docx`; no Bearer, no public rate-limit buckets). Success returns `claimToken`; the claim lease is renewed while core runs, and a lost or failed renewal aborts before a processed mark; non-crash failures release the Redis claim. A programmer error keeps the claim until the lease expires. `buildTailorResponse` remains the HTTP adapter (`NextRequest`, IP, auth, `checkRateLimit`) and attaches `remaining` / `resetTime`.
+Inbox is not this HTTP client. `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a Gmail payload, then `runTailorCore` (same curator + mechanical `.docx`; no Bearer, no public rate-limit buckets). Success returns `claimToken`; the claim lease is renewed while core runs, and a lost or failed renewal aborts before a processed mark; non-crash failures release the Redis claim. A programmer error keeps the claim until the lease expires. The scan holds a separate per-thread claim across that tailor and `drafts.create`, and refreshes the Gmail access token after tailor before creating the draft. `buildTailorResponse` remains the HTTP adapter (`NextRequest`, IP, auth, `checkRateLimit`) and attaches `remaining` / `resetTime`.
 
 ---
 
@@ -188,4 +188,4 @@ Prompt files cloned from the portfolio chat bot remain for a hypothetical future
 
 ## Planned but not implemented
 
-See [PIPELINE_ENHANCEMENTS](./PIPELINE_ENHANCEMENTS.md) (two-pass, critic) and [LEARNING_SYSTEM](./LEARNING_SYSTEM.md) (SQLite feedback). Recruiter reply text + Gmail drafts: [inbox worker product contract](../plans/2026-09-05-002-feat-inbox-worker-plan.md). Still deferred: selective RAG.
+See [PIPELINE_ENHANCEMENTS](./PIPELINE_ENHANCEMENTS.md) (two-pass, critic) and [LEARNING_SYSTEM](./LEARNING_SYSTEM.md) (SQLite feedback). Still deferred: selective RAG.
