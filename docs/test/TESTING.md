@@ -98,6 +98,7 @@ Fast, no server, no API keys:
 ```bash
 npm test
 npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
+npm run lint              # eslint; production `any` and Jest/Vitest/Sinon imports are errors
 # Optional live Upstash claim/processed (not CI):
 RUN_INBOX_REDIS_TESTS=true npm test
 ```
@@ -117,10 +118,17 @@ RUN_INBOX_REDIS_TESTS=true npm test
 | `tests/curator-prompt.test.ts` | Curator prompt contract |
 | `tests/knowledge-base.test.ts` | Legacy KB helpers (not tailor hot path) |
 | `tests/rate-limit.test.ts` | Dual IP + secret rate limits |
+| `tests/gmail-oauth.test.ts` | Gmail OAuth URL, callback, token exchange/refresh |
+| `tests/gmail-http.test.ts` | Gmail JSON fetch timeout + shared JSON/MIME helpers |
+| `tests/gmail-list.test.ts` | Recruiter-label resolve + `messages.list` |
+| `tests/gmail-auth.test.ts` | `gmail:auth` / `gmail:list` CLI helpers |
 | `tests/gmail-body.test.ts` | Gmail payload → JD (`text/plain` else html-to-text) |
-| `tests/inbox-processed-store.test.ts` | Claim SET NX vs token-owned processed mark (missing/stolen claim cannot mark) / crash recovery / Redis timeout results |
+| `tests/gmail-message.test.ts` | Reply headers from a Gmail message resource |
+| `tests/gmail-drafts.test.ts` | MIME + draft create vs thread reuse |
+| `tests/inbox-processed-store.test.ts` | Claim SET NX vs token-owned processed mark; thread claim; crash recovery / Redis timeout results |
 | `tests/inbox-redis-claim.integration.test.ts` | Opt-in live Upstash claim/processed checks (`RUN_INBOX_REDIS_TESTS=true`; skipped in CI) |
 | `tests/inbox-tailor.test.ts` | In-process strict tailor from labeled payload; lease renewal abort on lost claim |
+| `tests/inbox-scan.test.ts` | Scan job: one thread draft, reuse, 422 skip, processed skip |
 | `tests/route.test.ts` | Auth, curator cutover, dual response |
 | `tests/tailor-cv-validation.test.ts` | Request body + JD size validation |
 
@@ -143,6 +151,16 @@ npm run smoke -- http://localhost:3000 --parity
 Requires a running server and `TAILOR_API_KEY`. Master CV (`MASTER_CV_JSON` / `MASTER_CV_PATH`) is the server's concern — smoke exercises it end-to-end via tailor. Asserts health/tailor/schema validation plus three strict artifacts: `tmp/smoke/<jd-slug>.curated.json`, `tmp/smoke/<jd-slug>.docx`, and `tmp/smoke/<jd-slug>.reply.txt` (from `replyText`). No judge model keys and no score-based exit. Default `curationMode` is `strict`; pass `--flexible` or set `SMOKE_CURATION_MODE=flexible`. Writes those files from the JD basename (does not overwrite other JDs with distinct basenames). Flexible runs also write `tmp/smoke/<jd-slug>.cover-letter.docx` when `coverLetter` is returned (missing/empty letters warn and skip). Like CV DOCX, cover-letter DOCX is written unredacted (`SMOKE_WRITE_UNREDACTED` remains specific to `curated.json`). Reusing a basename warns before overwriting its artifacts.
 
 `--parity` / `npm run smoke:parity` writes the same artifacts under `tmp/smoke/<provider>/<model>/` using the tailor response `model`, plus `tmp/smoke/parity-status.json` (filled cell and pending `SMOKE_PARITY_MODELS`). One live `TAILOR_MODEL` per process — restart `npm run dev` to fill the next cell. Default smoke without `--parity` stays flat (`tmp/smoke/<jd-slug>.*`). Pin `TAILOR_REASONING_EFFORT` for fair A/B. Catalog is env-overridable; bare aliases fail closed.
+
+## Gmail operator scripts (live Gmail — not in `npm test` / CI)
+
+Requires a Google Cloud Desktop OAuth client with the Gmail API enabled. Tokens stay in env; do not commit them.
+
+```bash
+npm run gmail:auth   # loopback consent; writes GMAIL_REFRESH_TOKEN= to a mode-0600 file and prints that path
+npm run gmail:list   # lists { id, threadId } for GMAIL_RECRUITER_LABEL
+npm run inbox:scan   # requires INBOX_SCAN_ENABLED=1; tailor labeled mail; create or reuse a Gmail reply draft
+```
 
 Mechanical regen (no LLM):
 
