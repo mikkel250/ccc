@@ -305,7 +305,7 @@ export async function claimInboxMessage(
 export async function releaseInboxClaim(
   messageId: string,
   claimToken: string
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; deleted: boolean } | { ok: false; error: string }> {
   const parsed = parseInboxMessageId(messageId);
   if (!parsed.ok) {
     return parsed;
@@ -319,7 +319,7 @@ export async function releaseInboxClaim(
   if (!released.ok) {
     return released;
   }
-  return { ok: true };
+  return { ok: true, deleted: released.value };
 }
 
 export async function renewInboxClaim(
@@ -383,15 +383,28 @@ export async function extractUnprocessedInboxMessage(
   if (!claimed.ok) {
     return claimed;
   }
-  if (claimed.outcome === "processed") {
-    return { ok: true, status: "skipped-processed" };
-  }
-  if (claimed.outcome === "lost") {
-    return { ok: true, status: "skipped-claimed" };
+  if (claimed.outcome !== "won") {
+    return {
+      ok: true,
+      status:
+        claimed.outcome === "processed" ? "skipped-processed" : "skipped-claimed",
+    };
   }
   const extracted = extractGmailJobDescription(message);
   if (!extracted.ok) {
-    await releaseInboxClaim(messageId, claimed.token);
+    const released = await releaseInboxClaim(messageId, claimed.token);
+    if (!released.ok) {
+      console.error(
+        "Inbox claim release failed after extract failure:",
+        messageId,
+        released.error
+      );
+    } else if (!released.deleted) {
+      console.error(
+        "Inbox claim release did not delete the claim after extract failure:",
+        messageId
+      );
+    }
     return extracted;
   }
   return {

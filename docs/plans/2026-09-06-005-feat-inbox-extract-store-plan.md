@@ -16,7 +16,7 @@ execution: code
 - **Objective:** Turn a Gmail message resource into a job-description string, and persist claim vs processed `messageId`s in Redis so a second extract after the terminal mark is a no-op.
 - **Authority:** Inbox product contract R7, R10 (claim vs processed), R12 in `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`. Board: M8.3 in `docs/plans/README.md`.
 - **Open blockers:** None.
-- **Stop when:** `text/plain` (else html-to-text) extract works; SET NX claim has one winner; processed mark skips extract; crash before processed does not treat the claim as terminal. No tailor, no Gmail drafts, no `inbox:scan` job.
+- **Stop when:** `text/plain` (else html-to-text) extract works; SET NX claim has one winner; processed mark skips extract; crash before processed does not treat the claim as terminal (recovery after the claim key expires or is released — a live claim still returns `skipped-claimed`). No tailor, no Gmail drafts, no `inbox:scan` job. Draft reconciliation is M8.5.
 
 ## Product Contract
 
@@ -49,7 +49,7 @@ Overlapping local and Railway scans must not double-extract; the JD must come fr
 
 - AE1. Multipart with plain + html → plain text. HTML-only → stripped text. **Covers R7.**
 - AE2. Two concurrent claims → one `won`. **Covers R10.**
-- AE3. After `markInboxProcessed`, extract is skipped. Claim without processed still allows a later win after the claim key is gone. **Covers R12, crash recovery.**
+- AE3. After `markInboxProcessed`, extract is skipped. Claim without processed still allows a later win after the claim key is gone (TTL expiry or explicit release on extract failure). A live claim does not inspect Gmail drafts. **Covers R12, crash recovery.** Gmail existing-draft reconcile stays M8.5.
 
 ## Planning Contract
 

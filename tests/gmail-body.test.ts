@@ -14,6 +14,18 @@ describe("htmlToText", () => {
     assert.equal(htmlToText("<p>Need a GM &amp; chef</p>"), "Need a GM & chef");
   });
 
+  it("decodes hexadecimal numeric and named apostrophe entities", () => {
+    assert.equal(htmlToText("Need a GM&#x2019;s chef"), "Need a GM\u2019s chef");
+    assert.equal(htmlToText("It&apos;s a GM role"), "It's a GM role");
+  });
+
+  it("leaves prototype property names unchanged", () => {
+    assert.equal(
+      htmlToText("<p>Role &constructor; here</p>"),
+      "Role &constructor; here"
+    );
+  });
+
   it("decodes hexadecimal and named HTML entities", () => {
     assert.equal(
       htmlToText("<p>GM&#x2019;s role &mdash; hire now</p>"),

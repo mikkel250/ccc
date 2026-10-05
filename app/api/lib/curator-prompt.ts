@@ -206,6 +206,7 @@ const CURATOR_PROMPT_CACHE_TTL_SECONDS = Math.max(
   Math.floor(getEnvNumber("LANGFUSE_CURATOR_PROMPT_CACHE_TTL_SECONDS", 300))
 );
 
+// Keep <output_format> aligned with references/json-curator/master-cv.schema.json.
 const FALLBACK_PROMPT = `<role>
 You are an elite CV/résumé strategist and ATS specialist. You structure every CV using
 Sam Struan's 8-part framework and curate content from the user's Master CV JSON.
@@ -314,8 +315,7 @@ Shape:
   "reply_text": "plain-text recruiter reply email body"
 }
 
-curated_cv MUST match hard constraints in references/json-curator/master-cv.schema.json
-(keep this block synchronized with that schema — do not invent fields):
+curated_cv must use exactly the master CV schema shown in <master_cv_json> (same keys and value types; do not add fields).
 The first non-whitespace character must be \`{\` and the last must be \`}\`.
 No Alignment Snapshot, Change Log, Keyword Bank, cut audit, markdown fences, or
 conversational filler before or after the JSON.
@@ -340,6 +340,49 @@ ${MASTER_CV_JSON_PLACEHOLDER}
 /** Hardcoded fallback (kept in sync with Langfuse prompt cv-curator-json). */
 export function getCuratorPromptFallbackText(): string {
   return FALLBACK_PROMPT;
+}
+
+const CURATED_CV_OUTPUT_KEY = /(?:"curated_cv"|\bcurated_cv\b)\s*[:,}]/;
+const REPLY_TEXT_OUTPUT_KEY = /(?:"reply_text"|\breply_text\b)\s*[:,}]/;
+
+/**
+ * True when one `{...}` object declares both strict output keys.
+ * Nested values are stripped so `"curated_cv": { ... }` still counts.
+ * Naming `reply_text` and `curated_cv` in prose is not the contract.
+ */
+function fetchedPromptRequestsStrictWrapper(fetchedPrompt: string): boolean {
+  const starts: number[] = [];
+  for (let i = 0; i < fetchedPrompt.length; i++) {
+    const ch = fetchedPrompt[i];
+    if (ch === "{") {
+      starts.push(i);
+      continue;
+    }
+    if (ch !== "}") continue;
+    const start = starts.pop();
+    if (start === undefined) continue;
+    const inner = fetchedPrompt.slice(start + 1, i).replace(/\{[^{}]*\}/g, "");
+    const body = `${inner}\n}`;
+    if (CURATED_CV_OUTPUT_KEY.test(body) && REPLY_TEXT_OUTPUT_KEY.test(body)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Strict production text must declare the output object `{ curated_cv, reply_text }`.
+ * A fetched prompt that only mentions those names is the previous bare-CV contract.
+ */
+export function resolveFetchedCuratorPrompt(
+  mode: CurationMode | undefined,
+  fetchedPrompt: string,
+  fallbackPrompt: string
+): { systemPrompt: string; staleStrictContract: boolean } {
+  if (mode !== "flexible" && !fetchedPromptRequestsStrictWrapper(fetchedPrompt)) {
+    return { systemPrompt: fallbackPrompt, staleStrictContract: true };
+  }
+  return { systemPrompt: fetchedPrompt, staleStrictContract: false };
 }
 
 export async function getCuratorPrompt(mode?: CurationMode): Promise<{
@@ -373,7 +416,15 @@ export async function getCuratorPrompt(mode?: CurationMode): Promise<{
       fetchTimeoutMs: curatorPromptFetchTimeoutMs(),
     });
 
-    if (!isFlexible && !strictPromptRequestsReplyWrapper(prompt.prompt)) {
+    const resolved = resolveFetchedCuratorPrompt(
+      mode,
+      prompt.prompt,
+      fallbackPrompt
+    );
+    if (
+      resolved.staleStrictContract ||
+      (!isFlexible && !strictPromptRequestsReplyWrapper(prompt.prompt))
+    ) {
       console.warn(
         `Langfuse prompt "${prompt.name}" v${prompt.version} omitted the reply wrapper; using hardcoded fallback`
       );
@@ -388,7 +439,7 @@ export async function getCuratorPrompt(mode?: CurationMode): Promise<{
     }
 
     return {
-      systemPrompt: prompt.prompt,
+      systemPrompt: resolved.systemPrompt,
       langfusePrompt: { name: prompt.name, version: prompt.version },
     };
   } catch (error) {

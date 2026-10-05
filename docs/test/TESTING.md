@@ -119,7 +119,7 @@ npm run lint              # eslint; production `any` and Jest/Vitest/Sinon impor
 | `tests/gmail-list.test.ts` | Recruiter-label resolve + `messages.list` |
 | `tests/gmail-auth.test.ts` | `gmail:auth` / `gmail:list` CLI helpers |
 | `tests/gmail-body.test.ts` | Gmail payload → JD (`text/plain` else html-to-text) |
-| `tests/inbox-processed-store.test.ts` | Claim SET NX vs token-owned processed mark (missing/stolen claim cannot mark) / crash recovery / Redis timeout results |
+| `tests/inbox-processed-store.test.ts` | Claim SET NX vs token-owned processed mark (missing/stolen claim cannot mark); extract-fail releases claim; crash recovery / Redis timeout results |
 | `tests/inbox-tailor.test.ts` | In-process strict tailor from labeled payload; lease renewal abort on lost claim |
 | `tests/route.test.ts` | Auth, curator cutover, dual response |
 | `tests/tailor-cv-validation.test.ts` | Request body + JD size validation |

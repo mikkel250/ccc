@@ -68,5 +68,7 @@ describe("inbox-config", () => {
     assert.equal(getInboxProcessedTtlSeconds(), 0);
     assert.equal(getInboxMessageIdMaxChars(), 1);
     assert.equal(getInboxRedisTimeoutMs(), 1);
+    process.env.INBOX_REDIS_TIMEOUT_MS = "not-a-number";
+    assert.equal(getInboxRedisTimeoutMs(), 2000);
   });
 });
