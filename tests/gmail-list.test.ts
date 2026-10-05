@@ -69,6 +69,29 @@ describe("gmail-list parsers", () => {
     }
   });
 
+  it("rejects a labels payload that is not a list", () => {
+    const result = matchGmailLabelId({ labels: {} }, "Recruiter");
+    assert.deepEqual(result, {
+      ok: false,
+      error: "Gmail labels list was not an array",
+    });
+  });
+
+  it("rejects malformed message list entries", () => {
+    assert.deepEqual(parseGmailMessageList(null), {
+      ok: false,
+      error: "Gmail messages response was not an object",
+    });
+    assert.deepEqual(parseGmailMessageList({ messages: {} }), {
+      ok: false,
+      error: "Gmail messages list was not an array",
+    });
+    assert.deepEqual(parseGmailMessageList({ messages: [{ id: "m1" }] }), {
+      ok: false,
+      error: "Gmail messages entry missing threadId",
+    });
+  });
+
   it("parses id and threadId", () => {
     const result = parseGmailMessageList({
       messages: [{ id: "m1", threadId: "t1" }],
@@ -174,6 +197,56 @@ describe("listLabeledRecruiterMail", () => {
       /GMAIL_API_BASE_URL.*HTTPS/
     );
     assert.equal(gmailRequestMade, false);
+  });
+
+  it("fails closed when token refresh fails and does not call Gmail", async () => {
+    let gmailRequestMade = false;
+    const result = await listLabeledRecruiterMail({
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.includes("/token")) {
+          return jsonResponse({ error: "invalid_grant" }, 401);
+        }
+        gmailRequestMade = true;
+        return jsonResponse({});
+      },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(gmailRequestMade, false);
+    if (!result.ok) {
+      assert.match(result.error, /token HTTP 401/);
+    }
+  });
+
+  it("fails closed when the Gmail list body stalls after headers", async () => {
+    process.env.GMAIL_HTTP_TIMEOUT_MS = "20";
+    const result = await listLabeledRecruiterMail({
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        if (url.includes("/token")) {
+          return jsonResponse({ access_token: "access" });
+        }
+        const signal = init?.signal;
+        return {
+          ok: true,
+          status: 200,
+          json: () =>
+            new Promise((_resolve, reject) => {
+              const fail = () =>
+                reject(new DOMException("Aborted", "AbortError"));
+              if (signal?.aborted) {
+                fail();
+                return;
+              }
+              signal?.addEventListener("abort", fail);
+            }),
+        } as unknown as Response;
+      },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /Gmail API request failed/);
+    }
   });
 
   it("fails closed when a Gmail list GET is aborted by the HTTP timeout", async () => {

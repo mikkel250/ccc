@@ -162,6 +162,52 @@ describe("gmail-auth CLI helpers", () => {
     }
   });
 
+  it("keeps waiting after a stray code callback and accepts the matching state", async () => {
+    process.env.GMAIL_CLIENT_ID = "client-id";
+    process.env.GMAIL_CLIENT_SECRET = "client-secret";
+    process.env.GMAIL_OAUTH_TOKEN_URL = "https://oauth.example.test/token";
+    process.env.GMAIL_AUTH_BIND_HOST = "127.0.0.1";
+    process.env.GMAIL_AUTH_TIMEOUT_MS = "5000";
+    const originalLog = console.log;
+    const originalError = console.error;
+    console.log = () => undefined;
+    console.error = () => undefined;
+    try {
+      const result = await runGmailAuthCli({
+        openUrl: (url) => {
+          const auth = new URL(url);
+          const redirectUri = auth.searchParams.get("redirect_uri");
+          const oauthState = auth.searchParams.get("state");
+          if (redirectUri == null || oauthState == null) {
+            throw new Error("authorize URL missing redirect or state");
+          }
+          void (async () => {
+            const stray = await fetch(
+              `${redirectUri}/?code=stray&state=wrong`
+            );
+            await stray.arrayBuffer();
+            const real = await fetch(
+              `${redirectUri}/?code=c&state=${encodeURIComponent(oauthState)}`
+            );
+            await real.arrayBuffer();
+          })();
+        },
+        fetchImpl: async () =>
+          new Response(
+            JSON.stringify({
+              access_token: "a",
+              refresh_token: "r",
+            }),
+            { status: 200 }
+          ),
+      });
+      assert.equal(result.ok, true);
+    } finally {
+      console.log = originalLog;
+      console.error = originalError;
+    }
+  });
+
   it("fails closed when the auth listener wait exceeds GMAIL_AUTH_TIMEOUT_MS", async () => {
     process.env.GMAIL_CLIENT_ID = "client-id";
     process.env.GMAIL_CLIENT_SECRET = "client-secret";

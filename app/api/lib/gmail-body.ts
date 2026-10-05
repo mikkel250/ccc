@@ -88,7 +88,7 @@ function styleDeclaresPositiveFontSize(style: string): boolean {
 }
 
 function tagStyle(raw: string): string | undefined {
-  const decoded = decodeHtmlEntities(raw);
+  const decoded = decodeHtmlEntities(raw, "replace");
   const quoted = decoded.match(/style\s*=\s*(["'])([^"']*)\1/i);
   if (quoted) {
     return quoted[2];
@@ -116,7 +116,7 @@ function nextTextHide(style: string | undefined, parentHide: boolean): boolean {
 
 /** Hidden-content policy: drop boolean `hidden`, `aria-hidden="true"`, and hidden inline styles. */
 function isHiddenOpeningTag(raw: string): boolean {
-  const decoded = decodeHtmlEntities(raw);
+  const decoded = decodeHtmlEntities(raw, "replace");
   const attrsWithoutValues = decoded.replace(/=\s*("[^"]*"|'[^']*')/g, "");
   return (
     /\shidden(?=[\s=>/])/i.test(attrsWithoutValues) ||
@@ -262,6 +262,9 @@ const LATIN1_ENTITY_NAMES = [
 
 const HTML_NAMED_ENTITIES: Record<string, string> = {
   quot: '"',
+  colon: ":",
+  Tab: "\t",
+  NewLine: "\n",
   amp: "&",
   AMP: "&",
   apos: "'",
@@ -331,12 +334,19 @@ function decodeNumericEntity(body: string): string | undefined {
 }
 
 /** Decode named and numeric (decimal + hex) HTML entities after tags are stripped. */
-function decodeHtmlEntities(text: string): string {
+function decodeHtmlEntities(
+  text: string,
+  invalidNumeric: "strip" | "replace" = "strip"
+): string {
   return text.replace(
     /&(#x[0-9a-fA-F]+|#\d+|[A-Za-z][A-Za-z0-9]+);/g,
     (full, body: string) => {
       if (body.startsWith("#")) {
-        return decodeNumericEntity(body) ?? "";
+        const decoded = decodeNumericEntity(body);
+        if (decoded !== undefined) {
+          return decoded;
+        }
+        return invalidNumeric === "replace" ? "\uFFFD" : "";
       }
       return Object.hasOwn(HTML_NAMED_ENTITIES, body)
         ? HTML_NAMED_ENTITIES[body]!

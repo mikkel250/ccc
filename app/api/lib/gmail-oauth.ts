@@ -142,31 +142,36 @@ async function postTokenRequest(
   tokenUrl: string,
   requireRefreshToken: boolean
 ): Promise<GmailOauthResult<GmailTokenSet>> {
-  let response: Response;
   const deadline = gmailAbortAfter(getGmailHttpTimeoutMs());
   try {
-    response = await fetchImpl(tokenUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-      redirect: "error",
-      signal: deadline.signal,
-    });
-  } catch {
-    return { ok: false, error: "Gmail token request failed" };
+    let response: Response;
+    try {
+      response = await fetchImpl(tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+        redirect: "error",
+        signal: deadline.signal,
+      });
+    } catch {
+      return { ok: false, error: "Gmail token request failed" };
+    }
+    if (!response.ok) {
+      return { ok: false, error: `Gmail token HTTP ${response.status}` };
+    }
+    let parsed: unknown;
+    try {
+      parsed = await response.json();
+    } catch {
+      if (deadline.signal.aborted) {
+        return { ok: false, error: "Gmail token request failed" };
+      }
+      return { ok: false, error: "Gmail token response was not valid JSON" };
+    }
+    return parseTokenPayload(parsed, requireRefreshToken);
   } finally {
     deadline.cancel();
   }
-  if (!response.ok) {
-    return { ok: false, error: `Gmail token HTTP ${response.status}` };
-  }
-  let parsed: unknown;
-  try {
-    parsed = await response.json();
-  } catch {
-    return { ok: false, error: "Gmail token response was not valid JSON" };
-  }
-  return parseTokenPayload(parsed, requireRefreshToken);
 }
 
 /** Exchange a Gmail authorization code for access and refresh tokens. */

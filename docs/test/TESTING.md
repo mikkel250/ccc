@@ -149,7 +149,7 @@ Requires a running server and `TAILOR_API_KEY`. Master CV (`MASTER_CV_JSON` / `M
 Requires a Google Cloud Desktop OAuth client with the Gmail API enabled. Tokens stay in env; do not commit them.
 
 ```bash
-npm run gmail:auth   # loopback consent; prints GMAIL_REFRESH_TOKEN=
+npm run gmail:auth   # loopback consent; writes GMAIL_REFRESH_TOKEN= to a mode-0600 file and prints that path
 npm run gmail:list   # lists { id, threadId } for GMAIL_RECRUITER_LABEL
 ```
 

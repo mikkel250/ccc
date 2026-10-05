@@ -88,6 +88,17 @@ export function isGmailOauthLoopbackCallback(url: URL): boolean {
   return url.searchParams.has("code") || url.searchParams.has("error");
 }
 
+/** True when this redirect belongs to the in-flight attempt, not a stray hit. */
+export function isGmailOauthCallbackForState(
+  url: URL,
+  expectedState: string
+): boolean {
+  return (
+    isGmailOauthLoopbackCallback(url) &&
+    url.searchParams.get("state") === expectedState
+  );
+}
+
 type GmailAuthListener = {
   port: number;
   close: () => Promise<void>;
@@ -133,8 +144,8 @@ export async function runGmailAuthCli(params?: {
         });
         server.on("request", (req: IncomingMessage, res: ServerResponse) => {
           const url = requestUrl(req, bindHost, address.port);
-          if (!isGmailOauthLoopbackCallback(url)) {
-            res.statusCode = 204;
+          if (!isGmailOauthCallbackForState(url, state)) {
+            res.statusCode = isGmailOauthLoopbackCallback(url) ? 400 : 204;
             res.end();
             return;
           }

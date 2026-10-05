@@ -30,6 +30,21 @@ describe("htmlToText", () => {
     assert.equal(htmlToText("<p>&#55296;visible</p>"), "visible");
   });
 
+  it("drops text hidden with an HTML5 colon entity", () => {
+    assert.equal(
+      htmlToText('<div style="display&colon;none">SECRET</div>visible'),
+      "visible"
+    );
+  });
+
+  it("keeps text when a surrogate breaks a hidden style name", () => {
+    const text = htmlToText(
+      '<div style="display&#xD800;:none">SECRET</div>visible'
+    );
+    assert.match(text, /SECRET/);
+    assert.match(text, /visible/);
+  });
+
   it("drops comments, head, and hidden inner text", () => {
     const html = [
       "<html><head><title>Tracking pixel</title></head>",

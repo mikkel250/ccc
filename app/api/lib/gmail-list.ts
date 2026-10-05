@@ -22,6 +22,10 @@ export type GmailListResult =
   | { ok: true; messages: GmailListedMessage[] }
   | { ok: false; error: string };
 
+type GmailJsonFetchResult =
+  | { ok: true; body: unknown }
+  | { ok: false; error: string };
+
 /** Narrow an unknown JSON value to a non-array object. */
 function jsonObject(raw: unknown): object | undefined {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
@@ -35,26 +39,31 @@ async function gmailGetJson(
   url: string,
   accessToken: string,
   fetchImpl: FetchLike
-): Promise<GmailListResult & { body?: unknown }> {
-  let response: Response;
+): Promise<GmailJsonFetchResult> {
   const deadline = gmailAbortAfter(getGmailHttpTimeoutMs());
   try {
-    response = await fetchImpl(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      signal: deadline.signal,
-    });
-  } catch {
-    return { ok: false, error: "Gmail API request failed" };
+    let response: Response;
+    try {
+      response = await fetchImpl(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: deadline.signal,
+      });
+    } catch {
+      return { ok: false, error: "Gmail API request failed" };
+    }
+    if (!response.ok) {
+      return { ok: false, error: `Gmail API HTTP ${response.status}` };
+    }
+    try {
+      return { ok: true, body: await response.json() };
+    } catch {
+      if (deadline.signal.aborted) {
+        return { ok: false, error: "Gmail API request failed" };
+      }
+      return { ok: false, error: "Gmail API response was not valid JSON" };
+    }
   } finally {
     deadline.cancel();
-  }
-  if (!response.ok) {
-    return { ok: false, error: `Gmail API HTTP ${response.status}` };
-  }
-  try {
-    return { ok: true, messages: [], body: await response.json() };
-  } catch {
-    return { ok: false, error: "Gmail API response was not valid JSON" };
   }
 }
 
@@ -70,7 +79,7 @@ export function matchGmailLabelId(
   const root = jsonObject(labelsRaw);
   const labels = root === undefined ? undefined : Reflect.get(root, "labels");
   if (!Array.isArray(labels)) {
-    return { ok: false, error: "Gmail labels response was not an object" };
+    return { ok: false, error: "Gmail labels list was not an array" };
   }
   const wanted = wantedName.trim();
   let caseInsensitiveId: string | undefined;
@@ -109,20 +118,20 @@ export function parseGmailMessageList(
     return { ok: true, messages: [] };
   }
   if (!Array.isArray(messagesRaw)) {
-    return { ok: false, error: "Gmail messages response was not an object" };
+    return { ok: false, error: "Gmail messages list was not an array" };
   }
   const messages: GmailListedMessage[] = [];
   for (const entry of messagesRaw) {
     if (entry === null || typeof entry !== "object") {
-      return { ok: false, error: "Gmail messages response was not an object" };
+      return { ok: false, error: "Gmail messages entry was not an object" };
     }
     const id = Reflect.get(entry, "id");
     const threadId = Reflect.get(entry, "threadId");
     if (typeof id !== "string" || id.trim() === "") {
-      return { ok: false, error: "Gmail messages response was not an object" };
+      return { ok: false, error: "Gmail messages entry missing id" };
     }
     if (typeof threadId !== "string" || threadId.trim() === "") {
-      return { ok: false, error: "Gmail messages response was not an object" };
+      return { ok: false, error: "Gmail messages entry missing threadId" };
     }
     messages.push({ id: id.trim(), threadId: threadId.trim() });
   }
