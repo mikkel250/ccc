@@ -14,11 +14,59 @@ describe("htmlToText", () => {
     assert.equal(htmlToText("<p>Need a GM &amp; chef</p>"), "Need a GM & chef");
   });
 
+  it("decodes hexadecimal numeric and named apostrophe entities", () => {
+    assert.equal(htmlToText("Need a GM&#x2019;s chef"), "Need a GM\u2019s chef");
+    assert.equal(htmlToText("It&apos;s a GM role"), "It's a GM role");
+  });
+
+  it("leaves prototype property names unchanged", () => {
+    assert.equal(
+      htmlToText("<p>Role &constructor; here</p>"),
+      "Role &constructor; here"
+    );
+  });
+
   it("decodes hexadecimal and named HTML entities", () => {
     assert.equal(
-      htmlToText("<p>Need a GM&#x2019;s chef &mdash; on-site</p>"),
-      "Need a GM\u2019s chef \u2014 on-site"
+      htmlToText("<p>GM&#x2019;s role &mdash; hire now</p>"),
+      "GM\u2019s role \u2014 hire now"
     );
+  });
+
+  it("leaves prototype property names as literal entities", () => {
+    assert.equal(htmlToText("<p>&amp;toString;</p>"), "&toString;");
+  });
+
+  it("rejects surrogate numeric entities instead of decoding them", () => {
+    assert.equal(htmlToText("<p>&#xD800;visible</p>"), "visible");
+    assert.equal(htmlToText("<p>&#55296;visible</p>"), "visible");
+  });
+
+  it("rejects NUL numeric entities instead of decoding them", () => {
+    assert.equal(htmlToText("<p>&#0;visible</p>"), "visible");
+    assert.equal(htmlToText("<p>&#x0;visible</p>"), "visible");
+  });
+
+  it("decodes uppercase HTML entity aliases without folding case", () => {
+    assert.equal(htmlToText("A &QUOT;quote&QUOT;"), 'A "quote"');
+    assert.equal(htmlToText("Brand &COPY; mark"), "Brand \u00A9 mark");
+    assert.equal(htmlToText("Brand &REG; mark"), "Brand \u00AE mark");
+    assert.equal(htmlToText("A &Quot;quote&Quot;"), "A &Quot;quote&Quot;");
+  });
+
+  it("drops text hidden with an HTML5 colon entity", () => {
+    assert.equal(
+      htmlToText('<div style="display&colon;none">SECRET</div>visible'),
+      "visible"
+    );
+  });
+
+  it("keeps text when a surrogate breaks a hidden style name", () => {
+    const text = htmlToText(
+      '<div style="display&#xD800;:none">SECRET</div>visible'
+    );
+    assert.match(text, /SECRET/);
+    assert.match(text, /visible/);
   });
 
   it("drops comments, head, and hidden inner text", () => {

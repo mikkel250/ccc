@@ -20,10 +20,10 @@ import {
   existsSync,
   readFileSync,
   mkdirSync,
-  writeFileSync,
   readdirSync,
   realpathSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -112,6 +112,7 @@ export function clearStaleStrictSmokeArtifacts(
   rmSync(paths.coverLetterPath, { force: true });
 }
 
+/** Persist the CV, curated JSON, and mode-specific artifacts from a smoke run. */
 export async function writeSmokeArtifacts(
   input: WriteSmokeArtifactsInput
 ): Promise<{
@@ -200,6 +201,7 @@ export type RunSmokeCliOptions = {
   deps?: SmokePipelineDeps;
 };
 
+/** Execute one smoke request and write its validated response artifacts. */
 export async function runSmokeCli(options: RunSmokeCliOptions): Promise<void> {
   const curationMode = resolveCurationMode(options.wantFlexible);
 
