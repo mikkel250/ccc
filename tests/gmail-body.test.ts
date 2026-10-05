@@ -307,10 +307,12 @@ describe("extractGmailJobDescription", () => {
   });
 
   it("fails when the Gmail payload is not an object", () => {
-    const result = extractGmailJobDescription(null);
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.match(result.error, /not an object/i);
+    for (const message of [null, undefined, "nope"]) {
+      const result = extractGmailJobDescription(message);
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.match(result.error, /not an object/i);
+      }
     }
   });
 
