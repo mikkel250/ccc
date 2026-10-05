@@ -8,6 +8,7 @@ import { getGmailMessage } from "./gmail-message";
 import { ensureReplyDraft, gmailThreadHasDraft } from "./gmail-drafts";
 import { getInboxScanBackoffMs } from "./inbox-config";
 import {
+  claimInboxMessage,
   isInboxProcessed,
   markInboxProcessed,
   releaseInboxClaim,
@@ -50,8 +51,17 @@ async function scanOneMessage(params: {
   deps: TailorPipelineDeps;
 }): Promise<InboxScanItem> {
   const { messageId, threadId, fetchImpl, deps } = params;
+  let claimToken: string | undefined;
   try {
-    if (await isInboxProcessed(messageId)) {
+    const processed = await isInboxProcessed(messageId);
+    if (!processed.ok) {
+      return {
+        messageId,
+        status: "draft-failed",
+        error: processed.error,
+      };
+    }
+    if (processed.processed) {
       return { messageId, status: "skipped-processed" };
     }
     const token = await refreshGmailAccessToken({ fetchImpl });
@@ -88,22 +98,41 @@ async function scanOneMessage(params: {
       };
     }
     if (existing.hasDraft) {
-      const marked = await markInboxProcessed(messageId);
-      return {
-        messageId,
-        status: "reused-draft",
-        ...(marked.ok ? {} : { error: marked.error }),
-      };
+      const claimed = await claimInboxMessage(messageId);
+      if (!claimed.ok) {
+        return {
+          messageId,
+          status: "draft-failed",
+          error: claimed.error,
+        };
+      }
+      if (claimed.outcome === "processed") {
+        return { messageId, status: "skipped-processed" };
+      }
+      if (claimed.outcome !== "won") {
+        return { messageId, status: "skipped-claimed" };
+      }
+      const marked = await markInboxProcessed(messageId, claimed.token);
+      if (!marked.ok) {
+        return {
+          messageId,
+          status: "draft-failed",
+          error: marked.error,
+        };
+      }
+      return { messageId, status: "reused-draft" };
     }
     const tailored = await tailorLabeledMessage(deps, {
       messageId,
       message: fetched.message,
     });
+    if (tailored.ok && tailored.status === "tailored") {
+      claimToken = tailored.claimToken;
+    }
     if (tailored.ok && tailored.status !== "tailored") {
       return { messageId, status: tailored.status };
     }
     if (!tailored.ok) {
-      await releaseInboxClaim(messageId);
       return {
         messageId,
         status: "tailor-failed",
@@ -119,21 +148,29 @@ async function scanOneMessage(params: {
       hasDraft: existing.hasDraft,
     });
     if (!drafted.ok) {
-      await releaseInboxClaim(messageId);
+      await releaseInboxClaim(messageId, tailored.claimToken);
       return {
         messageId,
         status: "draft-failed",
         error: drafted.error,
       };
     }
-    const marked = await markInboxProcessed(messageId);
+    const marked = await markInboxProcessed(messageId, tailored.claimToken);
+    if (!marked.ok) {
+      return {
+        messageId,
+        status: "draft-failed",
+        error: marked.error,
+      };
+    }
     return {
       messageId,
       status: drafted.status === "reused" ? "reused-draft" : "drafted",
-      ...(marked.ok ? {} : { error: marked.error }),
     };
   } catch (error: unknown) {
-    await releaseInboxClaim(messageId);
+    if (claimToken) {
+      await releaseInboxClaim(messageId, claimToken);
+    }
     const errorMessage =
       error instanceof Error ? error.message : "Inbox scan item failed";
     return {

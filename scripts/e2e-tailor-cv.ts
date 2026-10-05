@@ -23,6 +23,7 @@ import {
   writeFileSync,
   readdirSync,
   realpathSync,
+  rmSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -101,6 +102,16 @@ export type WriteSmokeArtifactsInput = {
   model?: string;
 };
 
+/** Remove prior strict-mode artifacts so a failed verify cannot leave stale operator files. */
+export function clearStaleStrictSmokeArtifacts(
+  jdPath: string,
+  smokeDir: string
+): void {
+  const paths = smokeArtifactPaths(jdPath, smokeDir);
+  rmSync(paths.replyPath, { force: true });
+  rmSync(paths.coverLetterPath, { force: true });
+}
+
 export async function writeSmokeArtifacts(
   input: WriteSmokeArtifactsInput
 ): Promise<{
@@ -163,11 +174,18 @@ export async function writeSmokeArtifacts(
     }
   }
 
+  if (input.curationMode === "strict") {
+    rmSync(paths.coverLetterPath, { force: true });
+  }
+
   if (shouldWriteReplyText(input.curationMode, input.replyText)) {
     writeFileSync(paths.replyPath, input.replyText.trim(), "utf8");
     console.log(`Wrote ${paths.replyPath}`);
-  } else if (input.curationMode === "strict") {
-    console.warn("Reply text missing or empty for strict run, skipping reply file");
+  } else {
+    rmSync(paths.replyPath, { force: true });
+    if (input.curationMode === "strict") {
+      console.warn("Reply text missing or empty for strict run, skipping reply file");
+    }
   }
 
   return paths;
@@ -204,6 +222,10 @@ export async function runSmokeCli(options: RunSmokeCliOptions): Promise<void> {
       console.error(err instanceof Error ? err.message : err);
       process.exit(1);
     }
+  }
+
+  if (curationMode === "strict" && !options.parity) {
+    clearStaleStrictSmokeArtifacts(jd.path, smokeRoot);
   }
 
   const result = await verifySmokePipeline(jd.text, {

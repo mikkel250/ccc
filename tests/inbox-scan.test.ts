@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tailorCvDeps } from "../app/api/lib/tailor-cv-deps";
 import {
   __injectInboxKvForTest,
+  claimInboxMessage,
   inboxClaimKey,
   inboxProcessedKey,
   markInboxProcessed,
@@ -85,7 +86,26 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
       store.delete(key);
       return true;
     },
+    expireIfOwned: async (key, value) => store.get(key) === value,
+    markProcessedIfOwned: async (claimKey, processedKey, token) => {
+      if (store.get(claimKey) !== token) {
+        return false;
+      }
+      store.set(processedKey, "1");
+      store.delete(claimKey);
+      return true;
+    },
   };
+}
+
+async function markProcessedForTest(messageId: string): Promise<void> {
+  const claimed = await claimInboxMessage(messageId);
+  assert.equal(claimed.ok, true);
+  if (!claimed.ok || claimed.outcome !== "won") {
+    throw new Error("expected to win the inbox claim");
+  }
+  const marked = await markInboxProcessed(messageId, claimed.token);
+  assert.equal(marked.ok, true);
 }
 
 function mockPipelineSuccess(): void {
@@ -228,8 +248,7 @@ describe("scanInbox", () => {
   });
 
   it("does not refresh again when the only listed message is already processed", async () => {
-    const marked = await markInboxProcessed("m1");
-    assert.equal(marked.ok, true);
+    await markProcessedForTest("m1");
     let tokenPosts = 0;
     const base = gmailFetch({
       onMessageGet: () => {
@@ -400,8 +419,7 @@ describe("scanInbox", () => {
   });
 
   it("skips processed ids without fetching the message", async () => {
-    const marked = await markInboxProcessed("m1");
-    assert.equal(marked.ok, true);
+    await markProcessedForTest("m1");
     let gets = 0;
     const chatSpy = mock.method(tailorCvDeps, "chat", async () => {
       throw new Error("chat must not run for processed ids");
