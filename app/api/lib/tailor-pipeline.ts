@@ -365,6 +365,15 @@ export async function buildTailorResponse(
   return { ok: true, body: responseBody };
 }
 
+function isProgrammerError(error: unknown): boolean {
+  return (
+    error instanceof TypeError ||
+    error instanceof ReferenceError ||
+    error instanceof SyntaxError ||
+    error instanceof RangeError
+  );
+}
+
 function abortCoreResult(): TailorCoreResult {
   return {
     ok: false,
@@ -424,11 +433,36 @@ export async function runTailorCore(
   }
 
   // 6. Prompt construction
-  const masterCv = deps.requireMasterCv();
-  const prompted = await awaitUnlessAborted(
-    () => deps.getCuratorPrompt(curationMode),
-    signal
-  );
+  let masterCv: unknown;
+  try {
+    masterCv = deps.requireMasterCv();
+  } catch (error: unknown) {
+    if (error instanceof ServiceError) {
+      return { ok: false, error: error.message, status: 503 };
+    }
+    throw error;
+  }
+  let prompted: Abortable<
+    Awaited<ReturnType<TailorPipelineDeps["getCuratorPrompt"]>>
+  >;
+  try {
+    prompted = await awaitUnlessAborted(
+      () => deps.getCuratorPrompt(curationMode),
+      signal
+    );
+  } catch (error: unknown) {
+    if (isProgrammerError(error)) {
+      throw error;
+    }
+    if (error instanceof ServiceError) {
+      return { ok: false, error: error.message, status: 503 };
+    }
+    return {
+      ok: false,
+      error: "AI service error. Please try again.",
+      status: 503,
+    };
+  }
   if (prompted.aborted) {
     return abortCoreResult();
   }

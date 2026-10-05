@@ -20,8 +20,25 @@ const STRICT_WRAPPER_OBJECT =
   /\{\s*"?curated_cv"?\s*,\s*"?reply_text"?\s*\}|\{\s*"?reply_text"?\s*,\s*"?curated_cv"?\s*\}/;
 const STRICT_JSON_KEY_CURATED = /"curated_cv"\s*:/;
 const STRICT_JSON_KEY_REPLY = /"reply_text"\s*:/;
-const STRICT_PROHIBITS_REPLY_TEXT =
-  /(?:\bnever\b|\bdo not\b|\bdon't\b|\bomit\b|\bwithout\b)(?:\s+\w+){0,6}\s+reply_text\b/i;
+const PROHIBITION_VERBS = new Set([
+  "return",
+  "emit",
+  "include",
+  "output",
+  "use",
+]);
+/** Words that bind "never" / "do not" to keeping reply_text, not forbidding it. */
+const KEEPING_VERBS = new Set([
+  "omit",
+  "omitting",
+  "drop",
+  "dropping",
+  "exclude",
+  "excluding",
+]);
+const REPLY_CUE_WINDOW = 8;
+/** Sentence boundary. Not a word, so it cannot be confused with prompt text. */
+const SENTENCE_BREAK = "\0";
 
 const DEFAULT_PROMPT_FETCH_TIMEOUT_MS = 5000;
 
@@ -44,16 +61,129 @@ function curatorPromptFetchTimeoutMs(): number {
  * Prohibition cues must see reply_text even when it sits inside wrapper syntax.
  * "Never return the wrapper { curated_cv, reply_text }" would otherwise match
  * STRICT_WRAPPER_OBJECT and be treated as a request.
+ * "Never omit reply_text" keeps the field; only return/emit/include/output/use
+ * after never/do not/don't forbid it. Commas do not break that window.
+ * Periods, question marks, exclamation marks, semicolons, and newlines do:
+ * a later sentence that asks for the wrapper is not part of the prohibition.
+ * ".docx" does not break, because the dot is not followed by whitespace.
  */
-function promptProhibitsReplyText(promptText: string): boolean {
-  if (STRICT_PROHIBITS_REPLY_TEXT.test(promptText)) {
-    return true;
-  }
+function promptWords(promptText: string): string[] {
   const bridged = promptText.replace(
     new RegExp(STRICT_WRAPPER_OBJECT.source, "g"),
     " reply_text "
   );
-  return STRICT_PROHIBITS_REPLY_TEXT.test(bridged);
+  const marked = bridged.replace(
+    /[.!?]+(?=\s|$)|;+|\n+/g,
+    ` ${SENTENCE_BREAK} `
+  );
+  return marked.toLowerCase().match(/[a-z0-9_']+|\0/g) ?? [];
+}
+
+function windowHasReplyText(words: string[], start: number): boolean {
+  const end = Math.min(words.length, start + REPLY_CUE_WINDOW);
+  for (let i = start; i < end; i += 1) {
+    const word = words[i];
+    if (word === SENTENCE_BREAK) {
+      return false;
+    }
+    if (word === "reply_text") {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** "return the CV without reply_text" keeps the field; a bare "without" does not. */
+function replyMentionIsKept(words: string[], start: number): boolean {
+  const end = Math.min(words.length, start + REPLY_CUE_WINDOW);
+  for (let i = start; i < end; i += 1) {
+    const word = words[i];
+    if (word === SENTENCE_BREAK || word === "reply_text") {
+      return false;
+    }
+    if (word === "without" || (word !== undefined && KEEPING_VERBS.has(word))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function negatedEarlierInSentence(words: string[], index: number): boolean {
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const word = words[i];
+    if (word === SENTENCE_BREAK) {
+      return false;
+    }
+    if (word === "never" || word === "don't") {
+      return true;
+    }
+    if (word === "not" && words[i - 1] === "do") {
+      return true;
+    }
+  }
+  return false;
+}
+
+function prohibitionCueLength(words: string[], index: number): number {
+  const word = words[index];
+  if (word === "never" || word === "don't") {
+    return 1;
+  }
+  if (word === "do" && words[index + 1] === "not") {
+    return 2;
+  }
+  return 0;
+}
+
+function cueForbidsReplyText(words: string[], index: number, cueLength: number): boolean {
+  const limit = Math.min(words.length, index + cueLength + REPLY_CUE_WINDOW);
+  for (let j = index + cueLength; j < limit; j += 1) {
+    const word = words[j]!;
+    if (word === SENTENCE_BREAK || KEEPING_VERBS.has(word)) {
+      return false;
+    }
+    if (PROHIBITION_VERBS.has(word)) {
+      if (replyMentionIsKept(words, j + 1)) {
+        return false;
+      }
+      return windowHasReplyText(words, j + 1);
+    }
+  }
+  return false;
+}
+
+function bareOmitForbidsReplyText(words: string[], index: number): boolean {
+  const word = words[index];
+  if (word !== "omit" && word !== "without") {
+    return false;
+  }
+  const prev = words[index - 1];
+  const prev2 = words[index - 2];
+  if (word === "omit" && (prev === "never" || prev === "don't" || (prev === "not" && prev2 === "do"))) {
+    return false;
+  }
+  const next = words[index + 1];
+  if (word === "without" && (next === "omitting" || next === "omitted" || next === "omits")) {
+    return false;
+  }
+  if (word === "without" && negatedEarlierInSentence(words, index)) {
+    return false;
+  }
+  return windowHasReplyText(words, index + 1);
+}
+
+function promptProhibitsReplyText(promptText: string): boolean {
+  const words = promptWords(promptText);
+  for (let i = 0; i < words.length; i += 1) {
+    const cueLength = prohibitionCueLength(words, i);
+    if (cueLength > 0 && cueForbidsReplyText(words, i, cueLength)) {
+      return true;
+    }
+    if (bareOmitForbidsReplyText(words, i)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Live Langfuse strict prompts must request the wrapper, not bare CV JSON. */

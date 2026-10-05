@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NextRequest } from "next/server";
 import { tailorCvDeps } from "../app/api/lib/tailor-cv-deps";
+import { isLlmServiceError } from "../app/api/lib/llm";
 import { RateLimitError, ServiceError } from "../app/api/lib/errors";
 import { resetRedisClientForTest } from "../app/api/lib/redis";
 import { createFailingMock } from "../tests/helpers/rate-limit-mock";
@@ -733,6 +734,24 @@ describe("runTailorCore — in-process curator path", () => {
 
     assert.equal(result.ok, false);
     if (!result.ok) assert.equal(result.status, 503);
+  });
+
+  it("maps a transient chat timeout to 503 without leaking the provider message", async () => {
+    mock.method(tailorCvDeps, "isLlmServiceError", isLlmServiceError);
+    mock.method(tailorCvDeps, "chat", async () => {
+      throw new Error("Request timed out.");
+    });
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "AI service error. Please try again.");
+    }
   });
 
   it("rethrows unknown chat exceptions so the route can map them to 500", async () => {
