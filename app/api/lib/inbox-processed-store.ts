@@ -1,6 +1,7 @@
 /**
- * Redis claim vs processed marks for Gmail messageIds (R10, R12).
- * Claim is SET NX and is not the terminal processed mark.
+ * Redis claim vs processed marks (R10, R12).
+ * Message claim is SET NX and is not the terminal processed mark.
+ * Thread claim serializes drafts.create for one Gmail thread.
  */
 import { randomBytes } from "node:crypto";
 import {
@@ -150,52 +151,48 @@ export function inboxClaimKey(messageId: string): string {
   return `${getInboxRedisPrefix()}:claim:${messageId}`;
 }
 
+export function inboxThreadClaimKey(threadId: string): string {
+  return `${getInboxRedisPrefix()}:thread-claim:${threadId}`;
+}
+
 export function inboxProcessedKey(messageId: string): string {
   return `${getInboxRedisPrefix()}:processed:${messageId}`;
+}
+
+function parseInboxKeyId(
+  value: unknown,
+  noun: "messageId" | "threadId"
+): { ok: true; id: string } | { ok: false; error: string } {
+  const label = noun === "messageId" ? "Gmail messageId" : "Gmail threadId";
+  if (typeof value !== "string" || value.trim() === "") {
+    return { ok: false, error: `${label} is required` };
+  }
+  const id = value.trim();
+  if (id.length > getInboxMessageIdMaxChars()) {
+    return { ok: false, error: `${label} exceeds configured max length` };
+  }
+  if (!MESSAGE_ID_RE.test(id)) {
+    return { ok: false, error: `${label} contains unsupported characters` };
+  }
+  return { ok: true, id };
 }
 
 export function parseInboxMessageId(
   value: unknown
 ): { ok: true; messageId: string } | { ok: false; error: string } {
-  if (typeof value !== "string" || value.trim() === "") {
-    return { ok: false, error: "Gmail messageId is required" };
-  }
-  const messageId = value.trim();
-  if (messageId.length > getInboxMessageIdMaxChars()) {
-    return { ok: false, error: "Gmail messageId exceeds configured max length" };
-  }
-  if (!MESSAGE_ID_RE.test(messageId)) {
-    return { ok: false, error: "Gmail messageId contains unsupported characters" };
-  }
-  return { ok: true, messageId };
-}
-
-export async function isInboxProcessed(messageId: string): Promise<boolean> {
-  const parsed = parseInboxMessageId(messageId);
-  if (!parsed.ok) {
-    return false;
-  }
-  const value = await kv().get(inboxProcessedKey(parsed.messageId));
-  return value != null;
-}
-
-export async function claimInboxMessage(
-  messageId: string
-): Promise<
-  | { ok: true; outcome: "won"; token: string }
-  | { ok: true; outcome: "lost" }
-  | { ok: true; outcome: "processed" }
-  | { ok: false; error: string }
-> {
-  const parsed = parseInboxMessageId(messageId);
+  const parsed = parseInboxKeyId(value, "messageId");
   if (!parsed.ok) {
     return parsed;
   }
-  if (await isInboxProcessed(parsed.messageId)) {
-    return { ok: true, outcome: "processed" };
-  }
+  return { ok: true, messageId: parsed.id };
+}
+
+type NxClaimResult =
+  | { ok: true; outcome: "won"; token: string }
+  | { ok: true; outcome: "lost" };
+
+async function claimNxKey(claimKey: string): Promise<NxClaimResult> {
   const token = randomBytes(16).toString("hex");
-  const claimKey = inboxClaimKey(parsed.messageId);
   const store = kv();
   let claimed = false;
   for (let attempt = 0; attempt < 2 && !claimed; attempt += 1) {
@@ -228,17 +225,84 @@ export async function claimInboxMessage(
       break;
     }
   }
-  if (claimed) {
+  if (!claimed) {
+    return { ok: true, outcome: "lost" };
+  }
+  const currentClaim = await store.get(claimKey);
+  if (currentClaim === token) {
+    return { ok: true, outcome: "won", token };
+  }
+  return { ok: true, outcome: "lost" };
+}
+
+async function releaseClaimToken(
+  claimKey: string,
+  token: string,
+  failure: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await kv().deleteIfValue(claimKey, token);
+  } catch {
+    return { ok: false, error: failure };
+  }
+  return { ok: true };
+}
+
+async function renewClaimToken(
+  claimKey: string,
+  token: string,
+  failure: string
+): Promise<{ ok: true; renewed: boolean } | { ok: false; error: string }> {
+  try {
+    const renewed = await kv().expireIfValue(
+      claimKey,
+      token,
+      getInboxClaimTtlSeconds()
+    );
+    return { ok: true, renewed };
+  } catch {
+    return { ok: false, error: failure };
+  }
+}
+
+export async function isInboxProcessed(messageId: string): Promise<boolean> {
+  const parsed = parseInboxMessageId(messageId);
+  if (!parsed.ok) {
+    return false;
+  }
+  const value = await kv().get(inboxProcessedKey(parsed.messageId));
+  return value != null;
+}
+
+export async function claimInboxMessage(
+  messageId: string
+): Promise<
+  | { ok: true; outcome: "won"; token: string }
+  | { ok: true; outcome: "lost" }
+  | { ok: true; outcome: "processed" }
+  | { ok: false; error: string }
+> {
+  const parsed = parseInboxMessageId(messageId);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  if (await isInboxProcessed(parsed.messageId)) {
+    return { ok: true, outcome: "processed" };
+  }
+  const claimKey = inboxClaimKey(parsed.messageId);
+  const store = kv();
+  const claimed = await claimNxKey(claimKey);
+  if (claimed.outcome === "won") {
     const processed = await isInboxProcessed(parsed.messageId);
     const currentClaim = await store.get(claimKey);
     if (processed) {
-      if (currentClaim === token) {
-        await store.deleteIfValue(claimKey, token);
+      if (currentClaim === claimed.token) {
+        await store.deleteIfValue(claimKey, claimed.token);
       }
       return { ok: true, outcome: "processed" };
     }
-    if (currentClaim === token) {
-      return { ok: true, outcome: "won", token };
+    if (currentClaim === claimed.token) {
+      return { ok: true, outcome: "won", token: claimed.token };
     }
     return { ok: true, outcome: "lost" };
   }
@@ -272,12 +336,11 @@ export async function releaseInboxClaim(
   if (!parsed.ok) {
     return parsed;
   }
-  try {
-    await kv().deleteIfValue(inboxClaimKey(parsed.messageId), token);
-  } catch {
-    return { ok: false, error: "Failed to release inbox claim" };
-  }
-  return { ok: true };
+  return releaseClaimToken(
+    inboxClaimKey(parsed.messageId),
+    token,
+    "Failed to release inbox claim"
+  );
 }
 
 export async function renewInboxClaim(
@@ -291,16 +354,58 @@ export async function renewInboxClaim(
   if (!parsed.ok) {
     return parsed;
   }
-  try {
-    const renewed = await kv().expireIfValue(
-      inboxClaimKey(parsed.messageId),
-      token,
-      getInboxClaimTtlSeconds()
-    );
-    return { ok: true, renewed };
-  } catch {
-    return { ok: false, error: "Failed to renew inbox claim" };
+  return renewClaimToken(
+    inboxClaimKey(parsed.messageId),
+    token,
+    "Failed to renew inbox claim"
+  );
+}
+
+export async function claimInboxThread(
+  threadId: string
+): Promise<
+  | { ok: true; outcome: "won"; token: string }
+  | { ok: true; outcome: "lost" }
+  | { ok: false; error: string }
+> {
+  const parsed = parseInboxKeyId(threadId, "threadId");
+  if (!parsed.ok) {
+    return parsed;
   }
+  return claimNxKey(inboxThreadClaimKey(parsed.id));
+}
+
+export async function releaseInboxThreadClaim(
+  threadId: string,
+  token: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = parseInboxKeyId(threadId, "threadId");
+  if (!parsed.ok) {
+    return parsed;
+  }
+  return releaseClaimToken(
+    inboxThreadClaimKey(parsed.id),
+    token,
+    "Failed to release inbox thread claim"
+  );
+}
+
+export async function renewInboxThreadClaim(
+  threadId: string,
+  token: string
+): Promise<
+  | { ok: true; renewed: boolean }
+  | { ok: false; error: string }
+> {
+  const parsed = parseInboxKeyId(threadId, "threadId");
+  if (!parsed.ok) {
+    return parsed;
+  }
+  return renewClaimToken(
+    inboxThreadClaimKey(parsed.id),
+    token,
+    "Failed to renew inbox thread claim"
+  );
 }
 
 export async function extractUnprocessedInboxMessage(

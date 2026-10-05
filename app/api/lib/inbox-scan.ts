@@ -1,17 +1,21 @@
 /**
  * Local/Railway inbox scan: list → tailor → draft → processed (R9–R13).
+ * A per-thread Redis claim is held from before tailor through drafts.create.
  * Railway cron wiring is M8.6; this module is the shared job.
  */
 import { tailorCvDeps } from "./tailor-cv-deps";
 import { listLabeledRecruiterMail } from "./gmail-list";
-import { getGmailMessage } from "./gmail-message";
+import { getGmailMessage, parseGmailReplyHeaders } from "./gmail-message";
 import { ensureReplyDraft, gmailThreadHasDraft } from "./gmail-drafts";
 import { getInboxScanBackoffMs, isInboxScanEnabled } from "./inbox-config";
 import {
+  claimInboxThread,
   isInboxProcessed,
   markInboxProcessed,
   releaseInboxClaim,
+  releaseInboxThreadClaim,
   renewInboxClaim,
+  renewInboxThreadClaim,
 } from "./inbox-processed-store";
 import { tailorLabeledMessage } from "./inbox-tailor";
 import type { TailorPipelineDeps } from "./tailor-pipeline";
@@ -47,12 +51,13 @@ async function defaultSleep(ms: number): Promise<void> {
 
 async function scanOneMessage(params: {
   messageId: string;
-  threadId: string;
   fetchImpl: FetchLike;
   deps: TailorPipelineDeps;
 }): Promise<InboxScanItem> {
-  const { messageId, threadId, fetchImpl, deps } = params;
+  const { messageId, fetchImpl, deps } = params;
   let claimToken: string | undefined;
+  let threadClaimToken: string | undefined;
+  let claimedThreadId: string | undefined;
   try {
     if (await isInboxProcessed(messageId)) {
       return { messageId, status: "skipped-processed" };
@@ -78,8 +83,17 @@ async function scanOneMessage(params: {
         error: fetched.error,
       };
     }
+    const replyHeaders = parseGmailReplyHeaders(fetched.message);
+    if (!replyHeaders.ok) {
+      return {
+        messageId,
+        status: "draft-failed",
+        error: replyHeaders.error,
+      };
+    }
+    const replyThreadId = replyHeaders.headers.threadId;
     const existing = await gmailThreadHasDraft({
-      threadId,
+      threadId: replyThreadId,
       fetchImpl,
       accessToken,
     });
@@ -98,6 +112,19 @@ async function scanOneMessage(params: {
         ...(marked.ok ? {} : { error: marked.error }),
       };
     }
+    const threadClaim = await claimInboxThread(replyThreadId);
+    if (!threadClaim.ok) {
+      return {
+        messageId,
+        status: "draft-failed",
+        error: threadClaim.error,
+      };
+    }
+    if (threadClaim.outcome !== "won") {
+      return { messageId, status: "skipped-claimed" };
+    }
+    threadClaimToken = threadClaim.token;
+    claimedThreadId = replyThreadId;
     const tailored = await tailorLabeledMessage(deps, {
       messageId,
       message: fetched.message,
@@ -132,12 +159,27 @@ async function scanOneMessage(params: {
     if (!renewed.renewed) {
       return { messageId, status: "skipped-claimed" };
     }
+    const threadRenewed = await renewInboxThreadClaim(
+      replyThreadId,
+      threadClaim.token
+    );
+    if (!threadRenewed.ok) {
+      await releaseInboxClaim(messageId, tailored.claimToken);
+      return {
+        messageId,
+        status: "draft-failed",
+        error: threadRenewed.error,
+      };
+    }
+    if (!threadRenewed.renewed) {
+      await releaseInboxClaim(messageId, tailored.claimToken);
+      return { messageId, status: "skipped-claimed" };
+    }
     const drafted = await ensureReplyDraft({
       sourceMessage: fetched.message,
       replyText: tailored.body.replyText ?? "",
       docxBase64: tailored.body.cv,
       fetchImpl,
-      accessToken,
     });
     if (!drafted.ok) {
       await releaseInboxClaim(messageId, tailored.claimToken);
@@ -164,6 +206,10 @@ async function scanOneMessage(params: {
       status: "draft-failed",
       error: errorMessage,
     };
+  } finally {
+    if (threadClaimToken !== undefined && claimedThreadId !== undefined) {
+      await releaseInboxThreadClaim(claimedThreadId, threadClaimToken);
+    }
   }
 }
 
@@ -192,7 +238,6 @@ export async function scanInbox(params?: {
     items.push(
       await scanOneMessage({
         messageId: listedMessage.id,
-        threadId: listedMessage.threadId,
         fetchImpl,
         deps,
       })

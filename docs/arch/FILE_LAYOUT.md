@@ -36,9 +36,9 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── cv-prompt.ts      # Legacy markdown tailor prompt (not hot path)
 │           ├── redis.ts          # Shared Upstash Redis client singleton
 │           ├── inbox-config.ts   # Inbox Redis prefix / claim+processed TTLs
-│           ├── inbox-processed-store.ts # SET NX claim vs terminal processed mark
+│           ├── inbox-processed-store.ts # SET NX message claim, thread claim, processed mark
 │           ├── inbox-tailor.ts   # tailorLabeledMessage — claim+extract then runTailorCore
-│           ├── inbox-scan.ts     # list → tailor → draft → processed (inbox:scan job)
+│           ├── inbox-scan.ts     # list → tailor → one thread draft → processed
 │           ├── gmail-body.ts     # Gmail payload → JD (text/plain else html-to-text)
 │           ├── gmail-config.ts   # Gmail OAuth/API env getters
 │           ├── gmail-oauth.ts    # Authorize URL, callback, token exchange/refresh
