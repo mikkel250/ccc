@@ -130,6 +130,7 @@ export async function ensureReplyDraft(params: {
   fetchImpl?: FetchLike;
   boundary?: string;
   accessToken?: string;
+  signal?: AbortSignal;
 }): Promise<EnsureReplyDraftResult> {
   const replyText = params.replyText.trim();
   if (replyText === "") {
@@ -154,6 +155,7 @@ export async function ensureReplyDraft(params: {
     url: threadUrl,
     accessToken,
     fetchImpl,
+    signal: params.signal,
   });
   if (!threadRes.ok) {
     return { ok: false, error: threadRes.error };
@@ -183,6 +185,7 @@ export async function ensureReplyDraft(params: {
     accessToken,
     fetchImpl,
     method: "POST",
+    signal: params.signal,
     jsonBody: {
       message: {
         threadId: headers.headers.threadId,

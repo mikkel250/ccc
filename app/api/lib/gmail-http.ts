@@ -59,6 +59,19 @@ export function encodeMimeHeaderValue(value: string): string {
   return chunks.map((part) => mimeEncodedWordB(part)).join("\r\n ");
 }
 
+function combineAbortSignals(left: AbortSignal, right: AbortSignal): AbortSignal {
+  if (left.aborted || right.aborted) {
+    const aborted = new AbortController();
+    aborted.abort();
+    return aborted.signal;
+  }
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  left.addEventListener("abort", abort, { once: true });
+  right.addEventListener("abort", abort, { once: true });
+  return controller.signal;
+}
+
 export type GmailHttpResult =
   | { ok: true; body: unknown }
   | { ok: false; error: string };
@@ -69,9 +82,14 @@ export async function gmailFetchJson(params: {
   fetchImpl: FetchLike;
   method?: string;
   jsonBody?: unknown;
+  signal?: AbortSignal;
 }): Promise<GmailHttpResult> {
   const method = params.method ?? "GET";
   const deadline = gmailAbortAfter(getGmailHttpTimeoutMs());
+  const signal =
+    params.signal === undefined
+      ? deadline.signal
+      : combineAbortSignals(params.signal, deadline.signal);
   try {
     let response: Response;
     try {
@@ -84,7 +102,7 @@ export async function gmailFetchJson(params: {
       response = await params.fetchImpl(params.url, {
         method,
         headers,
-        signal: deadline.signal,
+        signal,
         ...(params.jsonBody !== undefined
           ? { body: JSON.stringify(params.jsonBody) }
           : {}),
@@ -98,7 +116,7 @@ export async function gmailFetchJson(params: {
     try {
       return { ok: true, body: await response.json() };
     } catch {
-      if (deadline.signal.aborted) {
+      if (deadline.signal.aborted || params.signal?.aborted) {
         return { ok: false, error: "Gmail API request failed" };
       }
       return { ok: false, error: "Gmail API response was not valid JSON" };

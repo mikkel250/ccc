@@ -11,14 +11,14 @@ import { getInboxScanBackoffMs, isInboxScanEnabled } from "./inbox-config";
 import {
   claimInboxMessage,
   claimInboxThread,
+  INBOX_CLAIM_LOST_ERROR,
   isInboxProcessed,
   markInboxProcessed,
   releaseInboxClaim,
   releaseInboxThreadClaim,
-  renewInboxClaim,
   renewInboxThreadClaim,
 } from "./inbox-processed-store";
-import { tailorLabeledMessage } from "./inbox-tailor";
+import { tailorLabeledMessage, withClaimLease } from "./inbox-tailor";
 import type { TailorPipelineDeps } from "./tailor-pipeline";
 import { refreshGmailAccessToken, type FetchLike } from "./gmail-oauth";
 
@@ -129,11 +129,14 @@ async function scanOneMessage(params: {
         return { messageId, status: "skipped-claimed" };
       }
       const marked = await markInboxProcessed(messageId, claimed.token);
-      return {
-        messageId,
-        status: "reused-draft",
-        ...(marked.ok ? {} : { error: marked.error }),
-      };
+      if (!marked.ok) {
+        return {
+          messageId,
+          status: "draft-failed",
+          error: marked.error,
+        };
+      }
+      return { messageId, status: "reused-draft" };
     }
     const threadClaim = await claimInboxThread(replyThreadId);
     if (!threadClaim.ok) {
@@ -165,40 +168,45 @@ async function scanOneMessage(params: {
         error: tailored.error,
       };
     }
-    const renewed = await renewInboxClaim(messageId, tailored.claimToken);
-    if (!renewed.ok) {
-      await releaseInboxClaim(messageId, tailored.claimToken);
-      return {
-        messageId,
-        status: "draft-failed",
-        error: renewed.error,
-      };
-    }
-    if (!renewed.renewed) {
-      return { messageId, status: "skipped-claimed" };
-    }
-    const threadRenewed = await renewInboxThreadClaim(
-      replyThreadId,
-      threadClaim.token
+    const leased = await withClaimLease(
+      messageId,
+      tailored.claimToken,
+      async (signal) => {
+        const threadRenewed = await renewInboxThreadClaim(
+          replyThreadId,
+          threadClaim.token
+        );
+        if (!threadRenewed.ok || !threadRenewed.renewed) {
+          return threadRenewed;
+        }
+        return ensureReplyDraft({
+          sourceMessage: fetched.message,
+          replyText: tailored.body.replyText ?? "",
+          docxBase64: tailored.body.cv,
+          fetchImpl,
+          signal,
+        });
+      }
     );
-    if (!threadRenewed.ok) {
-      await releaseInboxClaim(messageId, tailored.claimToken);
-      return {
-        messageId,
-        status: "draft-failed",
-        error: threadRenewed.error,
-      };
-    }
-    if (!threadRenewed.renewed) {
-      await releaseInboxClaim(messageId, tailored.claimToken);
+    if (leased.ok && "status" in leased) {
       return { messageId, status: "skipped-claimed" };
     }
-    const drafted = await ensureReplyDraft({
-      sourceMessage: fetched.message,
-      replyText: tailored.body.replyText ?? "",
-      docxBase64: tailored.body.cv,
-      fetchImpl,
-    });
+    if (!leased.ok) {
+      if (leased.error !== INBOX_CLAIM_LOST_ERROR) {
+        await releaseInboxClaim(messageId, tailored.claimToken);
+      }
+      return {
+        messageId,
+        status:
+          leased.error === INBOX_CLAIM_LOST_ERROR
+            ? "skipped-claimed"
+            : "draft-failed",
+        ...(leased.error === INBOX_CLAIM_LOST_ERROR
+          ? {}
+          : { error: leased.error }),
+      };
+    }
+    const drafted = leased.value;
     if (!drafted.ok) {
       await releaseInboxClaim(messageId, tailored.claimToken);
       return {
@@ -207,11 +215,21 @@ async function scanOneMessage(params: {
         error: drafted.error,
       };
     }
+    if (!("status" in drafted)) {
+      await releaseInboxClaim(messageId, tailored.claimToken);
+      return { messageId, status: "skipped-claimed" };
+    }
     const marked = await markInboxProcessed(messageId, tailored.claimToken);
+    if (!marked.ok) {
+      return {
+        messageId,
+        status: "draft-failed",
+        error: marked.error,
+      };
+    }
     return {
       messageId,
       status: drafted.status === "reused" ? "reused-draft" : "drafted",
-      ...(marked.ok ? {} : { error: marked.error }),
     };
   } catch (error: unknown) {
     if (claimToken) {
