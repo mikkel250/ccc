@@ -8,6 +8,8 @@ import {
   resolveFetchedCuratorPrompt,
   CURATOR_LANGFUSE_PROMPT_NAME,
   FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME,
+  STRICT_CURATOR_CONTRACT_MARKER,
+  strictCuratorPromptDeclaresContract,
   strictPromptRequestsReplyWrapper,
 } from "../app/api/lib/curator-prompt";
 
@@ -71,6 +73,12 @@ describe("curator-prompt", () => {
     assert.equal(compiled.ok, false);
   });
 
+  it("fallback includes the strict curator contract marker", () => {
+    const text = getCuratorPromptFallbackText();
+    assert.match(text, new RegExp(STRICT_CURATOR_CONTRACT_MARKER));
+    assert.equal(strictCuratorPromptDeclaresContract(text), true);
+  });
+
   it("strictPromptRequestsReplyWrapper rejects a bare-CV Langfuse prompt", () => {
     assert.equal(
       strictPromptRequestsReplyWrapper(
@@ -114,7 +122,7 @@ describe("curator-prompt", () => {
   it("strictPromptRequestsReplyWrapper keeps a prompt that forbids omitting reply_text", () => {
     assert.equal(
       strictPromptRequestsReplyWrapper(
-        'Never omit reply_text. Return { "curated_cv": {}, "reply_text": "" }'
+        "Never omit reply_text. Return { curated_cv, reply_text } only."
       ),
       true
     );
@@ -227,10 +235,13 @@ describe("curator-prompt", () => {
 
     const explicit = [
       "Return one JSON object.",
+      "<output_format>",
+      STRICT_CURATOR_CONTRACT_MARKER,
       "{",
       '  "curated_cv": { "name": "A" },',
       '  "reply_text": "Thanks for reaching out."',
       "}",
+      "</output_format>",
     ].join("\n");
     const current = resolveFetchedCuratorPrompt("strict", explicit, fallback);
     assert.equal(current.staleStrictContract, false);

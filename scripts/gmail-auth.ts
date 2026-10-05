@@ -1,13 +1,11 @@
 /**
- * One-shot local Gmail OAuth CLI (R15). Writes GMAIL_REFRESH_TOKEN to a local file.
+ * One-shot local Gmail OAuth CLI (R15). Prints or writes GMAIL_REFRESH_TOKEN.
  *
  * Usage: npm run gmail:auth
  */
 import { config as loadDotenv } from "dotenv";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import {
@@ -16,6 +14,7 @@ import {
   getGmailClientId,
   getGmailOauthAuthUrl,
   getGmailOauthScope,
+  getGmailRefreshTokenOutputPath,
 } from "../app/api/lib/gmail-config";
 import {
   buildGmailAuthUrl,
@@ -39,10 +38,11 @@ export function formatGmailRefreshTokenLine(refreshToken: string): string {
   return `GMAIL_REFRESH_TOKEN=${refreshToken}`;
 }
 
-/** Write the refresh token to a mode-0600 file and return its path. */
-export function writeGmailRefreshTokenFile(refreshToken: string): string {
-  const dir = mkdtempSync(join(tmpdir(), "gmail-oauth-"));
-  const filePath = join(dir, "gmail-refresh-token.env");
+/** Write the refresh token to a mode-0600 file at an operator-chosen path. */
+export function writeGmailRefreshTokenFile(
+  refreshToken: string,
+  filePath: string
+): string {
   writeFileSync(filePath, `${formatGmailRefreshTokenLine(refreshToken)}\n`, {
     mode: 0o600,
   });
@@ -105,7 +105,7 @@ type GmailAuthListener = {
   wait: () => Promise<URL>;
 };
 
-/** Run the one-shot local OAuth flow and print the refresh-token file path. */
+/** Run the one-shot local OAuth flow and print or write the refresh token. */
 export async function runGmailAuthCli(params?: {
   fetchImpl?: typeof fetch;
   openUrl?: (url: string) => void;
@@ -198,9 +198,15 @@ export async function runGmailAuthCli(params?: {
       console.error(result.error);
       return result;
     }
-    const tokenPath = writeGmailRefreshTokenFile(result.refreshToken);
-    console.log("Paste from this file into .env / Railway (do not commit it):");
-    console.log(tokenPath);
+    const outputPath = getGmailRefreshTokenOutputPath();
+    if (outputPath !== undefined) {
+      writeGmailRefreshTokenFile(result.refreshToken, outputPath);
+      console.log("Wrote refresh token (mode 0600; do not commit):");
+      console.log(outputPath);
+    } else {
+      console.log("Add this to .env / Railway (do not commit):");
+      console.log(formatGmailRefreshTokenLine(result.refreshToken));
+    }
     return { ok: true };
   } catch (error: unknown) {
     const message =

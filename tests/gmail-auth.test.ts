@@ -1,6 +1,8 @@
 import { describe, it, afterEach, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { generateGmailPkcePair } from "../app/api/lib/gmail-oauth";
 import {
   completeGmailAuth,
@@ -21,6 +23,7 @@ const KEYS = [
   "GMAIL_API_BASE_URL",
   "GMAIL_AUTH_BIND_HOST",
   "GMAIL_AUTH_TIMEOUT_MS",
+  "GMAIL_REFRESH_TOKEN_OUTPUT_PATH",
 ] as const;
 
 const saved: Record<string, string | undefined> = {};
@@ -86,9 +89,10 @@ describe("gmail-auth CLI helpers", () => {
     );
   });
 
-  it("writes the refresh token to a mode-0600 file", () => {
-    const path = writeGmailRefreshTokenFile("secret-token");
-    assert.match(path, /gmail-refresh-token\.env$/);
+  it("writes the refresh token to a mode-0600 file at an explicit path", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gmail-oauth-test-"));
+    const path = join(dir, "gmail-refresh-token.env");
+    writeGmailRefreshTokenFile("secret-token", path);
     assert.equal(
       readFileSync(path, "utf8"),
       "GMAIL_REFRESH_TOKEN=secret-token\n"
@@ -121,7 +125,7 @@ describe("gmail-auth CLI helpers", () => {
     }
   });
 
-  it("prints only the refresh-token file path on success", async () => {
+  it("prints the refresh token assignment on success when no output path is set", async () => {
     process.env.GMAIL_CLIENT_ID = "client-id";
     process.env.GMAIL_CLIENT_SECRET = "client-secret";
     process.env.GMAIL_OAUTH_TOKEN_URL = "https://oauth.example.test/token";
@@ -154,9 +158,56 @@ describe("gmail-auth CLI helpers", () => {
       });
       assert.equal(result.ok, true);
       const printed = logs.join("\n");
-      assert.match(printed, /gmail-refresh-token\.env$/);
-      assert.doesNotMatch(printed, /secret-token/);
-      assert.doesNotMatch(printed, /GMAIL_REFRESH_TOKEN=/);
+      assert.match(printed, /Add this to \.env/);
+      assert.match(printed, /GMAIL_REFRESH_TOKEN=secret-token/);
+      assert.doesNotMatch(printed, /gmail-refresh-token\.env/);
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  it("writes to GMAIL_REFRESH_TOKEN_OUTPUT_PATH when configured", async () => {
+    process.env.GMAIL_CLIENT_ID = "client-id";
+    process.env.GMAIL_CLIENT_SECRET = "client-secret";
+    process.env.GMAIL_OAUTH_TOKEN_URL = "https://oauth.example.test/token";
+    process.env.GMAIL_AUTH_BIND_HOST = "127.0.0.1";
+    const dir = mkdtempSync(join(tmpdir(), "gmail-oauth-cli-"));
+    const outputPath = join(dir, "token.env");
+    process.env.GMAIL_REFRESH_TOKEN_OUTPUT_PATH = outputPath;
+    let oauthState = "";
+    const logs: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      logs.push(args.map(String).join(" "));
+    };
+    try {
+      const result = await runGmailAuthCli({
+        openUrl: (url) => {
+          oauthState = new URL(url).searchParams.get("state") ?? "";
+        },
+        listen: async () => ({
+          port: 9,
+          close: async () => undefined,
+          wait: async () =>
+            new URL(`http://127.0.0.1:9/?code=c&state=${oauthState}`),
+        }),
+        fetchImpl: async () =>
+          new Response(
+            JSON.stringify({
+              access_token: "a",
+              refresh_token: "secret-token",
+            }),
+            { status: 200 }
+          ),
+      });
+      assert.equal(result.ok, true);
+      assert.equal(
+        readFileSync(outputPath, "utf8"),
+        "GMAIL_REFRESH_TOKEN=secret-token\n"
+      );
+      const printed = logs.join("\n");
+      assert.match(printed, new RegExp(`${outputPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
+      assert.doesNotMatch(printed, /GMAIL_REFRESH_TOKEN=secret-token/);
     } finally {
       console.log = originalLog;
     }

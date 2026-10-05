@@ -104,3 +104,9 @@ export function getGmailHttpTimeoutMs(): number {
 export function getGmailAuthTimeoutMs(): number {
   return Math.max(1, getEnvNumber("GMAIL_AUTH_TIMEOUT_MS", DEFAULT_AUTH_TIMEOUT_MS));
 }
+
+/** Optional destination for gmail:auth refresh-token output (mode 0600). When unset, stdout only. */
+export function getGmailRefreshTokenOutputPath(): string | undefined {
+  const value = getEnvString("GMAIL_REFRESH_TOKEN_OUTPUT_PATH");
+  return value === undefined || value.trim() === "" ? undefined : value.trim();
+}

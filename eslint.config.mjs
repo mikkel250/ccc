@@ -19,6 +19,17 @@ const noTestFrameworkImports = [
         message: "Use node:test mock.method or optional function-parameter injection.",
       },
     ],
+    patterns: [
+      {
+        group: ["@jest/**", "jest/**", "vitest/**"],
+        message: "Use node:test and node:assert/strict.",
+      },
+      {
+        group: ["sinon/**"],
+        message:
+          "Use node:test mock.method or optional function-parameter injection.",
+      },
+    ],
   },
 ];
 

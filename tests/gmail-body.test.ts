@@ -42,6 +42,18 @@ describe("htmlToText", () => {
     assert.equal(htmlToText("<p>&#55296;visible</p>"), "visible");
   });
 
+  it("rejects NUL numeric entities instead of decoding them", () => {
+    assert.equal(htmlToText("<p>&#0;visible</p>"), "visible");
+    assert.equal(htmlToText("<p>&#x0;visible</p>"), "visible");
+  });
+
+  it("decodes uppercase HTML entity aliases without folding case", () => {
+    assert.equal(htmlToText("A &QUOT;quote&QUOT;"), 'A "quote"');
+    assert.equal(htmlToText("Brand &COPY; mark"), "Brand \u00A9 mark");
+    assert.equal(htmlToText("Brand &REG; mark"), "Brand \u00AE mark");
+    assert.equal(htmlToText("A &Quot;quote&Quot;"), "A &Quot;quote&Quot;");
+  });
+
   it("drops text hidden with an HTML5 colon entity", () => {
     assert.equal(
       htmlToText('<div style="display&colon;none">SECRET</div>visible'),

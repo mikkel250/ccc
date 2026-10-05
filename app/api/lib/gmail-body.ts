@@ -262,6 +262,7 @@ const LATIN1_ENTITY_NAMES = [
 
 const HTML_NAMED_ENTITIES: Record<string, string> = {
   quot: '"',
+  QUOT: '"',
   colon: ":",
   Tab: "\t",
   NewLine: "\n",
@@ -272,6 +273,8 @@ const HTML_NAMED_ENTITIES: Record<string, string> = {
   LT: "<",
   gt: ">",
   GT: ">",
+  COPY: "\u00A9",
+  REG: "\u00AE",
   ndash: "\u2013",
   mdash: "\u2014",
   hellip: "\u2026",
@@ -317,7 +320,7 @@ function decodeNumericEntity(body: string): string | undefined {
   const code = Number.parseInt(digits, hex ? 16 : 10);
   if (
     !Number.isFinite(code) ||
-    code < 0 ||
+    code <= 0 ||
     code > 0x10ffff ||
     (code >= 0xd800 && code <= 0xdfff)
   ) {

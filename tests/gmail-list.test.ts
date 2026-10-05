@@ -27,6 +27,30 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function authorizationHeader(init?: RequestInit): string | undefined {
+  const headers = init?.headers;
+  if (headers === undefined) {
+    return undefined;
+  }
+  if (headers instanceof Headers) {
+    return headers.get("Authorization") ?? undefined;
+  }
+  if (Array.isArray(headers)) {
+    for (const [name, value] of headers) {
+      if (name.toLowerCase() === "authorization") {
+        return value;
+      }
+    }
+    return undefined;
+  }
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() === "authorization") {
+      return value;
+    }
+  }
+  return undefined;
+}
+
 describe("gmail-list parsers", () => {
   it("matches an exact label name", () => {
     const result = matchGmailLabelId(
@@ -131,12 +155,14 @@ describe("listLabeledRecruiterMail", () => {
   it("lists messages for the recruiter label", async () => {
     const urls: string[] = [];
     const result = await listLabeledRecruiterMail({
-      fetchImpl: async (input) => {
+      fetchImpl: async (input, init) => {
         const url = String(input);
         urls.push(url);
         if (url.includes("/token")) {
+          assert.equal(authorizationHeader(init), undefined);
           return jsonResponse({ access_token: "access" });
         }
+        assert.equal(authorizationHeader(init), "Bearer access");
         if (url.endsWith("/users/me/labels")) {
           return jsonResponse({
             labels: [{ id: "Label_1", name: "Recruiter" }],

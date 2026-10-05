@@ -366,9 +366,21 @@ export async function buildTailorResponse(
   return { ok: true, body: responseBody };
 }
 
-function isProgrammerError(error: unknown): boolean {
+function isTransientFetchTypeError(error: TypeError): boolean {
+  const message = error.message.toLowerCase();
   return (
-    error instanceof TypeError ||
+    message === "fetch failed" ||
+    message.includes("failed to fetch") ||
+    message.includes("network request failed") ||
+    message.includes("network error")
+  );
+}
+
+function isProgrammerError(error: unknown): boolean {
+  if (error instanceof TypeError) {
+    return !isTransientFetchTypeError(error);
+  }
+  return (
     error instanceof ReferenceError ||
     error instanceof SyntaxError ||
     error instanceof RangeError
