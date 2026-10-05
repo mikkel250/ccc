@@ -174,13 +174,16 @@ export async function writeSmokeArtifacts(
     }
   }
 
+  if (input.curationMode === "strict") {
+    rmSync(paths.coverLetterPath, { force: true });
+  }
+
   if (shouldWriteReplyText(input.curationMode, input.replyText)) {
     writeFileSync(paths.replyPath, input.replyText.trim(), "utf8");
     console.log(`Wrote ${paths.replyPath}`);
   } else {
     rmSync(paths.replyPath, { force: true });
     if (input.curationMode === "strict") {
-      rmSync(paths.coverLetterPath, { force: true });
       console.warn("Reply text missing or empty for strict run, skipping reply file");
     }
   }
