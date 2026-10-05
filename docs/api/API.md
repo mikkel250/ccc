@@ -12,7 +12,7 @@ Required: `Authorization: Bearer <TAILOR_API_KEY>`.
 |-----------|--------|
 | Smoke CLI (`npm run smoke`) | Operator / manual live-API path |
 
-The inbox worker is **not** an HTTP presenter: `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a labeled payload then calls `runTailorCore` (strict `cv` + `replyText`, no Bearer, no `RATE_LIMIT_*` buckets, no `remaining`/`resetTime`). Success carries `claimToken` so a later draft step can mark processed only while that token still owns the Redis claim. Non-crash extract/JD/tailor failures release the claim. A programmer error from the tailor keeps the claim until the lease expires. Product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`. Seekers and browsers never hold the key.
+The inbox worker is **not** an HTTP presenter: `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a labeled payload then calls `runTailorCore` (strict `cv` + `replyText`, no Bearer, no `RATE_LIMIT_*` buckets, no `remaining`/`resetTime`). Success carries `claimToken` so the draft step can mark processed only while that token still owns the Redis claim. Non-crash extract/JD/tailor failures release the claim. A programmer error from the tailor keeps the claim until the lease expires. Overlapping scans take one Redis claim per Gmail thread and hold it through `drafts.create`, and the scan refreshes the Gmail access token again after tailor, before the draft request. Product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`. Seekers and browsers never hold the key.
 
 Missing/invalid Bearer → **401**. Unset/`TAILOR_API_KEY` misconfiguration, production bypass hard-block, or other auth-gate unavailability → **503** (fail closed; not all auth failures are 401). Deployed environments fail closed when `TAILOR_API_KEY` is unset. Local insecure bypass (`TAILOR_AUTH_INSECURE_BYPASS=1`) is hard-blocked when production markers are set.
 
@@ -120,7 +120,7 @@ Strict (`curationMode` omitted or `"strict"`) includes `replyText`. Flexible may
 |-------|-------------|
 | `cv` | Base64 `.docx` |
 | `coverLetter` | Markdown cover letter (flexible mode only; absent for strict mode) |
-| `replyText` | Recruiter-thread email body (strict mode only; absent for flexible). Trimmed non-empty string; missing/blank curator `reply_text` is HTTP 422. |
+| `replyText` | Recruiter-thread email body (strict mode only; absent for flexible). Trimmed non-empty string; missing, blank, or non-string curator `reply_text` is HTTP 422. |
 | `curatedJson` | Schema-valid curated CV (caller-owned for history/regen) |
 | `builderVersion` | Mechanical builder semver; keep with JSON for style-stable regen |
 | `curationMode` | Echo of the mode used for this tailor (`strict` or `flexible`) |
@@ -146,7 +146,7 @@ Missing/invalid Bearer token (key is configured but presentation failed).
 
 #### 422 Unprocessable Entity
 
-Curator JSON parse/schema/size failure, builder failure, or oversize response — no `cv` / `curatedJson` in body.
+Curator JSON parse/schema/size failure, strict wrapper or `reply_text` validation (missing `curated_cv` wrapper, or missing, blank, or non-string `reply_text`), builder failure, or oversize response — no `cv`, `curatedJson`, or `replyText` in the body.
 
 #### 429 Too Many Requests
 

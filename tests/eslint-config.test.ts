@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { ESLint } from "eslint";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -46,6 +47,16 @@ describe("eslint flat config (Next.js 16)", () => {
     const content = readFileSync(configPath, "utf8");
     assert.match(content, /eslint-config-next/);
     assert.match(content, /export default/);
+    assert.match(
+      content,
+      /@typescript-eslint\/no-explicit-any/,
+      "production TypeScript must lint-ban explicit any"
+    );
+    assert.match(
+      content,
+      /no-restricted-imports/,
+      "lint must ban Jest/Vitest/Sinon imports"
+    );
   });
 
   it("npm run lint runs without ESLint config-not-found error", () => {
@@ -83,4 +94,50 @@ describe("eslint flat config (Next.js 16)", () => {
       `npm run lint must exit 0; output:\n${output}`
     );
   });
+
+  it("bans test-framework package and subpath imports in app and tests", async () => {
+    const eslint = new ESLint({ cwd: root });
+    const banned = [
+      ["app/api/lib/sample.ts", 'import "@jest/globals";\n'],
+      ["app/api/lib/sample.ts", 'import "vitest/config";\n'],
+      ["app/api/lib/sample.ts", 'import "jest";\n'],
+      ["app/api/lib/sample.ts", 'import "sinon/pkg/sinon.js";\n'],
+      ["tests/sample.test.ts", 'import "@jest/globals";\n'],
+      ["tests/sample.test.ts", 'import "vitest/config";\n'],
+      ["tests/sample.test.ts", 'import "vitest";\n'],
+      ["tests/sample.test.ts", 'import "sinon";\n'],
+    ] as const;
+
+    for (const [filePath, code] of banned) {
+      const messages = await restrictedImportMessages(eslint, filePath, code);
+      assert.ok(
+        messages.length > 0,
+        `${filePath} must restrict ${code.trim()}`
+      );
+    }
+
+    const allowed = await restrictedImportMessages(
+      eslint,
+      "tests/sample.test.ts",
+      'import { test } from "node:test";\nimport assert from "node:assert/strict";\n'
+    );
+    assert.deepEqual(allowed, []);
+  });
 });
+
+async function restrictedImportMessages(
+  eslint: ESLint,
+  filePath: string,
+  code: string
+): Promise<string[]> {
+  const results = await eslint.lintText(code, { filePath });
+  const messages: string[] = [];
+  for (const result of results) {
+    for (const message of result.messages) {
+      if (message.ruleId === "no-restricted-imports") {
+        messages.push(message.message);
+      }
+    }
+  }
+  return messages;
+}
