@@ -52,53 +52,6 @@ const VOID_HTML_ELEMENTS = new Set([
   "wbr",
 ]);
 
-/** Named entities Gmail HTML commonly emits; numeric (dec/hex) covers the rest. */
-const NAMED_HTML_ENTITIES: Record<string, string> = {
-  amp: "&",
-  lt: "<",
-  gt: ">",
-  quot: '"',
-  apos: "'",
-  nbsp: " ",
-  mdash: "\u2014",
-  ndash: "\u2013",
-  rsquo: "\u2019",
-  lsquo: "\u2018",
-  rdquo: "\u201D",
-  ldquo: "\u201C",
-  hellip: "\u2026",
-  bull: "\u2022",
-  middot: "\u00B7",
-};
-
-function codePointToChar(code: number): string | undefined {
-  if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) {
-    return undefined;
-  }
-  if (code >= 0xd800 && code <= 0xdfff) {
-    return undefined;
-  }
-  return String.fromCodePoint(code);
-}
-
-function decodeHtmlEntities(text: string): string {
-  return text.replace(
-    /&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]+);/gi,
-    (entity, body: string) => {
-      const inner = body.toLowerCase();
-      if (inner.startsWith("#x")) {
-        return codePointToChar(Number.parseInt(inner.slice(2), 16)) ?? entity;
-      }
-      if (inner.startsWith("#")) {
-        return codePointToChar(Number(inner.slice(1))) ?? entity;
-      }
-      return Object.hasOwn(NAMED_HTML_ENTITIES, inner)
-        ? NAMED_HTML_ENTITIES[inner]
-        : entity;
-    }
-  );
-}
-
 function styleDeclaresClippingOverflow(style: string): boolean {
   return /(?:^|;)\s*overflow(?:-(?:x|y))?\s*:\s*(?:hidden|clip|scroll)\b/i.test(
     style
@@ -135,7 +88,7 @@ function styleDeclaresPositiveFontSize(style: string): boolean {
 }
 
 function tagStyle(raw: string): string | undefined {
-  const decoded = decodeHtmlEntities(raw);
+  const decoded = decodeHtmlEntities(raw, "replace");
   const quoted = decoded.match(/style\s*=\s*(["'])([^"']*)\1/i);
   if (quoted) {
     return quoted[2];
@@ -163,7 +116,7 @@ function nextTextHide(style: string | undefined, parentHide: boolean): boolean {
 
 /** Hidden-content policy: drop boolean `hidden`, `aria-hidden="true"`, and hidden inline styles. */
 function isHiddenOpeningTag(raw: string): boolean {
-  const decoded = decodeHtmlEntities(raw);
+  const decoded = decodeHtmlEntities(raw, "replace");
   const attrsWithoutValues = decoded.replace(/=\s*("[^"]*"|'[^']*')/g, "");
   return (
     /\shidden(?=[\s=>/])/i.test(attrsWithoutValues) ||
@@ -289,6 +242,120 @@ export function htmlToText(html: string): string {
       .replace(/<[^>]+>/g, " ")
   );
   return withoutBlocks.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/[ \t]{2,}/g, " ").trim();
+}
+
+/** HTML 4.01 Latin-1 named entities, code points 160–255 in spec order. */
+const LATIN1_ENTITY_NAMES = [
+  "nbsp", "iexcl", "cent", "pound", "curren", "yen", "brvbar", "sect",
+  "uml", "copy", "ordf", "laquo", "not", "shy", "reg", "macr",
+  "deg", "plusmn", "sup2", "sup3", "acute", "micro", "para", "middot",
+  "cedil", "sup1", "ordm", "raquo", "frac14", "frac12", "frac34", "iquest",
+  "Agrave", "Aacute", "Acirc", "Atilde", "Auml", "Aring", "AElig", "Ccedil",
+  "Egrave", "Eacute", "Ecirc", "Euml", "Igrave", "Iacute", "Icirc", "Iuml",
+  "ETH", "Ntilde", "Ograve", "Oacute", "Ocirc", "Otilde", "Ouml", "times",
+  "Oslash", "Ugrave", "Uacute", "Ucirc", "Uuml", "Yacute", "THORN", "szlig",
+  "agrave", "aacute", "acirc", "atilde", "auml", "aring", "aelig", "ccedil",
+  "egrave", "eacute", "ecirc", "euml", "igrave", "iacute", "icirc", "iuml",
+  "eth", "ntilde", "ograve", "oacute", "ocirc", "otilde", "ouml", "divide",
+  "oslash", "ugrave", "uacute", "ucirc", "uuml", "yacute", "thorn", "yuml",
+] as const;
+
+const HTML_NAMED_ENTITIES: Record<string, string> = {
+  quot: '"',
+  QUOT: '"',
+  colon: ":",
+  Tab: "\t",
+  NewLine: "\n",
+  amp: "&",
+  AMP: "&",
+  apos: "'",
+  lt: "<",
+  LT: "<",
+  gt: ">",
+  GT: ">",
+  COPY: "\u00A9",
+  REG: "\u00AE",
+  ndash: "\u2013",
+  mdash: "\u2014",
+  hellip: "\u2026",
+  lsquo: "\u2018",
+  rsquo: "\u2019",
+  sbquo: "\u201A",
+  ldquo: "\u201C",
+  rdquo: "\u201D",
+  bdquo: "\u201E",
+  dagger: "\u2020",
+  Dagger: "\u2021",
+  permil: "\u2030",
+  lsaquo: "\u2039",
+  rsaquo: "\u203A",
+  euro: "\u20AC",
+  trade: "\u2122",
+  bull: "\u2022",
+  circ: "\u02C6",
+  tilde: "\u02DC",
+  ensp: "\u2002",
+  emsp: "\u2003",
+  thinsp: "\u2009",
+  zwnj: "\u200C",
+  zwj: "\u200D",
+  lrm: "\u200E",
+  rlm: "\u200F",
+  OElig: "\u0152",
+  oelig: "\u0153",
+  Scaron: "\u0160",
+  scaron: "\u0161",
+  Yuml: "\u0178",
+  fnof: "\u0192",
+};
+
+for (let i = 0; i < LATIN1_ENTITY_NAMES.length; i += 1) {
+  HTML_NAMED_ENTITIES[LATIN1_ENTITY_NAMES[i]!] = String.fromCharCode(160 + i);
+}
+HTML_NAMED_ENTITIES.nbsp = " ";
+
+function decodeNumericEntity(body: string): string | undefined {
+  const hex = body[1] === "x" || body[1] === "X";
+  const digits = hex ? body.slice(2) : body.slice(1);
+  const code = Number.parseInt(digits, hex ? 16 : 10);
+  if (
+    !Number.isFinite(code) ||
+    code <= 0 ||
+    code > 0x10ffff ||
+    (code >= 0xd800 && code <= 0xdfff)
+  ) {
+    return undefined;
+  }
+  if (code === 160) {
+    return " ";
+  }
+  try {
+    return String.fromCodePoint(code);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Decode named and numeric (decimal + hex) HTML entities after tags are stripped. */
+function decodeHtmlEntities(
+  text: string,
+  invalidNumeric: "strip" | "replace" = "strip"
+): string {
+  return text.replace(
+    /&(#x[0-9a-fA-F]+|#\d+|[A-Za-z][A-Za-z0-9]+);/g,
+    (full, body: string) => {
+      if (body.startsWith("#")) {
+        const decoded = decodeNumericEntity(body);
+        if (decoded !== undefined) {
+          return decoded;
+        }
+        return invalidNumeric === "replace" ? "\uFFFD" : "";
+      }
+      return Object.hasOwn(HTML_NAMED_ENTITIES, body)
+        ? HTML_NAMED_ENTITIES[body]!
+        : full;
+    }
+  );
 }
 
 type CollectedBodies = { plain: string[]; html: string[] };

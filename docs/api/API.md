@@ -11,6 +11,7 @@ Required: `Authorization: Bearer <TAILOR_API_KEY>`.
 | Presenter | Notes |
 |-----------|--------|
 | Smoke CLI (`npm run smoke`) | Operator / manual live-API path |
+| `gmail:auth` / `gmail:list` | Local operator CLIs (not HTTP). Mint `GMAIL_REFRESH_TOKEN`; list messages with `GMAIL_RECRUITER_LABEL`. Seekers never hold Gmail tokens. |
 
 The inbox worker is **not** an HTTP presenter: `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a labeled payload then calls `runTailorCore` (strict `cv` + `replyText`, no Bearer, no `RATE_LIMIT_*` buckets, no `remaining`/`resetTime`). Success carries `claimToken` so a later draft step can mark processed only while that token still owns the Redis claim. Non-crash extract/JD/tailor failures release the claim. A programmer error from the tailor keeps the claim until the lease expires. Product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`. Seekers and browsers never hold the key.
 

@@ -17,6 +17,8 @@
     "test:e2e": "playwright test",
     "regen-docx": "tsx scripts/regen-docx.ts",
     "smoke": "tsx scripts/e2e-tailor-cv.ts",
+    "gmail:auth": "tsx scripts/gmail-auth.ts",
+    "gmail:list": "tsx scripts/gmail-list.ts",
     "smoke:parity": "tsx scripts/e2e-tailor-cv.ts --parity"
   },
   "dependencies": {
