@@ -734,6 +734,24 @@ export async function dispatchProvider(
   }
 }
 
+function isTransientUpstreamFailure(message: string): boolean {
+  if (
+    message.includes('timed out') ||
+    message.includes('timeout') ||
+    message.includes('connection error') ||
+    message.includes('econnreset') ||
+    message.includes('econnrefused') ||
+    message.includes('etimedout') ||
+    message.includes('socket hang up') ||
+    message.includes('rate limit reached') ||
+    message.includes('rate limit exceeded') ||
+    message.includes('too many requests')
+  ) {
+    return true;
+  }
+  return /(?:^|[^\d])429(?:[^\d]|$)/.test(message);
+}
+
 export function isLlmServiceError(message: string): boolean {
   const m = message.toLowerCase();
   return (
@@ -745,7 +763,8 @@ export function isLlmServiceError(message: string): boolean {
     m.includes('openrouter_api_key') ||
     m.includes('deepseek_api_key') ||
     m.includes('quota') ||
-    m.includes('resource_exhausted')
+    m.includes('resource_exhausted') ||
+    isTransientUpstreamFailure(m)
   );
 }
 
