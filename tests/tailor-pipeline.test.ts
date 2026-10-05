@@ -2,7 +2,9 @@ import { describe, it, mock, afterEach, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { NextRequest } from "next/server";
 import { tailorCvDeps } from "../app/api/lib/tailor-cv-deps";
+import { isLlmServiceError } from "../app/api/lib/llm";
 import { RateLimitError, ServiceError } from "../app/api/lib/errors";
 import { resetRedisClientForTest } from "../app/api/lib/redis";
 import {
@@ -12,12 +14,19 @@ import {
 import { BUILDER_VERSION } from "../app/api/lib/json-docx-builder";
 import { getTailorJdMaxChars } from "../app/api/lib/cv-schema";
 import {
+  DEFAULT_STRICT_REPLY,
+  strictCuratorJson,
+} from "../tests/helpers/strict-curator";
+import {
   getRateLimitConfig,
   hashTailorApiKeyForRateLimit,
   __injectRatelimitForTest,
   __injectSecretRatelimitForTest,
 } from "../app/api/lib/rate-limit";
-import { buildTailorResponse } from "../app/api/lib/tailor-pipeline";
+import {
+  buildTailorResponse,
+  runTailorCore,
+} from "../app/api/lib/tailor-pipeline";
 import {
   authHeaders,
   buildPostRequest,
@@ -59,7 +68,7 @@ function mockPipelineSuccess(
     (jd: string) => `JD:\n${jd}`
   );
   mock.method(tailorCvDeps, "chat", async () => ({
-    content: JSON.stringify(curated),
+    content: strictCuratorJson(curated),
     usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
     model: "claude-sonnet-4-6",
     finishReason: "stop",
@@ -490,7 +499,7 @@ describe("buildTailorResponse — pipeline orchestration", () => {
   it("returns error when curator JSON fails schema validation", async () => {
     mockPipelineSuccess();
     mock.method(tailorCvDeps, "chat", async () => ({
-      content: JSON.stringify({ name: "Only Name" }),
+      content: strictCuratorJson({ name: "Only Name" }),
       usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
       model: "anthropic/sonnet",
       finishReason: "stop",
@@ -573,6 +582,8 @@ describe("buildTailorResponse — pipeline orchestration", () => {
         assert.equal(typeof result.body.remaining, "number");
         assert.equal(typeof result.body.resetTime, "number");
         assert.equal(result.body.curationMode, "strict");
+        assert.equal(result.body.replyText, DEFAULT_STRICT_REPLY);
+        assert.equal(result.body.coverLetter, undefined);
         assert.equal(typeof result.body.model, "string");
         assert.equal(result.body.model, "anthropic/sonnet");
         assert.ok(result.body.usage);
@@ -627,7 +638,7 @@ describe("buildTailorResponse — pipeline orchestration", () => {
       mock.method(tailorCvDeps, "chat", async () => {
         callOrder.push("chat");
         return {
-          content: JSON.stringify(FIXTURE_CURATED),
+          content: strictCuratorJson(FIXTURE_CURATED),
           usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
           model: "anthropic/sonnet",
           finishReason: "stop",
@@ -660,5 +671,354 @@ describe("buildTailorResponse — pipeline orchestration", () => {
       );
       assert.equal(chatSpy.mock.callCount(), 0);
     });
+
+    it("HTTP adapter still invokes checkRateLimit on success", async () => {
+      const orig = tailorCvDeps.checkRateLimit;
+      const spy = mock.method(
+        tailorCvDeps,
+        "checkRateLimit",
+        async (
+          phase: string,
+          ipAddress: string,
+          secretBucketKey: string
+        ) => orig.call(tailorCvDeps, phase, ipAddress, secretBucketKey)
+      );
+      const result = await buildTailorResponse(
+        tailorCvDeps,
+        buildPostRequest(VALID_BODY, XFF)
+      );
+      assert.equal(result.ok, true);
+      assert.ok(spy.mock.callCount() >= 1);
+    });
+
+    it("passes request.signal into chat", async () => {
+      const controller = new AbortController();
+      let seen: AbortSignal | undefined;
+      mock.method(
+        tailorCvDeps,
+        "chat",
+        async (
+          _messages: unknown,
+          _systemPrompt: string,
+          options: { signal?: AbortSignal }
+        ) => {
+          seen = options.signal;
+          return {
+            content: strictCuratorJson(FIXTURE_CURATED),
+            usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+            model: "anthropic/sonnet",
+            finishReason: "stop",
+          };
+        }
+      );
+
+      const request = new NextRequest("http://localhost/api/tailor-cv", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...XFF,
+        },
+        body: VALID_BODY,
+        signal: controller.signal,
+      });
+      const result = await buildTailorResponse(tailorCvDeps, request);
+      assert.equal(result.ok, true);
+      assert.equal(seen, request.signal);
+    });
+  });
+});
+
+describe("runTailorCore — in-process curator path", () => {
+  beforeEach(() => {
+    ensureEnv();
+    resetRedisClientForTest();
+    mockPipelineSuccess();
+  });
+
+  afterEach(() => {
+    mock.restoreAll();
+    resetRedisClientForTest();
+  });
+
+  it("returns strict artifacts without remaining/resetTime and without checkRateLimit", async () => {
+    const rateSpy = mock.method(tailorCvDeps, "checkRateLimit", async () => {
+      throw new Error("checkRateLimit must not be called from runTailorCore");
+    });
+    const authSpy = mock.method(tailorCvDeps, "authenticateTailorRequest", () => {
+      throw new Error("authenticateTailorRequest must not be called from runTailorCore");
+    });
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription:
+        "We need a senior engineer with React and Node.js experience.",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(rateSpy.mock.callCount(), 0);
+    assert.equal(authSpy.mock.callCount(), 0);
+    if (result.ok) {
+      assert.equal(typeof result.body.cv, "string");
+      assert.ok(result.body.cv.length > 0);
+      assert.ok(result.body.curatedJson);
+      assert.equal(result.body.builderVersion, BUILDER_VERSION);
+      assert.equal(result.body.curationMode, "strict");
+      assert.equal(result.body.replyText, DEFAULT_STRICT_REPLY);
+      assert.equal(result.body.coverLetter, undefined);
+      assert.equal("remaining" in result.body, false);
+      assert.equal("resetTime" in result.body, false);
+    }
+  });
+
+  it("returns 422 without cv when strict reply_text is blank", async () => {
+    mock.method(tailorCvDeps, "chat", async () => ({
+      content: strictCuratorJson(FIXTURE_CURATED, "   "),
+      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+      model: "anthropic/sonnet",
+      finishReason: "stop",
+    }));
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 422);
+      assert.match(result.error, /reply_text/);
+    }
+  });
+
+  it("aborts after chat without parsing when the signal is cancelled", async () => {
+    const controller = new AbortController();
+    mock.method(tailorCvDeps, "chat", async () => {
+      controller.abort();
+      return {
+        content: strictCuratorJson(FIXTURE_CURATED),
+        usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+        model: "anthropic/sonnet",
+        finishReason: "stop",
+      };
+    });
+    const extractSpy = mock.method(tailorCvDeps, "extractStructuredJson");
+    const docxSpy = mock.method(tailorCvDeps, "buildJsonDocxBase64");
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+      signal: controller.signal,
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.status, 503);
+    assert.equal(extractSpy.mock.callCount(), 0);
+    assert.equal(docxSpy.mock.callCount(), 0);
+  });
+
+  it("aborts after DOCX rendering when the signal is cancelled", async () => {
+    const controller = new AbortController();
+    mock.method(tailorCvDeps, "buildJsonDocxBase64", async () => {
+      controller.abort();
+      return {
+        ok: true as const,
+        base64: Buffer.from("docx").toString("base64"),
+        builderVersion: BUILDER_VERSION,
+      };
+    });
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+      signal: controller.signal,
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.status, 503);
+  });
+
+  it("maps a transient chat timeout to 503 without leaking the provider message", async () => {
+    mock.method(tailorCvDeps, "isLlmServiceError", isLlmServiceError);
+    mock.method(tailorCvDeps, "chat", async () => {
+      throw new Error("Request timed out.");
+    });
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "AI service error. Please try again.");
+    }
+  });
+
+  it("rethrows unknown chat exceptions so the route can map them to 500", async () => {
+    mock.method(tailorCvDeps, "chat", async () => {
+      throw new TypeError("curatorResponse.content is undefined");
+    });
+
+    await assert.rejects(
+      () =>
+        runTailorCore(tailorCvDeps, {
+          jobDescription: "React role",
+          curationMode: "strict",
+        }),
+      (err: unknown) =>
+        err instanceof TypeError &&
+        err.message === "curatorResponse.content is undefined"
+    );
+  });
+
+  it("maps a chat throw to 503 without leaking the provider message", async () => {
+    mock.method(tailorCvDeps, "chat", async () => {
+      throw new Error("OPENROUTER_API_KEY is not configured");
+    });
+    mock.method(tailorCvDeps, "isLlmServiceError", () => true);
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.doesNotMatch(result.error, /OPENROUTER_API_KEY/);
+    }
+  });
+
+  it("echoes namespaced TAILOR_MODEL instead of the provider model id", async () => {
+    const previous = process.env.TAILOR_MODEL;
+    process.env.TAILOR_MODEL = "anthropic/sonnet";
+    mock.method(tailorCvDeps, "chat", async () => ({
+      content: strictCuratorJson(FIXTURE_CURATED),
+      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+      model: "claude-sonnet-4-6",
+      finishReason: "stop",
+    }));
+
+    try {
+      const result = await runTailorCore(tailorCvDeps, {
+        jobDescription: "React role",
+        curationMode: "strict",
+      });
+      assert.equal(result.ok, true);
+      if (result.ok) {
+        assert.equal(result.body.model, "anthropic/sonnet");
+      }
+    } finally {
+      if (previous === undefined) delete process.env.TAILOR_MODEL;
+      else process.env.TAILOR_MODEL = previous;
+    }
+  });
+
+  it("uses the hardcoded fallback when a live Langfuse strict prompt omits the reply wrapper", async () => {
+    mock.method(tailorCvDeps, "getCuratorPrompt", async () => ({
+      systemPrompt: "Emit curated JSON only. {{MASTER_CV_JSON}}",
+      langfusePrompt: {
+        name: "cv-curator-json",
+        version: 3,
+      },
+    }));
+    let seenPrompt = "";
+    let seenLangfuse: { version: number; isFallback?: boolean } | undefined;
+    const chatSpy = mock.method(
+      tailorCvDeps,
+      "chat",
+      async (
+        _messages: unknown,
+        systemPrompt: string,
+        options: { langfusePrompt: { version: number; isFallback?: boolean } }
+      ) => {
+        seenPrompt = systemPrompt;
+        seenLangfuse = options.langfusePrompt;
+        return {
+          content: strictCuratorJson(FIXTURE_CURATED),
+          usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+          model: "anthropic/sonnet",
+          finishReason: "stop",
+        };
+      }
+    );
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(chatSpy.mock.callCount(), 1);
+    assert.match(seenPrompt, /"reply_text"/);
+    assert.doesNotMatch(seenPrompt, /Emit curated JSON only\./);
+    assert.equal(seenLangfuse?.version, 0);
+    assert.equal(seenLangfuse?.isFallback, true);
+  });
+
+  it("returns 503 before prompt retrieval when the signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const promptSpy = mock.method(tailorCvDeps, "getCuratorPrompt", async () => {
+      throw new Error("getCuratorPrompt must not run when already aborted");
+    });
+    const compileSpy = mock.method(tailorCvDeps, "compileCuratorPrompt", () => {
+      throw new Error("compile must not run when already aborted");
+    });
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+      signal: controller.signal,
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "AI service error. Please try again.");
+    }
+    assert.equal(promptSpy.mock.callCount(), 0);
+    assert.equal(compileSpy.mock.callCount(), 0);
+  });
+
+  it("returns 503 before prompt compilation when aborted during retrieval", async () => {
+    const controller = new AbortController();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mock.method(tailorCvDeps, "getCuratorPrompt", async () => {
+      controller.abort();
+      await gate;
+      return {
+        systemPrompt: "Curate with {{MASTER_CV_JSON}}",
+        langfusePrompt: {
+          name: "cv-curator-json",
+          version: 1,
+          isFallback: true,
+        },
+      };
+    });
+    const compileSpy = mock.method(tailorCvDeps, "compileCuratorPrompt", () => {
+      throw new Error("compile must not run after abort during retrieval");
+    });
+
+    try {
+      const result = await runTailorCore(tailorCvDeps, {
+        jobDescription: "React role",
+        curationMode: "strict",
+        signal: controller.signal,
+      });
+
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.equal(result.status, 503);
+        assert.equal(result.error, "AI service error. Please try again.");
+      }
+      assert.equal(compileSpy.mock.callCount(), 0);
+    } finally {
+      release();
+    }
   });
 });
