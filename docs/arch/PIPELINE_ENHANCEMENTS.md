@@ -4,7 +4,7 @@ Post-MVP improvements to the CV generation pipeline. These address the "reasonin
 
 **Current product (v1):** single-pass JSON curator (`runTailorCore`), operator-reviewed smoke artifacts, no on-path LLM judges. Sections 1–3 below are exploratory designs, not active scope. See [retire LLM judges](../plans/2026-09-03-001-feat-retire-llm-judges-plan.md).
 
-**Runtime (v1):** sync tailor via `POST /api/tailor-cv`, plus in-process `tailorLabeledMessage` → `runTailorCore`. The scan CLI, Gmail drafts, and Railway cron are later milestones. See [Inbox scan runtime](#inbox-scan-runtime) below — this is **not** the deferred native LLM batch API path.
+**Runtime (v1):** sync tailor via `POST /api/tailor-cv`, plus in-process `tailorLabeledMessage` → `runTailorCore` and `npm run inbox:scan` (drafts + processed mark). Railway cron (M8.6) is still planned. See [Inbox scan runtime](#inbox-scan-runtime) below — this is **not** the deferred native LLM batch API path.
 
 ## 1. Two-Pass Pipeline (Intent Extractor → Synthesizer)
 
@@ -74,11 +74,9 @@ Key decisions:
 
 ## Inbox scan runtime
 
-The Gmail inbox worker is **library code in this Next.js repo**, not a second deployed service. On this tree, `tailorLabeledMessage` claims and extracts a labeled payload, then calls `runTailorCore` in-process (strict `cv` + `replyText`, no Bearer, no public rate-limit buckets). It does not create a Gmail draft and does not mark the message processed.
+The Gmail inbox worker is **library code in this Next.js repo**, not a second deployed service. `tailorLabeledMessage` claims and extracts a labeled payload, then calls `runTailorCore` in-process (strict `cv` + `replyText`, no Bearer, no public rate-limit buckets). `npm run inbox:scan` lists labeled mail, drafts, and marks processed. Railway cron for that same job (M8.6) is not on this tree yet.
 
-Not on this tree yet: Gmail list (M8.2), a `npm run inbox:scan` tsx CLI, thread-draft attach then the processed mark (M8.5), and Railway cron for that same job (M8.6). `package.json` has no `inbox:scan` script.
-
-Intended flow once those land:
+Flow:
 
 ```text
 Trigger: npm run inbox:scan (local tsx CLI)  OR  Railway cron (M8.6, same entrypoint)

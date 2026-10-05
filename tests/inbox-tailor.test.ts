@@ -394,6 +394,24 @@ describe("tailorLabeledMessage", () => {
     assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
   });
 
+  it("returns 503 and releases the claim when getCuratorPrompt throws fetch failed", async () => {
+    mock.method(tailorCvDeps, "getCuratorPrompt", async () => {
+      throw new TypeError("fetch failed");
+    });
+
+    const result = await tailorLabeledMessage(tailorCvDeps, {
+      messageId: ID,
+      message: plainMessage(JD),
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "AI service error. Please try again.");
+    }
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+  });
+
   it("keeps claim ownership when core work outlasts the initial lease", async () => {
     const previous = process.env.INBOX_CLAIM_TTL_SECONDS;
     process.env.INBOX_CLAIM_TTL_SECONDS = "1";

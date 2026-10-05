@@ -47,10 +47,13 @@ Operator loop (`npm run smoke:parity` / `--parity`) that fills **one** `SMOKE_PA
 The recruiter-facing email body returned on a successful `strict` tailor. Curator JSON key `reply_text`; HTTP and in-process result field `replyText`. Grounded in the Master CV with the same no-invention rules as the Curated CV. The inbox worker copies it into the Gmail draft body. Distinct from flexible-mode `coverLetter`.
 
 ### Inbox scan
-Planned on-demand or scheduled job in this repo: list Gmail messages with the recruiter label, skip claimed or processed ids, strict-tailor the body in-process via `runTailorCore`, then create a thread reply draft with reply text and the CV `.docx` (M8.5). A future `npm run inbox:scan` tsx CLI and Railway cron (M8.6) are meant to invoke the **same implementation** — not a separate service and not HTTP through `POST /api/tailor-cv`. On this tree only `tailorLabeledMessage` → `runTailorCore` exists; there is no `inbox:scan` script and no draft client.
+On-demand job in this repo (`npm run inbox:scan`): list Gmail messages with the recruiter label, skip claimed or processed ids, strict-tailor the body in-process via `runTailorCore`, then create a thread reply draft with reply text and the CV `.docx`. Railway cron (M8.6) is meant to invoke the **same implementation** — not a separate service and not HTTP through `POST /api/tailor-cv`.
 
 ### LLM batch dispatch
 Deferred cost path: provider native batch APIs (Anthropic Message Batches, DeepSeek batch). Flow is **submit** (get `batch_id`) → **poll** status on a schedule (short HTTP calls; model may finish minutes later) → **retrieve** results — not one long blocking wait on the model. Distinct from inbox tailor (sync `chat()`). Needs durable state between poll ticks; poller could run on Vercel cron or Railway cron when built. Sync tailor and a future serial scan are why v1 defaults to Railway: Vercel Hobby fluid functions cap at 300s.
+
+### Gmail OAuth
+One-shot local CLI (`npm run gmail:auth`) that mints `GMAIL_REFRESH_TOKEN` via a Desktop-app loopback redirect. Railway and `gmail:list` use that token. Not a product OAuth UI; seekers never hold Gmail credentials.
 
 ### Processed message
 A Gmail `messageId` in its terminal Redis state: a sendable reply draft already exists, so a later scan (local or Railway) does not tailor or create another draft. The worker claims the id before drafting and writes this mark only after draft success. Overlap and crash recovery live in the inbox-worker product contract (R10, R12, F3).
