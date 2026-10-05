@@ -112,7 +112,10 @@ function decodeHtmlEntities(text: string): string {
       if (body[0] === "#") {
         return decodeNumericHtmlEntity(body);
       }
-      return NAMED_HTML_ENTITIES[body.toLowerCase()] ?? match;
+      const key = body.toLowerCase();
+      return Object.hasOwn(NAMED_HTML_ENTITIES, key)
+        ? NAMED_HTML_ENTITIES[key]
+        : match;
     }
   );
 }

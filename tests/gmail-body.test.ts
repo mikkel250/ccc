@@ -19,6 +19,13 @@ describe("htmlToText", () => {
     assert.equal(htmlToText("It&apos;s a GM role"), "It's a GM role");
   });
 
+  it("leaves prototype property names unchanged", () => {
+    assert.equal(
+      htmlToText("<p>Role &constructor; here</p>"),
+      "Role &constructor; here"
+    );
+  });
+
   it("drops comments, head, and hidden inner text", () => {
     const html = [
       "<html><head><title>Tracking pixel</title></head>",
