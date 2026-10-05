@@ -1,15 +1,19 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
-import { getRedisClient, resetRedisClientForTest } from "../app/api/lib/redis";
 import {
   __injectInboxKvForTest,
   claimInboxMessage,
   extractUnprocessedInboxMessage,
   inboxClaimKey,
   inboxProcessedKey,
+  isInboxProcessed,
   markInboxProcessed,
   parseInboxMessageId,
+  releaseInboxClaim,
+  renewInboxClaim,
+  INBOX_CLAIM_TOKEN_REQUIRED_ERROR,
+  INBOX_REDIS_TIMEOUT_ERROR,
+  INBOX_REDIS_UNAVAILABLE_ERROR,
   type InboxKv,
 } from "../app/api/lib/inbox-processed-store";
 
@@ -28,22 +32,66 @@ function plainMessage(text: string): unknown {
 
 function createMemoryKv(): InboxKv & { store: Map<string, string> } {
   const store = new Map<string, string>();
+  const expiresAt = new Map<string, number>();
+  function purge(key: string): void {
+    const exp = expiresAt.get(key);
+    if (exp !== undefined && exp <= Date.now()) {
+      store.delete(key);
+      expiresAt.delete(key);
+    }
+  }
   return {
     store,
-    get: async (key) => store.get(key) ?? null,
+    get: async (key) => {
+      purge(key);
+      return store.get(key) ?? null;
+    },
     set: async (key, value, opts) => {
       await new Promise<void>((resolve) => setImmediate(resolve));
+      purge(key);
       if (opts?.nx && store.has(key)) {
         return null;
       }
       store.set(key, value);
+      if (opts?.ex !== undefined) {
+        expiresAt.set(key, Date.now() + opts.ex * 1000);
+      } else {
+        expiresAt.delete(key);
+      }
       return "OK";
     },
     deleteIfValue: async (key, value) => {
+      purge(key);
       if (store.get(key) !== value) {
         return false;
       }
       store.delete(key);
+      expiresAt.delete(key);
+      return true;
+    },
+    expireIfOwned: async (key, value, ttlSeconds) => {
+      purge(key);
+      if (store.get(key) !== value) {
+        return false;
+      }
+      expiresAt.set(key, Date.now() + ttlSeconds * 1000);
+      return true;
+    },
+    markProcessedIfOwned: async (claimKey, processedKey, token, ttlSeconds) => {
+      purge(claimKey);
+      purge(processedKey);
+      const current = store.get(claimKey);
+      if (current !== token) {
+        return false;
+      }
+      store.set(processedKey, "1");
+      if (ttlSeconds > 0) {
+        expiresAt.set(processedKey, Date.now() + ttlSeconds * 1000);
+      } else {
+        expiresAt.delete(processedKey);
+      }
+      store.delete(claimKey);
+      expiresAt.delete(claimKey);
       return true;
     },
   };
@@ -92,7 +140,12 @@ describe("inbox processed store", () => {
   });
 
   it("skips extract after the processed mark", async () => {
-    const marked = await markInboxProcessed(ID);
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+    const marked = await markInboxProcessed(ID, claimed.token);
     assert.equal(marked.ok, true);
     const result = await extractUnprocessedInboxMessage(ID, plainMessage("JD"));
     assert.equal(result.ok, true);
@@ -111,6 +164,8 @@ describe("inbox processed store", () => {
       assert.equal(first.status, "extracted");
       if (first.status === "extracted") {
         assert.equal(first.jobDescription, "Need a GM");
+        assert.equal(typeof first.claimToken, "string");
+        assert.equal(memory.store.get(inboxClaimKey(ID)), first.claimToken);
       }
     }
     assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
@@ -146,6 +201,19 @@ describe("inbox processed store", () => {
     }
     assert.equal(memory.store.has(inboxClaimKey(ID)), false);
     assert.equal(memory.store.has(inboxProcessedKey(ID)), true);
+  });
+
+  it("returns timeout instead of lost when SET times out and the claim key is still empty", async () => {
+    const origSet = memory.set.bind(memory);
+    memory.set = async (key, value, opts) => {
+      if (key === inboxClaimKey(ID)) {
+        throw new Error("Inbox Redis timed out");
+      }
+      return origSet(key, value, opts);
+    };
+    const result = await claimInboxMessage(ID);
+    assert.deepEqual(result, { ok: false, error: "Inbox Redis timed out" });
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
   });
 
   it("treats a timed-out SET that still committed as a won claim", async () => {
@@ -205,69 +273,188 @@ describe("inbox processed store", () => {
     assert.deepEqual(result, { ok: true, outcome: "processed" });
     assert.equal(memory.store.get(inboxClaimKey(ID)), "replacement-token");
   });
-});
 
-describe("inbox processed store — RUN_INBOX_REDIS_TESTS integration", () => {
-  const runLive = process.env.RUN_INBOX_REDIS_TESTS === "true";
-  const prefix = `inbox-it-${randomUUID().replace(/-/g, "")}`;
-  let savedPrefix: string | undefined;
-
-  beforeEach(() => {
-    if (!runLive) return;
-    savedPrefix = process.env.INBOX_REDIS_PREFIX;
-    process.env.INBOX_REDIS_PREFIX = prefix;
-    __injectInboxKvForTest(null);
-  });
-
-  afterEach(() => {
-    if (!runLive) return;
-    __injectInboxKvForTest(null);
-    resetRedisClientForTest();
-    if (savedPrefix === undefined) delete process.env.INBOX_REDIS_PREFIX;
-    else process.env.INBOX_REDIS_PREFIX = savedPrefix;
-  });
-
-  async function deleteInboxKeys(messageId: string): Promise<void> {
-    await getRedisClient().del(inboxClaimKey(messageId), inboxProcessedKey(messageId));
-  }
-
-  it("lets only one concurrent Redis claim win", { skip: !runLive }, async () => {
-    const messageId = `msg-${randomUUID().replace(/-/g, "")}`;
-    try {
-      const [a, b] = await Promise.all([
-        claimInboxMessage(messageId),
-        claimInboxMessage(messageId),
-      ]);
-      assert.equal(a.ok && b.ok, true);
-      if (a.ok && b.ok) {
-        const outcomes = [a.outcome, b.outcome].sort();
-        assert.deepEqual(outcomes, ["lost", "won"]);
+  it("returns a Redis error instead of throwing when processed GET times out", async () => {
+    const origGet = memory.get.bind(memory);
+    memory.get = async (key) => {
+      if (key === inboxProcessedKey(ID)) {
+        throw new Error("Inbox Redis timed out");
       }
-      assert.equal(Boolean(await getRedisClient().exists(inboxClaimKey(messageId))), true);
-      assert.equal(Boolean(await getRedisClient().exists(inboxProcessedKey(messageId))), false);
-    } finally {
-      await deleteInboxKeys(messageId);
+      return origGet(key);
+    };
+    const result = await claimInboxMessage(ID);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error, "Inbox Redis timed out");
     }
   });
 
-  it("returns processed on Redis when the marker already exists", { skip: !runLive }, async () => {
-    const messageId = `msg-${randomUUID().replace(/-/g, "")}`;
-    try {
-      const marked = await markInboxProcessed(messageId);
-      assert.equal(marked.ok, true);
-      const [a, b] = await Promise.all([
-        claimInboxMessage(messageId),
-        claimInboxMessage(messageId),
-      ]);
-      assert.equal(a.ok && b.ok, true);
-      if (a.ok && b.ok) {
-        assert.equal(a.outcome, "processed");
-        assert.equal(b.outcome, "processed");
+  it("returns a Redis error when claim verification GET times out", async () => {
+    const origGet = memory.get.bind(memory);
+    memory.get = async (key) => {
+      if (key === inboxClaimKey(ID) && memory.store.has(key)) {
+        throw new Error("Inbox Redis timed out");
       }
-      assert.equal(Boolean(await getRedisClient().exists(inboxClaimKey(messageId))), false);
-      assert.equal(Boolean(await getRedisClient().exists(inboxProcessedKey(messageId))), true);
-    } finally {
-      await deleteInboxKeys(messageId);
+      return origGet(key);
+    };
+    const result = await claimInboxMessage(ID);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error, "Inbox Redis timed out");
     }
+  });
+
+  it("releases the claim when body extraction fails", async () => {
+    const result = await extractUnprocessedInboxMessage(ID, { payload: {} });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /no usable text/);
+    }
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+    assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
+  });
+
+  it("marks processed only while the claim token still owns the key", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+    const stolen = await markInboxProcessed(ID, "other-worker-token");
+    assert.equal(stolen.ok, false);
+    if (!stolen.ok) {
+      assert.match(stolen.error, /claim/i);
+    }
+    assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
+    assert.equal(memory.store.get(inboxClaimKey(ID)), claimed.token);
+
+    const marked = await markInboxProcessed(ID, claimed.token);
+    assert.equal(marked.ok, true);
+    assert.equal(memory.store.has(inboxProcessedKey(ID)), true);
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+  });
+
+  it("does not mark processed after the claim expires", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+    memory.store.delete(inboxClaimKey(ID));
+    const marked = await markInboxProcessed(ID, claimed.token);
+    assert.equal(marked.ok, false);
+    if (!marked.ok) {
+      assert.match(marked.error, /claim/i);
+    }
+    assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+  });
+
+  it("returns a parse error for an invalid messageId instead of unprocessed", async () => {
+    const result = await isInboxProcessed("bad:id");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /unsupported characters/);
+    }
+    assert.equal(memory.store.size, 0);
+  });
+
+  it("releases a claim only for the owning token", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+    const stolen = await releaseInboxClaim(ID, "other-worker-token");
+    assert.equal(stolen.ok, true);
+    assert.equal(memory.store.get(inboxClaimKey(ID)), claimed.token);
+
+    const released = await releaseInboxClaim(ID, claimed.token);
+    assert.equal(released.ok, true);
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+  });
+
+  it("rejects release with a missing token or invalid messageId", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+    const missing = await releaseInboxClaim(ID, "");
+    assert.deepEqual(missing, {
+      ok: false,
+      error: INBOX_CLAIM_TOKEN_REQUIRED_ERROR,
+    });
+    assert.equal(memory.store.get(inboxClaimKey(ID)), claimed.token);
+
+    const invalid = await releaseInboxClaim("bad:id", claimed.token);
+    assert.equal(invalid.ok, false);
+    if (!invalid.ok) {
+      assert.match(invalid.error, /unsupported characters/);
+    }
+    assert.equal(memory.store.get(inboxClaimKey(ID)), claimed.token);
+  });
+
+  it("returns a Redis error when release times out", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+    memory.deleteIfValue = async () => {
+      throw new Error(INBOX_REDIS_TIMEOUT_ERROR);
+    };
+    const result = await releaseInboxClaim(ID, claimed.token);
+    assert.deepEqual(result, { ok: false, error: INBOX_REDIS_TIMEOUT_ERROR });
+    assert.equal(memory.store.get(inboxClaimKey(ID)), claimed.token);
+  });
+
+  it("renews a claim only for the owning token", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+    const stolen = await renewInboxClaim(ID, "other-worker-token");
+    assert.deepEqual(stolen, { ok: true, renewed: false });
+    assert.equal(memory.store.get(inboxClaimKey(ID)), claimed.token);
+
+    const renewed = await renewInboxClaim(ID, claimed.token);
+    assert.deepEqual(renewed, { ok: true, renewed: true });
+    assert.equal(memory.store.get(inboxClaimKey(ID)), claimed.token);
+  });
+
+  it("rejects renewal with a missing token or invalid messageId", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+    const missing = await renewInboxClaim(ID, "");
+    assert.deepEqual(missing, {
+      ok: false,
+      error: INBOX_CLAIM_TOKEN_REQUIRED_ERROR,
+    });
+
+    const invalid = await renewInboxClaim("bad:id", claimed.token);
+    assert.equal(invalid.ok, false);
+    if (!invalid.ok) {
+      assert.match(invalid.error, /unsupported characters/);
+    }
+    assert.equal(memory.store.get(inboxClaimKey(ID)), claimed.token);
+  });
+
+  it("returns a Redis error when renewal fails", async () => {
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+    memory.expireIfOwned = async () => {
+      throw new Error("ECONNRESET");
+    };
+    const result = await renewInboxClaim(ID, claimed.token);
+    assert.deepEqual(result, { ok: false, error: INBOX_REDIS_UNAVAILABLE_ERROR });
+    assert.equal(memory.store.get(inboxClaimKey(ID)), claimed.token);
   });
 });

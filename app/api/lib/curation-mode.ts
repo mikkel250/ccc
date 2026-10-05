@@ -129,14 +129,21 @@ export function isCurationMode(value: unknown): value is CurationMode {
   return value === "strict" || value === "flexible";
 }
 
+/** Shared wrapper: curator JSON with a `curated_cv` payload. */
+export function isCuratedCvWrapper(
+  raw: unknown
+): raw is { curated_cv: unknown } {
+  return raw !== null && typeof raw === "object" && "curated_cv" in raw;
+}
+
 /** Type guard for the flexible curator wrapper shape: { curated_cv, cover_letter? }. */
 export function isFlexibleWrapper(
   raw: unknown
 ): raw is { curated_cv: unknown; cover_letter?: string | null } {
-  if (raw === null || typeof raw !== "object" || !("curated_cv" in raw)) {
+  if (!isCuratedCvWrapper(raw)) {
     return false;
   }
-  const coverLetter = (raw as { cover_letter?: unknown }).cover_letter;
+  const coverLetter = Reflect.get(raw, "cover_letter");
   // null is treated as omitted (models sometimes emit cover_letter: null).
   if (coverLetter != null && typeof coverLetter !== "string") {
     return false;
@@ -153,6 +160,15 @@ export function flexibleCoverLetter(wrapper: {
     : undefined;
 }
 
+/**
+ * Trim a curator `reply_text` value. Usable iff it is a non-empty string after trim.
+ */
+export function usableReplyText(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 /** Authoritative mode block injected into the curator system prompt. */
 export function curationModePolicy(mode: CurationMode): string {
   if (mode === "strict") {
@@ -165,7 +181,9 @@ export function curationModePolicy(mode: CurationMode): string {
 - This posture is not limited to experience[]: apply the same cut-for-fit discipline to
   summary bullets, skill categories, and certifications. Drop off-domain summary bullets,
   skill categories, and certifications rather than merely reordering them to the bottom —
-  cut, don't just deprioritize.`;
+  cut, don't just deprioritize.
+- Also emit reply_text: a recruiter-thread email body grounded in the Master CV with the
+  same no-invention rules as curated_cv. Not a cover letter.`;
   }
 
   return `MODE: flexible.
