@@ -4,7 +4,7 @@ Post-MVP improvements to the CV generation pipeline. These address the "reasonin
 
 **Current product (v1):** single-pass JSON curator (`runTailorCore`), operator-reviewed smoke artifacts, no on-path LLM judges. Sections 1–3 below are exploratory designs, not active scope. See [retire LLM judges](../plans/2026-09-03-001-feat-retire-llm-judges-plan.md).
 
-**Runtime (v1):** sync tailor via `POST /api/tailor-cv` and in-process inbox scan (`app/api/lib/inbox-tailor.ts` → `runTailorCore`). See [Inbox scan runtime](#inbox-scan-runtime-current) below — this is **not** the deferred native LLM batch API path.
+**Runtime (v1):** sync tailor via `POST /api/tailor-cv`, plus in-process `tailorLabeledMessage` → `runTailorCore`. The scan CLI, Gmail drafts, and Railway cron are later milestones. See [Inbox scan runtime](#inbox-scan-runtime) below — this is **not** the deferred native LLM batch API path.
 
 ## 1. Two-Pass Pipeline (Intent Extractor → Synthesizer)
 
@@ -72,9 +72,13 @@ Key decisions:
 - **Different model**: Using a different provider/model for the critic avoids self-confirmation bias. E.g., Claude Haiku as critic for DeepSeek-generated CVs, or vice versa.
 - **Cost**: Doubles LLM calls (generation + critic). Only worth it if hallucination rate in the two-pass pipeline remains above acceptable threshold after eval.
 
-## Inbox scan runtime (current)
+## Inbox scan runtime
 
-The Gmail inbox worker ships as **library code in this Next.js repo**, not a second deployed service.
+The Gmail inbox worker is **library code in this Next.js repo**, not a second deployed service. On this tree, `tailorLabeledMessage` claims and extracts a labeled payload, then calls `runTailorCore` in-process (strict `cv` + `replyText`, no Bearer, no public rate-limit buckets). It does not create a Gmail draft and does not mark the message processed.
+
+Not on this tree yet: Gmail list (M8.2), a `npm run inbox:scan` tsx CLI, thread-draft attach then the processed mark (M8.5), and Railway cron for that same job (M8.6). `package.json` has no `inbox:scan` script.
+
+Intended flow once those land:
 
 ```text
 Trigger: npm run inbox:scan (local tsx CLI)  OR  Railway cron (M8.6, same entrypoint)
@@ -94,8 +98,8 @@ Key decisions:
 
 - **Same repo, same engine**: Only the entrypoint differs — HTTP adapter (`buildTailorResponse`) vs inbox adapter (`tailorLabeledMessage`). Prompts, schema validation, and `.docx` build are shared.
 - **Not HTTP-presented**: Inbox must not call `POST /api/tailor-cv` or consume public rate-limit buckets (product contract R8).
-- **Local first**: Prove the loop with `npm run inbox:scan`; Railway cron (M8.6) is the unattended schedule when the laptop is closed — not a different worker architecture. Until M8.6, hosting can stay local-only ($0).
-- **Railway hosts sync v1**: Chosen for live `chat()` tailor and serial inbox scans, not because batch polling requires a long-lived blocker. See [Deployment hosting](./README.md#deployment-hosting-railway-vs-vercel).
+- **Local first**: The CLI is how the loop is proved; Railway cron (M8.6) is the unattended schedule when the laptop is closed — not a different worker architecture. Until M8.6, hosting can stay local-only ($0).
+- **Railway hosts sync v1**: Chosen because a live `chat()` call or a serial scan can exceed Vercel Hobby's 300s fluid cap, not because batch polling requires a long-lived blocker. See [Deployment hosting](./README.md#deployment-hosting-railway-vs-vercel).
 
 Product contract: [inbox worker plan](../plans/2026-09-05-002-feat-inbox-worker-plan.md).
 
@@ -119,9 +123,9 @@ Write artifacts / notify operator (no v1 product UI)
 
 Key decisions:
 
-- **Not the inbox scan job**: Gmail scan + in-process tailor is current M8 work and uses **sync** `runTailorCore`, not Message Batches. Native LLM batch APIs are deferred until single-pass quality is settled and poll/state infra exists.
+- **Not the inbox scan job**: In-process tailor uses **sync** `runTailorCore`, not Message Batches. The scan CLI, drafts, and cron are later milestones. Native LLM batch APIs stay deferred until single-pass quality is settled and poll/state infra exists.
 - **Do not block user-facing routes**: Submit/poll/retrieve must not run inside a single `POST /api/tailor-cv` request. A future cron-triggered poller (could be a route **only** invoked by cron) is fine; see [MODEL_SELECTION](./MODEL_SELECTION.md).
-- **Vercel is not ruled out for batch-only polling** — earlier “serverless timeout” wording targeted **sync** tailor, not periodic poll. v1 still defaults to Railway because sync API + inbox scan are the active workloads.
+- **Vercel is not ruled out for batch-only polling** — earlier “serverless timeout” wording targeted **sync** tailor, not periodic poll. v1 still defaults to Railway because a sync call or a future serial scan can exceed Hobby's 300s fluid cap.
 - **Depends on judge-free sync path**: One curator call per JD (see [retire LLM judges](../plans/2026-09-03-001-feat-retire-llm-judges-plan.md)).
 - **Tiered delivery (future)**: Sync path = interactive; batch path = economy tier (async, cost-optimized). BYOK is out of product scope (`STRATEGY.md`).
 

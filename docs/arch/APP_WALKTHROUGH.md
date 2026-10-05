@@ -188,7 +188,7 @@ Prompt files cloned from the portfolio chat bot remain for a hypothetical future
 
 ## Inbox runtime (not HTTP)
 
-Inbox scan is **not** a client of `POST /api/tailor-cv`. `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a Gmail payload, then calls `runTailorCore` in-process (strict `cv` + `replyText`, no Bearer, no public rate-limit buckets). A future `npm run inbox:scan` tsx CLI and Railway cron (M8.6) invoke the same library code — see [Pipeline enhancements — inbox scan runtime](./PIPELINE_ENHANCEMENTS.md#inbox-scan-runtime-current). Deferred native LLM batch APIs use submit/poll/retrieve (cron-friendly); inbox and HTTP tailor use **sync** `chat()` today — see [Deployment hosting](./README.md#deployment-hosting-railway-vs-vercel).
+Inbox scan is **not** a client of `POST /api/tailor-cv`. `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a Gmail payload, then calls `runTailorCore` in-process (strict `cv` + `replyText`, no Bearer, no public rate-limit buckets). A future `npm run inbox:scan` tsx CLI and Railway cron (M8.6) invoke the same library code — see [Pipeline enhancements — inbox scan runtime](./PIPELINE_ENHANCEMENTS.md#inbox-scan-runtime). Deferred native LLM batch APIs use submit/poll/retrieve (cron-friendly); inbox and HTTP tailor use **sync** `chat()` today — see [Deployment hosting](./README.md#deployment-hosting-railway-vs-vercel).
 
 ---
 

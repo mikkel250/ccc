@@ -44,7 +44,7 @@ _Why it serves the approach:_ that depth is the bet against “paste a JD into C
 
 Scheduled inbox scan (default ~5am, extra windows if they want faster replies) and on-demand sync tailor call the same curation. Do not fork prompts per surface.
 
-The inbox scan is **library code in this repo** (`app/api/lib/*`): local `npm run inbox:scan` (tsx CLI) and, when deployed, Railway cron invoke the **same job** — in-process `runTailorCore`, not `POST /api/tailor-cv`. Gmail is the review surface; no product UI in v1. Until M8.6, the loop can run locally with **$0 hosting**; Railway is for unattended cron when the laptop is closed.
+The inbox scan is **library code in this repo** (`app/api/lib/*`). `tailorLabeledMessage` calls `runTailorCore` in-process, not `POST /api/tailor-cv`. A future local `npm run inbox:scan` tsx CLI and, when deployed, Railway cron (M8.6) are the same job. Gmail is the review surface; no product UI in v1. Until M8.6, the loop can stay local with **$0 hosting**; Railway is for unattended cron when the laptop is closed. The CLI is not in `package.json` yet.
 
 _Why it serves the approach:_ inbound is the paid job; the UI is the same engine when they are sitting there.
 
@@ -55,6 +55,6 @@ _Why it serves the approach:_ inbound is the paid job; the UI is the same engine
 - LLM-as-judge in the tailor loop or as a smoke gate
 - Heavy mechanical grounding allowlists (add only if manual failures justify it)
 - Page-count as a hard requirement
-- Native LLM batch APIs (Anthropic Message Batches, DeepSeek batch) — deferred cost optimization; async submit/poll/retrieve in a **separate** worker, not inside Next.js API routes. Not required for inbox scan or sync tailor today.
+- Native LLM batch APIs (Anthropic Message Batches, DeepSeek batch) — deferred cost optimization. When built, submit/poll/retrieve runs on a cron or CLI tick with durable batch-id state, not inside `POST /api/tailor-cv`. A cron-only route is allowed. Not required for inbox tailor or sync tailor today.
 - BYOK (we meter usage on our keys)
 - Crawling JD URLs (later)
