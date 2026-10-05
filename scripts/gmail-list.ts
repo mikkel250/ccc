@@ -5,11 +5,13 @@
  */
 import { config as loadDotenv } from "dotenv";
 import { pathToFileURL } from "node:url";
+import { ServiceError } from "../app/api/lib/errors";
 import { listLabeledRecruiterMail } from "../app/api/lib/gmail-list";
 import type { FetchLike } from "../app/api/lib/gmail-oauth";
 
 loadDotenv();
 
+/** Serialize one listed Gmail message as a JSON line. */
 export function formatListedMessageLine(message: {
   id: string;
   threadId: string;
@@ -17,19 +19,28 @@ export function formatListedMessageLine(message: {
   return JSON.stringify(message);
 }
 
+/** Fetch recruiter-labeled messages and format them for CLI output. */
 export async function runGmailListCli(params?: {
   fetchImpl?: FetchLike;
 }): Promise<{ ok: true; lines: string[] } | { ok: false; error: string }> {
-  const result = await listLabeledRecruiterMail({
-    fetchImpl: params?.fetchImpl,
-  });
-  if (!result.ok) {
-    return { ok: false, error: result.error };
+  try {
+    const result = await listLabeledRecruiterMail({
+      fetchImpl: params?.fetchImpl,
+    });
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+    const lines = result.messages.map(formatListedMessageLine);
+    return { ok: true, lines };
+  } catch (error: unknown) {
+    if (error instanceof ServiceError) {
+      return { ok: false, error: error.message };
+    }
+    throw error;
   }
-  const lines = result.messages.map(formatListedMessageLine);
-  return { ok: true, lines };
 }
 
+/** Execute the Gmail list CLI and write its lines or failure to the console. */
 async function main(): Promise<void> {
   const result = await runGmailListCli();
   if (!result.ok) {

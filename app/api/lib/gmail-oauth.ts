@@ -1,6 +1,7 @@
 /**
  * Gmail OAuth helpers: authorize URL, callback parse, token exchange/refresh.
  */
+import { createHash, randomBytes } from "node:crypto";
 import {
   getGmailClientId,
   getGmailClientSecret,
@@ -14,6 +15,22 @@ export type FetchLike = (
   input: string | URL,
   init?: RequestInit
 ) => Promise<Response>;
+
+/**
+ * Referenced abort timer. AbortSignal.timeout() is unref'd, so a hung fetch
+ * that is the only pending work never fires the deadline.
+ */
+export function gmailAbortAfter(timeoutMs: number): {
+  signal: AbortSignal;
+  cancel: () => void;
+} {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timer),
+  };
+}
 
 export type GmailTokenSet = {
   accessToken: string;
@@ -40,12 +57,28 @@ export function __clearGmailAccessTokenCacheForTest(): void {
   accessTokenCache.clear();
 }
 
+export type GmailPkcePair = {
+  codeVerifier: string;
+  codeChallenge: string;
+};
+
+/** One PKCE verifier/challenge pair per desktop OAuth attempt (S256). */
+export function generateGmailPkcePair(): GmailPkcePair {
+  const codeVerifier = randomBytes(32).toString("base64url");
+  const codeChallenge = createHash("sha256")
+    .update(codeVerifier)
+    .digest("base64url");
+  return { codeVerifier, codeChallenge };
+}
+
+/** Build the state-protected Google OAuth URL for offline Gmail consent. */
 export function buildGmailAuthUrl(params: {
   clientId: string;
   redirectUri: string;
   scope: string;
   state: string;
   authUrl: string;
+  codeChallenge: string;
 }): string {
   const url = new URL(params.authUrl);
   url.searchParams.set("client_id", params.clientId);
@@ -55,9 +88,12 @@ export function buildGmailAuthUrl(params: {
   url.searchParams.set("access_type", "offline");
   url.searchParams.set("prompt", "consent");
   url.searchParams.set("state", params.state);
+  url.searchParams.set("code_challenge", params.codeChallenge);
+  url.searchParams.set("code_challenge_method", "S256");
   return url.toString();
 }
 
+/** Validate an OAuth callback and extract its authorization code. */
 export function parseOAuthCallback(
   callbackUrl: URL,
   expectedState: string
@@ -90,10 +126,13 @@ function parseExpiresIn(raw: unknown): number | undefined {
   return undefined;
 }
 
+type ParsedGmailToken = GmailTokenSet & { expiresInSeconds?: number };
+
+/** Validate the token fields returned by the OAuth token endpoint. */
 function parseTokenPayload(
   raw: unknown,
   requireRefreshToken: boolean
-): GmailOauthResult<GmailTokenSet & { expiresInSeconds?: number }> {
+): GmailOauthResult<ParsedGmailToken> {
   if (raw === null || typeof raw !== "object") {
     return { ok: false, error: "Gmail token response was not an object" };
   }
@@ -131,46 +170,43 @@ function parseTokenPayload(
   };
 }
 
+/** Post a token grant and normalize transport, HTTP, and payload failures. */
 async function postTokenRequest(
   body: URLSearchParams,
   fetchImpl: FetchLike,
   tokenUrl: string,
   requireRefreshToken: boolean
-): Promise<GmailOauthResult<GmailTokenSet>> {
-  let response: Response;
+): Promise<GmailOauthResult<ParsedGmailToken>> {
+  const deadline = gmailAbortAfter(getGmailHttpTimeoutMs());
   try {
-    response = await fetchImpl(tokenUrl, {
-      method: "POST",
-      redirect: "error",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-      signal: AbortSignal.timeout(getGmailHttpTimeoutMs()),
-    });
-  } catch {
-    return { ok: false, error: "Gmail token request failed" };
+    let response: Response;
+    try {
+      response = await fetchImpl(tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+        redirect: "error",
+        signal: deadline.signal,
+      });
+    } catch {
+      return { ok: false, error: "Gmail token request failed" };
+    }
+    if (!response.ok) {
+      return { ok: false, error: `Gmail token HTTP ${response.status}` };
+    }
+    let parsed: unknown;
+    try {
+      parsed = await response.json();
+    } catch {
+      if (deadline.signal.aborted) {
+        return { ok: false, error: "Gmail token request failed" };
+      }
+      return { ok: false, error: "Gmail token response was not valid JSON" };
+    }
+    return parseTokenPayload(parsed, requireRefreshToken);
+  } finally {
+    deadline.cancel();
   }
-  if (!response.ok) {
-    return { ok: false, error: `Gmail token HTTP ${response.status}` };
-  }
-  let parsed: unknown;
-  try {
-    parsed = await response.json();
-  } catch {
-    return { ok: false, error: "Gmail token response was not valid JSON" };
-  }
-  const token = parseTokenPayload(parsed, requireRefreshToken);
-  if (!token.ok) {
-    return token;
-  }
-  return {
-    ok: true,
-    data: {
-      accessToken: token.data.accessToken,
-      ...(token.data.refreshToken !== undefined
-        ? { refreshToken: token.data.refreshToken }
-        : {}),
-    },
-  };
 }
 
 function cacheAccessToken(
@@ -203,10 +239,12 @@ function readCachedAccessToken(
   return cached.accessToken;
 }
 
+/** Exchange a Gmail authorization code for access and refresh tokens. */
 export async function exchangeGmailAuthCode(
   params: {
     code: string;
     redirectUri: string;
+    codeVerifier: string;
     fetchImpl?: FetchLike;
   }
 ): Promise<GmailOauthResult<GmailTokenSet>> {
@@ -216,6 +254,7 @@ export async function exchangeGmailAuthCode(
     client_id: getGmailClientId(),
     client_secret: getGmailClientSecret(),
     redirect_uri: params.redirectUri,
+    code_verifier: params.codeVerifier,
   });
   return postTokenRequest(
     body,
@@ -225,6 +264,7 @@ export async function exchangeGmailAuthCode(
   );
 }
 
+/** Refresh the short-lived Gmail access token used by REST requests. */
 export async function refreshGmailAccessToken(params?: {
   fetchImpl?: FetchLike;
   refreshToken?: string;
@@ -242,30 +282,12 @@ export async function refreshGmailAccessToken(params?: {
     client_id: getGmailClientId(),
     client_secret: getGmailClientSecret(),
   });
-  const fetchImpl = params?.fetchImpl ?? fetch;
-  const tokenUrl = getGmailOauthTokenUrl();
-  let response: Response;
-  try {
-    response = await fetchImpl(tokenUrl, {
-      method: "POST",
-      redirect: "error",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-      signal: AbortSignal.timeout(getGmailHttpTimeoutMs()),
-    });
-  } catch {
-    return { ok: false, error: "Gmail token request failed" };
-  }
-  if (!response.ok) {
-    return { ok: false, error: `Gmail token HTTP ${response.status}` };
-  }
-  let parsed: unknown;
-  try {
-    parsed = await response.json();
-  } catch {
-    return { ok: false, error: "Gmail token response was not valid JSON" };
-  }
-  const token = parseTokenPayload(parsed, false);
+  const token = await postTokenRequest(
+    body,
+    params?.fetchImpl ?? fetch,
+    getGmailOauthTokenUrl(),
+    false
+  );
   if (!token.ok) {
     return token;
   }

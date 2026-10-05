@@ -5,14 +5,27 @@ import {
   compileCuratorPrompt,
   getCuratorPromptFallbackText,
   getCuratorPrompt,
-  resolveStrictCuratorSystemPrompt,
+  resolveFetchedCuratorPrompt,
   CURATOR_LANGFUSE_PROMPT_NAME,
   FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME,
+  STRICT_CURATOR_CONTRACT_MARKER,
+  strictCuratorPromptDeclaresContract,
+  strictPromptRequestsReplyWrapper,
 } from "../app/api/lib/curator-prompt";
 
 describe("curator-prompt", () => {
   it("uses the JSON curator Langfuse prompt name", () => {
     assert.equal(CURATOR_LANGFUSE_PROMPT_NAME, "cv-curator-json");
+  });
+
+  it("fallback tells the model to follow the injected master schema, not a repo path", () => {
+    const text = getCuratorPromptFallbackText();
+    assert.match(
+      text,
+      /curated_cv must use exactly the master CV schema shown in <master_cv_json>/
+    );
+    assert.doesNotMatch(text, /master-cv\.schema\.json/);
+    assert.doesNotMatch(text, /keep this block synchronized/i);
   });
 
   it("fallback omits page-count and visual QA / docx operator steps", () => {
@@ -60,6 +73,109 @@ describe("curator-prompt", () => {
     assert.equal(compiled.ok, false);
   });
 
+  it("fallback includes the strict curator contract marker", () => {
+    const text = getCuratorPromptFallbackText();
+    assert.match(text, new RegExp(STRICT_CURATOR_CONTRACT_MARKER));
+    assert.equal(strictCuratorPromptDeclaresContract(text), true);
+  });
+
+  it("strictPromptRequestsReplyWrapper rejects a bare-CV Langfuse prompt", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Emit curated JSON only. {{MASTER_CV_JSON}}"
+      ),
+      false
+    );
+    assert.equal(
+      strictPromptRequestsReplyWrapper(getCuratorPromptFallbackText()),
+      true
+    );
+  });
+
+  it("strictPromptRequestsReplyWrapper rejects field names that are only substrings", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Mention curated_cv and reply_text in the narrative. Emit curated JSON only."
+      ),
+      false
+    );
+  });
+
+  it("strictPromptRequestsReplyWrapper rejects a prompt that prohibits reply_text", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        'Return JSON with "curated_cv": {} and "reply_text": "". Never emit reply_text.'
+      ),
+      false
+    );
+  });
+
+  it("strictPromptRequestsReplyWrapper rejects a wrapper-shaped prohibition", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Never return the wrapper { curated_cv, reply_text }; emit curated_cv only."
+      ),
+      false
+    );
+  });
+
+  it("strictPromptRequestsReplyWrapper keeps a prompt that forbids omitting reply_text", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Never omit reply_text. Return { curated_cv, reply_text } only."
+      ),
+      true
+    );
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Never drop the { curated_cv, reply_text } object"
+      ),
+      true
+    );
+  });
+
+  it("strictPromptRequestsReplyWrapper rejects a punctuated prohibition", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Never, under any circumstances, return the wrapper { curated_cv, reply_text }"
+      ),
+      false
+    );
+  });
+
+  it("strictPromptRequestsReplyWrapper keeps a later sentence that requests the wrapper", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Do not wrap the JSON in markdown fences. Return { curated_cv, reply_text } only."
+      ),
+      true
+    );
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Do not write the audit into the response. Emit { curated_cv, reply_text }."
+      ),
+      true
+    );
+  });
+
+  it("strictPromptRequestsReplyWrapper keeps a negated without-reply_text instruction", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Never return the CV without reply_text. Return { curated_cv, reply_text }."
+      ),
+      true
+    );
+  });
+
+  it("strictPromptRequestsReplyWrapper rejects an unnegated without-reply_text instruction", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        'Return { "curated_cv": {}, "reply_text": "" } without reply_text.'
+      ),
+      false
+    );
+  });
+
   it("has flexible pivot Langfuse prompt name", () => {
     assert.equal(FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME, "cv-curator-flexible-pivot");
   });
@@ -79,26 +195,62 @@ describe("curator-prompt", () => {
     assert.equal(result.langfusePrompt?.isFallback, true);
   });
 
+  it("uses the hardcoded strict prompt when a fetched production prompt omits reply_text", () => {
+    const fallback = getCuratorPromptFallbackText();
+    const bare = "Return a single JSON object matching the master CV schema.";
+    const stale = resolveFetchedCuratorPrompt("strict", bare, fallback);
+    assert.equal(stale.staleStrictContract, true);
+    assert.equal(stale.systemPrompt, fallback);
+
+    const current = resolveFetchedCuratorPrompt("strict", fallback, "other");
+    assert.equal(current.staleStrictContract, false);
+    assert.equal(current.systemPrompt, fallback);
+
+    const flexible = resolveFetchedCuratorPrompt("flexible", bare, fallback);
+    assert.equal(flexible.staleStrictContract, false);
+    assert.equal(flexible.systemPrompt, bare);
+
+    const omitted = resolveFetchedCuratorPrompt(undefined, bare, fallback);
+    assert.equal(omitted.staleStrictContract, true);
+    assert.equal(omitted.systemPrompt, fallback);
+  });
+
+  it("rejects a strict prompt that names both fields but requests bare CV JSON", () => {
+    const fallback = getCuratorPromptFallbackText();
+    const mentioned =
+      "Return bare CV JSON matching the master schema. " +
+      "The CV object is the entire response. " +
+      "Field names reply_text and curated_cv are not the output.";
+    const stale = resolveFetchedCuratorPrompt("strict", mentioned, fallback);
+    assert.equal(stale.staleStrictContract, true);
+    assert.equal(stale.systemPrompt, fallback);
+
+    const omittedMode = resolveFetchedCuratorPrompt(undefined, mentioned, fallback);
+    assert.equal(omittedMode.staleStrictContract, true);
+    assert.equal(omittedMode.systemPrompt, fallback);
+
+    const flexible = resolveFetchedCuratorPrompt("flexible", mentioned, fallback);
+    assert.equal(flexible.staleStrictContract, false);
+    assert.equal(flexible.systemPrompt, mentioned);
+
+    const explicit = [
+      "Return one JSON object.",
+      "<output_format>",
+      STRICT_CURATOR_CONTRACT_MARKER,
+      "{",
+      '  "curated_cv": { "name": "A" },',
+      '  "reply_text": "Thanks for reaching out."',
+      "}",
+      "</output_format>",
+    ].join("\n");
+    const current = resolveFetchedCuratorPrompt("strict", explicit, fallback);
+    assert.equal(current.staleStrictContract, false);
+    assert.equal(current.systemPrompt, explicit);
+  });
+
   it("getCuratorPrompt defaults to strict prompt when mode omitted", async () => {
     const result = await getCuratorPrompt();
     assert.equal(result.langfusePrompt?.name, "cv-curator-json");
-  });
-
-  it("uses a remote Langfuse prompt that already names reply_text", () => {
-    const fallback = getCuratorPromptFallbackText();
-    const remote = 'Emit { "curated_cv": {}, "reply_text": "..." }\n{{MASTER_CV_JSON}}';
-    const resolved = resolveStrictCuratorSystemPrompt(remote, fallback);
-    assert.equal(resolved.usedFallback, false);
-    assert.equal(resolved.systemPrompt, remote);
-  });
-
-  it("falls back when the production Langfuse prompt omits reply_text", () => {
-    const fallback = getCuratorPromptFallbackText();
-    const remote = "Emit curated JSON only.\n{{MASTER_CV_JSON}}";
-    const resolved = resolveStrictCuratorSystemPrompt(remote, fallback);
-    assert.equal(resolved.usedFallback, true);
-    assert.equal(resolved.systemPrompt, fallback);
-    assert.match(resolved.systemPrompt, /"reply_text"/);
   });
 
   it("strict user-turn requires the curated_cv + reply_text wrapper", () => {

@@ -9,6 +9,7 @@ import { getGmailMessage, parseGmailReplyHeaders } from "./gmail-message";
 import { ensureReplyDraft, gmailThreadHasDraft } from "./gmail-drafts";
 import { getInboxScanBackoffMs, isInboxScanEnabled } from "./inbox-config";
 import {
+  claimInboxMessage,
   claimInboxThread,
   isInboxProcessed,
   markInboxProcessed,
@@ -59,7 +60,15 @@ async function scanOneMessage(params: {
   let threadClaimToken: string | undefined;
   let claimedThreadId: string | undefined;
   try {
-    if (await isInboxProcessed(messageId)) {
+    const processed = await isInboxProcessed(messageId);
+    if (!processed.ok) {
+      return {
+        messageId,
+        status: "fetch-failed",
+        error: processed.error,
+      };
+    }
+    if (processed.processed) {
       return { messageId, status: "skipped-processed" };
     }
     const token = await refreshGmailAccessToken({ fetchImpl });
@@ -105,7 +114,21 @@ async function scanOneMessage(params: {
       };
     }
     if (existing.hasDraft) {
-      const marked = await markInboxProcessed(messageId);
+      const claimed = await claimInboxMessage(messageId);
+      if (!claimed.ok) {
+        return {
+          messageId,
+          status: "draft-failed",
+          error: claimed.error,
+        };
+      }
+      if (claimed.outcome === "processed") {
+        return { messageId, status: "skipped-processed" };
+      }
+      if (claimed.outcome !== "won") {
+        return { messageId, status: "skipped-claimed" };
+      }
+      const marked = await markInboxProcessed(messageId, claimed.token);
       return {
         messageId,
         status: "reused-draft",
@@ -131,16 +154,11 @@ async function scanOneMessage(params: {
     });
     if (tailored.ok && tailored.status === "tailored") {
       claimToken = tailored.claimToken;
-    } else if (!tailored.ok) {
-      claimToken = tailored.claimToken;
     }
     if (tailored.ok && tailored.status !== "tailored") {
       return { messageId, status: tailored.status };
     }
     if (!tailored.ok) {
-      if (tailored.status === 503 && claimToken) {
-        await releaseInboxClaim(messageId, claimToken);
-      }
       return {
         messageId,
         status: "tailor-failed",
@@ -189,7 +207,7 @@ async function scanOneMessage(params: {
         error: drafted.error,
       };
     }
-    const marked = await markInboxProcessed(messageId);
+    const marked = await markInboxProcessed(messageId, tailored.claimToken);
     return {
       messageId,
       status: drafted.status === "reused" ? "reused-draft" : "drafted",

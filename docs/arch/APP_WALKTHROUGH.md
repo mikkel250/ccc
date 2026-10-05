@@ -6,7 +6,7 @@ Start-to-finish guide to how the CV Tailoring API works. For stack decisions and
 
 ## What this app does
 
-A **Next.js backend** (no product UI) that accepts a job description, curates structured CV JSON from a master JSON, mechanically renders Word, and returns both artifacts. The inbox worker in this process uses `tailorLabeledMessage` / `runTailorCore` (no HTTP), attaches the `.docx` to a Gmail reply draft (M8.5), and may retain curated JSON for regen.
+A **Next.js backend** (no product UI) that accepts a job description, curates structured CV JSON from a master JSON, mechanically renders Word, and returns both artifacts. The inbox worker in this process claims + extracts a labeled Gmail payload via `tailorLabeledMessage`, then strict-tailors in-process with `runTailorCore` (no HTTP Bearer, no public rate-limit buckets). It returns `cv`, `replyText`, and `claimToken` for a later step; Gmail reply drafts with attached `.docx` are **M8.5** (not implemented here).
 
 **Production entry point:** `POST /api/tailor-cv` → `app/api/tailor-cv/route.ts :: POST`
 
@@ -36,7 +36,7 @@ app/api/tailor-cv/route.ts
     ▼ 200 { cv, curatedJson, builderVersion, model, usage, remaining, resetTime [, replyText (strict-only)] }
 ```
 
-Inbox is not this HTTP client. `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a Gmail payload, then `runTailorCore` (same curator + mechanical `.docx`; no Bearer, no public rate-limit buckets). The scan holds a separate per-thread claim across that tailor and `drafts.create`, and refreshes the Gmail access token after tailor before creating the draft. `buildTailorResponse` remains the HTTP adapter (`NextRequest`, IP, auth, `checkRateLimit`) and attaches `remaining` / `resetTime`.
+Inbox is not this HTTP client. `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a Gmail payload, then `runTailorCore` (same curator + mechanical `.docx`; no Bearer, no public rate-limit buckets). Success returns `claimToken`; the claim lease is renewed while core runs, and a lost or failed renewal aborts before a processed mark; non-crash failures release the Redis claim. A programmer error keeps the claim until the lease expires. The scan holds a separate per-thread claim across that tailor and `drafts.create`, and refreshes the Gmail access token after tailor before creating the draft. `buildTailorResponse` remains the HTTP adapter (`NextRequest`, IP, auth, `checkRateLimit`) and attaches `remaining` / `resetTime`.
 
 ---
 
@@ -46,7 +46,7 @@ Inbox is not this HTTP client. `tailorLabeledMessage` (`app/api/lib/inbox-tailor
 
 | Step | File | Function | Notes |
 |------|------|----------|-------|
-| Route handler | `app/api/tailor-cv/route.ts` | `POST` | `runtime = "nodejs"` — Railway Fluid Compute, not Edge |
+| Route handler | `app/api/tailor-cv/route.ts` | `POST` | `runtime = "nodejs"` — Railway Node process, not Edge |
 | Method guard | same | `GET` | Returns 405; only POST is supported |
 | Health check | `app/api/hello/route.ts` | `GET` | `{ service, status: "ok" }` — deploy probes and `npm run smoke` |
 
@@ -56,8 +56,8 @@ The root page (`app/page.tsx :: Home`) calls `notFound()` — there is intention
 
 | Step | File | Function |
 |------|------|----------|
-| Client identity | `route.ts` | Rightmost `x-forwarded-for` entry → `400` if unresolvable |
-| JSON body | `route.ts` | `request.json()` |
+| Client identity | `tailor-pipeline.ts` | Rightmost `x-forwarded-for` entry → `400` if unresolvable |
+| JSON body | `tailor-pipeline.ts` | Capped read (`TAILOR_REQUEST_MAX_BYTES`) then `JSON.parse` |
 | Validation | `app/api/lib/tailor-cv-validation.ts` | `validateTailorCvBody(body, fallbackSessionId)` |
 
 **Contract:** `jobDescription` required non-empty string; `sessionId` optional (defaults to IP-based id). Failures → **400**.
@@ -86,7 +86,7 @@ Resolves `MASTER_CV_JSON` (preferred) or `MASTER_CV_PATH` (non-world-readable), 
 | Compile | same | `compileCuratorPrompt(promptText, masterCv)` → `{ ok, systemPrompt }` (fails closed if `{{MASTER_CV_JSON}}` missing; `$`-safe inject) |
 | User message | same | `buildCuratorUserMessage(jd)` — JD in per-request nonce-delimited data channel |
 
-Langfuse prompt name: `cv-curator-json` (fallback hardcoded; used if Langfuse is unreachable or the production copy omits `reply_text`).
+Langfuse prompt name: `cv-curator-json` (label `production`). The hardcoded fallback is used when Langfuse is unset, the fetch fails, or the strict production text does not request `reply_text`. Publish the fallback text in the same release as a contract change, then recycle cached processes: `npx tsx scripts/create-langfuse-prompts.ts`.
 
 ### 6. Curator LLM
 
@@ -105,11 +105,11 @@ Provider dispatch and dual tracing unchanged. Langfuse/LangSmith content for tai
 | Schema + size | `app/api/lib/cv-schema.ts` | `validateCvJson`, `assertCuratedJsonSize` |
 | Build | `app/api/lib/json-docx-builder.ts` | `buildJsonDocxBase64` |
 
-Parse/schema/builder failures → **422** with no dual artifacts. Success → `{ cv, curatedJson, builderVersion, ... }`.
+Parse/schema/builder failures → **422** with no dual artifacts. Success → `{ cv, curatedJson, builderVersion, model, usage, remaining, resetTime [, replyText] }` (strict mode includes `replyText`; flexible may include `coverLetter` instead).
 
 ### 8. Response and errors
 
-**Success (200):** `{ cv, curatedJson, builderVersion, model, usage, remaining, resetTime [, replyText] }` — optional `replyText` is strict-only
+**Success (200):** `{ cv, curatedJson, builderVersion, model, usage, remaining, resetTime [, replyText] }` — strict mode includes trimmed non-empty `replyText`; flexible mode may include `coverLetter` instead (never both in one payload).
 
 **Error mapping** (`route.ts :: mapErrorToResponse`, table-driven `ERROR_RESPONSES`):
 
@@ -119,7 +119,7 @@ Parse/schema/builder failures → **422** with no dual artifacts. Success → `{
 | Curator/schema/builder | 422 | client-safe; no dual artifacts |
 | `RateLimitError` | 429 | forwards `error.message` |
 | `ServiceError` | 503 | forwards `error.message` |
-| LLM provider/quota errors | 503 | `isLlmServiceError(message)` → masked generic message |
+| LLM provider/quota/timeout/connection/429 errors | 503 | `isLlmServiceError(message)` → masked generic message |
 | Other | 500 | generic internal error |
 
 ---
@@ -181,7 +181,7 @@ Prompt files cloned from the portfolio chat bot remain for a hypothetical future
 | `npm run regen-docx` | CLI | Mechanical rebuild from curated JSON |
 | `scripts/verify-rate-limit.ts` | `main()` | Live Upstash rate-limit behavior |
 | `npm run test:e2e` | Playwright | HTTP auth/validation (optional LLM gated) |
-| `scripts/create-langfuse-prompts.ts` | `main()` | Langfuse prompt upload |
+| `scripts/create-langfuse-prompts.ts` | `main()` | Publish `cv-curator-json` production from the fallback (same-release contract change) |
 | `npm test` | `tests/**/*.test.ts` | Unit + cross-file contracts |
 
 ---

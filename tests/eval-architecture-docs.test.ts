@@ -23,4 +23,21 @@ describe("docs/arch/MODEL_SELECTION.md — cross-file contracts", () => {
       `MODEL_SELECTION.md must document the TAILOR_MODEL default (${tailorModel}) to match .env.example`
     );
   });
+
+  it("documents chat() default matching lib/env.ts DEFAULT_LLM_MODEL", () => {
+    const envTs = fs.readFileSync(
+      path.join(process.cwd(), "lib", "env.ts"),
+      "utf-8"
+    );
+    const match = envTs.match(
+      /const DEFAULT_LLM_MODEL\s*=\s*['"]([^'"]+)['"]/
+    );
+    assert.ok(match, "DEFAULT_LLM_MODEL must be defined in lib/env.ts");
+    const defaultModel = match[1]!;
+    const content = fs.readFileSync(MODEL_SELECTION_PATH, "utf-8");
+    assert.ok(
+      content.includes(`Default \`chat()\` model: \`${defaultModel}\``),
+      `MODEL_SELECTION.md must document chat() default as ${defaultModel}`
+    );
+  });
 });

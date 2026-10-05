@@ -15,7 +15,7 @@ execution: code
 
 - **Objective:** Successful `strict` `POST /api/tailor-cv` returns sendable recruiter reply email text (`replyText`) from the same curator pass as the Curated CV, and strict smoke writes that text next to the CV artifacts.
 - **Authority:** Inbox product contract R1–R5 in `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`. Board: M8.1 in `docs/plans/README.md`.
-- **Open blockers:** None.
+- **Release prerequisite:** Publish the Langfuse `cv-curator-json` production prompt with the strict `{ curated_cv, reply_text }` contract before release; the fallback alone is not a release gate.
 - **Stop when:** Strict HTTP returns trimmed non-empty `replyText` or 422; flexible is unchanged; smoke writes `<slug>.reply.txt` in strict; no Gmail, no in-process worker extract (M8.4).
 
 ## Product Contract
@@ -48,7 +48,7 @@ Copied from inbox R1–R5 (do not drift):
 
 - In: `curation-mode` wrapper helpers, `tailor-pipeline` extract/response, strict fallback prompt, smoke paths/write/runner, API + test docs, unit tests.
 - Out: Gmail; Redis processed ids; in-process worker entry (M8.4); flexible `coverLetter` behavior; request-body model picker.
-- Deferred: updating the live Langfuse `cv-curator-json` production prompt (fallback is the tested contract; operator syncs Langfuse).
+- Release prerequisite: publish the live Langfuse `cv-curator-json` production prompt with the tested strict contract before release.
 
 ### Acceptance Examples
 
@@ -63,13 +63,13 @@ Copied from inbox R1–R5 (do not drift):
 
 - KTD1. **Extend `curation-mode.ts` with `isCuratedCvWrapper` + `usableReplyText`; keep `isFlexibleWrapper` for cover-letter typing.** Instantiates R1. Existing `isFlexibleWrapper` already does 80% of wrapper detection.
 - KTD2. **`runTailorCore` owns strict wrapper and usable `replyText` validation before schema/docx; `buildTailorResponse` is its HTTP adapter.** Instantiates R1, R3, R4. Bare master-schema JSON is no longer a successful strict result, and inbox tailoring invokes `runTailorCore` directly so validation is neither HTTP-only nor duplicated.
-- KTD3. **Strict fallback `<output_format>` emits `{ curated_cv, reply_text }` (grounded, no invention).** Instantiates R2, R4. Langfuse production copy is operator follow-up.
+- KTD3. **Strict fallback `<output_format>` emits `{ curated_cv, reply_text }` (grounded, no invention).** Instantiates R2, R4. Publish the matching Langfuse production copy before release.
 - KTD4. **`smokeArtifactPaths` adds `replyPath`; write only in strict when `replyText` is a non-empty string; runner fails strict 200s that omit it.** Instantiates R5.
 
 ### Assumptions
 
 - `runTailorCore` is the shared in-process owner of strict wrapper, usable `replyText`, schema, and DOCX readiness validation. `buildTailorResponse` adapts that result for HTTP, while inbox-tailor calls `runTailorCore` directly to avoid HTTP-only or duplicate validation.
-- Live Langfuse prompt may still ask for bare CV JSON until the operator publishes; tests and fallback match the new contract.
+- Tests and fallback match the new contract, but release requires the matching Langfuse production prompt to be published.
 
 ### Sequencing
 

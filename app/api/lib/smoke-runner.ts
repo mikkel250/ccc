@@ -2,7 +2,7 @@
  * Smoke pipeline library: health → tailor → docx/schema validate.
  * Script owns env loading, artifact I/O, and process.exit.
  */
-import type { CurationMode } from "./curation-mode";
+import { usableReplyText, type CurationMode } from "./curation-mode";
 import { validateCvJson } from "./cv-schema";
 import { isValidDocxBase64 } from "./markdown-docx";
 
@@ -84,6 +84,7 @@ async function fetchForStage(
   }
 }
 
+/** Validate the health and tailor endpoints and normalize a successful smoke result. */
 export async function verifySmokePipeline(
   jd: string,
   options: SmokePipelineOptions
@@ -208,10 +209,8 @@ export async function verifySmokePipeline(
   }
   const curatedJson = schemaResult.data;
 
-  if (
-    options.curationMode === "strict" &&
-    (typeof data.replyText !== "string" || data.replyText.trim().length === 0)
-  ) {
+  const replyText = usableReplyText(data.replyText);
+  if (options.curationMode === "strict" && replyText === undefined) {
     return {
       ok: false,
       stage: "tailor",
@@ -235,8 +234,8 @@ export async function verifySmokePipeline(
     success.coverLetter = data.coverLetter;
   }
 
-  if (options.curationMode === "strict" && typeof data.replyText === "string") {
-    success.replyText = data.replyText.trim();
+  if (options.curationMode === "strict" && replyText !== undefined) {
+    success.replyText = replyText;
   }
 
   return success;

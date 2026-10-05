@@ -51,7 +51,7 @@ Copied from inbox R6 / R13 / R15 / R16 (do not drift):
 
 ### Acceptance Examples
 
-- AE1. `gmail:auth` starts a `127.0.0.1` listener, prints an authorize URL (`access_type=offline`, `prompt=consent`, `gmail.modify`), exchanges the code, prints a refresh token. **Covers R15, R16.**
+- AE1. `gmail:auth` starts a `127.0.0.1` listener, prints an authorize URL (`access_type=offline`, `prompt=consent`, `gmail.modify`, PKCE), exchanges the code, writes `GMAIL_REFRESH_TOKEN` to a mode-0600 file, and prints only that file path (never the token on stdout). **Covers R15, R16.**
 - AE2. `gmail:list` with a valid token and label prints message `id` / `threadId` for that label; unknown label fails closed. **Covers R6, R13.**
 - AE3. Missing client id / secret / refresh token / label fails with the env var name, never logging token values. **Covers R16.**
 
@@ -101,8 +101,8 @@ U1 (config + token) → U2 (list) → U3 (auth CLI) → U4 (docs).
 - **Goal:** Operator scripts exist and are testable without a live Google account.
 - **Requirements:** R13, R15
 - **Files:** `scripts/gmail-auth.ts`, `scripts/gmail-list.ts`, `package.json`, `tests/gmail-auth.test.ts`
-- **Approach:** Auth CLI uses loopback + state; prints refresh token once. List CLI prints JSON lines of id/threadId.
-- **Test scenarios:** auth URL query params; callback state mismatch; list CLI maps library result.
+- **Approach:** Auth CLI uses loopback + state + PKCE; writes refresh token to a mode-0600 file and prints only the path. List CLI prints JSON lines of id/threadId.
+- **Test scenarios:** auth URL query params (including PKCE); callback state mismatch; token file path-only stdout (no secret on terminal); list CLI maps library result.
 - **Verification:** unit tests (no live Gmail).
 
 ### U4. Operator docs

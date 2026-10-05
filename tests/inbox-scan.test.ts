@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tailorCvDeps } from "../app/api/lib/tailor-cv-deps";
 import {
   __injectInboxKvForTest,
+  claimInboxMessage,
   inboxClaimKey,
   inboxProcessedKey,
   markInboxProcessed,
@@ -96,8 +97,16 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
       store.delete(key);
       return true;
     },
-    expireIfValue: async (key: string, value: string) =>
+    expireIfOwned: async (key: string, value: string) =>
       store.get(key) === value,
+    markProcessedIfOwned: async (claimKey, processedKey, token) => {
+      if (store.get(claimKey) !== token) {
+        return false;
+      }
+      store.set(processedKey, "1");
+      store.delete(claimKey);
+      return true;
+    },
   };
   return memory;
 }
@@ -239,7 +248,7 @@ describe("scanInbox", () => {
 
   it("does not create a draft when claim ownership is lost immediately beforehand", async () => {
     let renewals = 0;
-    memory.expireIfValue = async (key, value) => {
+    memory.expireIfOwned = async (key, value) => {
       renewals += 1;
       if (renewals === 2) {
         memory.store.set(key, "replacement-token");
@@ -319,7 +328,12 @@ describe("scanInbox", () => {
   });
 
   it("skips processed ids without fetching the message", async () => {
-    const marked = await markInboxProcessed("m1");
+    const claimed = await claimInboxMessage("m1");
+    assert.equal(claimed.ok && claimed.outcome === "won", true);
+    const marked = await markInboxProcessed(
+      "m1",
+      claimed.ok && claimed.outcome === "won" ? claimed.token : ""
+    );
     assert.equal(marked.ok, true);
     let gets = 0;
     const chatSpy = mock.method(tailorCvDeps, "chat", async () => {
@@ -620,7 +634,7 @@ describe("scanInbox", () => {
   });
 
   it("does not create a draft when the thread claim is lost before create", async () => {
-    memory.expireIfValue = async (key, value) => {
+    memory.expireIfOwned = async (key, value) => {
       if (key.includes(":thread-claim:")) {
         return false;
       }

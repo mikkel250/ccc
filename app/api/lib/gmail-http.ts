@@ -1,7 +1,7 @@
 /**
  * Gmail REST JSON helper (injected fetch). No SDK.
  */
-import type { FetchLike } from "./gmail-oauth";
+import { gmailAbortAfter, type FetchLike } from "./gmail-oauth";
 import { getGmailHttpTimeoutMs } from "./gmail-config";
 
 /** Non-array object from unknown JSON. Shared by list/message/draft parsers. */
@@ -71,31 +71,39 @@ export async function gmailFetchJson(params: {
   jsonBody?: unknown;
 }): Promise<GmailHttpResult> {
   const method = params.method ?? "GET";
-  let response: Response;
+  const deadline = gmailAbortAfter(getGmailHttpTimeoutMs());
   try {
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${params.accessToken}`,
-    };
-    if (params.jsonBody !== undefined) {
-      headers["Content-Type"] = "application/json";
+    let response: Response;
+    try {
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${params.accessToken}`,
+      };
+      if (params.jsonBody !== undefined) {
+        headers["Content-Type"] = "application/json";
+      }
+      response = await params.fetchImpl(params.url, {
+        method,
+        headers,
+        signal: deadline.signal,
+        ...(params.jsonBody !== undefined
+          ? { body: JSON.stringify(params.jsonBody) }
+          : {}),
+      });
+    } catch {
+      return { ok: false, error: "Gmail API request failed" };
     }
-    response = await params.fetchImpl(params.url, {
-      method,
-      headers,
-      signal: AbortSignal.timeout(getGmailHttpTimeoutMs()),
-      ...(params.jsonBody !== undefined
-        ? { body: JSON.stringify(params.jsonBody) }
-        : {}),
-    });
-  } catch {
-    return { ok: false, error: "Gmail API request failed" };
-  }
-  if (!response.ok) {
-    return { ok: false, error: `Gmail API HTTP ${response.status}` };
-  }
-  try {
-    return { ok: true, body: await response.json() };
-  } catch {
-    return { ok: false, error: "Gmail API response was not valid JSON" };
+    if (!response.ok) {
+      return { ok: false, error: `Gmail API HTTP ${response.status}` };
+    }
+    try {
+      return { ok: true, body: await response.json() };
+    } catch {
+      if (deadline.signal.aborted) {
+        return { ok: false, error: "Gmail API request failed" };
+      }
+      return { ok: false, error: "Gmail API response was not valid JSON" };
+    }
+  } finally {
+    deadline.cancel();
   }
 }
