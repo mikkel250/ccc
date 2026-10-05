@@ -14,6 +14,13 @@ describe("htmlToText", () => {
     assert.equal(htmlToText("<p>Need a GM &amp; chef</p>"), "Need a GM & chef");
   });
 
+  it("decodes hexadecimal and named HTML entities", () => {
+    assert.equal(
+      htmlToText("<p>Need a GM&#x2019;s chef &mdash; on-site</p>"),
+      "Need a GM\u2019s chef \u2014 on-site"
+    );
+  });
+
   it("drops comments, head, and hidden inner text", () => {
     const html = [
       "<html><head><title>Tracking pixel</title></head>",
@@ -40,12 +47,238 @@ describe("htmlToText", () => {
     assert.doesNotMatch(text, /SECRET_TRACKING_TOKEN/);
   });
 
-  it("preserves visible text after an unclosed hidden container", () => {
-    const html =
-      '<div style="display:none">utm_pixel<p>General Manager role — requirements</p>';
-    const text = htmlToText(html);
-    assert.match(text, /General Manager role/);
-    assert.doesNotMatch(text, /utm_pixel/);
+  it("drops hidden text that contains a nested differently named tag", () => {
+    const text = htmlToText(
+      '<div style="display:none">A<span>B</span><script>SECRET_TRACKING_TOKEN</script></div>visible'
+    );
+    assert.match(text, /visible/);
+    assert.doesNotMatch(text, /SECRET_TRACKING_TOKEN/);
+  });
+
+  it("drops text styled with visibility:hidden", () => {
+    const text = htmlToText(
+      '<div style="visibility:hidden">SECRET_TRACKING_TOKEN</div>visible'
+    );
+    assert.match(text, /visible/);
+    assert.doesNotMatch(text, /SECRET_TRACKING_TOKEN/);
+  });
+
+  it("keeps text inside overflow:hidden layout wrappers", () => {
+    assert.equal(
+      htmlToText('<div style="overflow:hidden">Need a GM</div>'),
+      "Need a GM"
+    );
+    assert.equal(
+      htmlToText('<div style="overflow: hidden !important">Need a GM</div>'),
+      "Need a GM"
+    );
+  });
+
+  it("keeps text inside class names that contain hidden as a token", () => {
+    assert.equal(
+      htmlToText('<div class="hidden-sm">Need a GM</div>'),
+      "Need a GM"
+    );
+  });
+
+  it("keeps text inside aria-hidden=false", () => {
+    assert.equal(
+      htmlToText('<div aria-hidden="false">Need a GM</div>'),
+      "Need a GM"
+    );
+  });
+
+  it("drops text marked aria-hidden=true", () => {
+    const text = htmlToText(
+      '<div aria-hidden="true">SECRET_TRACKING_TOKEN</div>visible'
+    );
+    assert.match(text, /visible/);
+    assert.doesNotMatch(text, /SECRET_TRACKING_TOKEN/);
+  });
+
+  it("keeps the JD when head is unclosed but body follows", () => {
+    const text = htmlToText(
+      "<html><head><title>x</title><body><p>Need a GM</p></body></html>"
+    );
+    assert.match(text, /Need a GM/);
+    assert.doesNotMatch(text, /^x$/);
+  });
+
+  it("keeps the JD when an unclosed head is followed by content tags", () => {
+    for (const html of [
+      '<html><head><meta charset="utf-8"><table><tr><td>Need a GM</td></tr></table></html>',
+      "<html><head><title>Tracking</title><p>Need a GM</p>",
+      "<html><head><title>Tracking</title><div>Need a GM</div>",
+    ]) {
+      const text = htmlToText(html);
+      assert.match(text, /Need a GM/);
+      assert.doesNotMatch(text, /Tracking/);
+    }
+  });
+
+  it("does not end an unclosed head on a tag nested inside title or svg", () => {
+    const nestedTitle = htmlToText(
+      "<html><head><title><p>SECRET</p></title><body><p>Need a GM</p></body></html>"
+    );
+    assert.match(nestedTitle, /Need a GM/);
+    assert.doesNotMatch(nestedTitle, /SECRET/);
+
+    const nestedSvg = htmlToText(
+      "<html><head><svg><table><tr><td>SECRET</td></tr></table></svg></head><body><p>Need a GM</p></body></html>"
+    );
+    assert.match(nestedSvg, /Need a GM/);
+    assert.doesNotMatch(nestedSvg, /SECRET/);
+  });
+
+  it("recovers block text after an unclosed hidden tracking opener", () => {
+    const text = htmlToText(
+      '<div style="display:none">TRACKING<p>Need a GM</p>'
+    );
+    assert.match(text, /Need a GM/);
+    assert.doesNotMatch(text, /TRACKING/);
+  });
+
+  it("does not recover a block tag from an unclosed hidden script", () => {
+    const text = htmlToText(
+      '<script style="display:none">var x="<p>SECRET</p>"'
+    );
+    assert.doesNotMatch(text, /SECRET/);
+  });
+
+  it("keeps a font-size:0 parent hidden across unclosed recovery", () => {
+    const hidden = htmlToText(
+      '<div style="font-size:0"><div style="display:none">track<p>SECRET</p>'
+    );
+    assert.doesNotMatch(hidden, /SECRET/);
+
+    const visible = htmlToText(
+      '<div style="font-size:0"><div style="display:none">track<div style="font-size:13px">Need a GM</div>'
+    );
+    assert.match(visible, /Need a GM/);
+    assert.doesNotMatch(visible, /track/);
+  });
+
+  it("does not recover a block tag inside a comment or script", () => {
+    const comment = htmlToText(
+      '<div style="display:none"><!-- <p>SECRET</p> --><p>Need a GM</p>'
+    );
+    assert.match(comment, /Need a GM/);
+    assert.doesNotMatch(comment, /SECRET/);
+
+    const script = htmlToText(
+      '<div style="display:none"><script>var x="<p>SECRET</p>";</script><p>Need a GM</p>'
+    );
+    assert.match(script, /Need a GM/);
+    assert.doesNotMatch(script, /SECRET/);
+  });
+
+  it("omits a closed hidden container inside recovered block text", () => {
+    const text = htmlToText(
+      '<div style="display:none">TRACKING<p>Need a GM<div style="display:none">SECRET</div></p>'
+    );
+    assert.match(text, /Need a GM/);
+    assert.doesNotMatch(text, /SECRET/);
+    assert.doesNotMatch(text, /TRACKING/);
+  });
+
+  it("omits an unclosed hidden container that has no block tag", () => {
+    const text = htmlToText(
+      '<div style="display:none">SECRET_TRACKING_TOKEN visible-tail'
+    );
+    assert.doesNotMatch(text, /SECRET_TRACKING_TOKEN/);
+    assert.doesNotMatch(text, /visible-tail/);
+  });
+
+  it("does not repeat the body when a hidden head is left unclosed", () => {
+    const text = htmlToText(
+      '<head style="display:none"><body><p>Need a GM</p><div style="font-size:0">SECRET'
+    );
+    assert.equal(text, "Need a GM");
+  });
+
+  it("does not treat a body token inside head script as skip recovery", () => {
+    const text = htmlToText(
+      '<html><head><script>var t="<body>SECRET_TRACKING"</script></head><body><p>Need a GM</p></body></html>'
+    );
+    assert.match(text, /Need a GM/);
+    assert.doesNotMatch(text, /SECRET_TRACKING/);
+  });
+
+  it("does not treat a body token inside head style as skip recovery", () => {
+    const text = htmlToText(
+      '<html><head><style>.x { content: "<body>SECRET_TRACKING" }</style></head><body><p>Need a GM</p></body></html>'
+    );
+    assert.match(text, /Need a GM/);
+    assert.doesNotMatch(text, /SECRET_TRACKING/);
+  });
+
+  it("keeps max-height:0 text when overflow is not clipping", () => {
+    assert.equal(
+      htmlToText('<div style="max-height:0">Need a GM</div>'),
+      "Need a GM"
+    );
+    assert.equal(
+      htmlToText('<div style="max-height:0;overflow:visible">Need a GM</div>'),
+      "Need a GM"
+    );
+    assert.equal(
+      htmlToText('<div style="max-height:0;text-overflow:clip">Need a GM</div>'),
+      "Need a GM"
+    );
+  });
+
+  it("drops unquoted display:none and entity-encoded hidden styles", () => {
+    const unquoted = htmlToText('<div style=display:none>SECRET</div>visible');
+    assert.match(unquoted, /visible/);
+    assert.doesNotMatch(unquoted, /SECRET/);
+
+    const encoded = htmlToText(
+      '<div style=&quot;display:none&quot;>SECRET</div>visible'
+    );
+    assert.match(encoded, /visible/);
+    assert.doesNotMatch(encoded, /SECRET/);
+  });
+
+  it("keeps message text after a hidden void element", () => {
+    assert.equal(
+      htmlToText(
+        '<img src="logo.png" alt="" aria-hidden="true"><p>Need a GM</p>'
+      ),
+      "Need a GM"
+    );
+    assert.equal(
+      htmlToText('<img src="open.gif" style="display:none"><p>Need a GM</p>'),
+      "Need a GM"
+    );
+  });
+
+  it("keeps a positive font-size inside a font-size:0 wrapper", () => {
+    const text = htmlToText(
+      '<td style="direction:ltr;font-size:0px;padding:20px 0;text-align:center;"><div style="font-size:13px">Need a GM</div></td>'
+    );
+    assert.equal(text, "Need a GM");
+
+    const mixed = htmlToText(
+      '<div style="font-size:0">SECRET<div style="font-size:13px">Need a GM</div>TAIL</div>visible'
+    );
+    assert.match(mixed, /Need a GM/);
+    assert.match(mixed, /visible/);
+    assert.doesNotMatch(mixed, /SECRET/);
+    assert.doesNotMatch(mixed, /TAIL/);
+  });
+
+  it("drops common email preheader hiding styles", () => {
+    for (const html of [
+      '<div style="max-height:0;overflow:hidden">SECRET</div>visible',
+      '<div style="max-height:0;overflow:clip">SECRET</div>visible',
+      '<div style="max-height:0;overflow:scroll">SECRET</div>visible',
+      '<div style="opacity:0">SECRET</div>visible',
+      '<div style="font-size:0">SECRET</div>visible',
+    ]) {
+      const text = htmlToText(html);
+      assert.match(text, /visible/);
+      assert.doesNotMatch(text, /SECRET/);
+    }
   });
 });
 
@@ -130,6 +363,108 @@ describe("extractGmailJobDescription", () => {
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.match(result.jobDescription, /General Manager role/);
+      assert.doesNotMatch(result.jobDescription, /utm_pixel/);
+    }
+  });
+
+  it("extracts html-only JD wrapped in overflow:hidden", () => {
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "text/html",
+        body: { data: b64('<div style="overflow:hidden">Need a GM</div>') },
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.jobDescription, "Need a GM");
+    }
+  });
+
+  it("ignores MIME parts that are attachments", () => {
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "multipart/mixed",
+        parts: [
+          {
+            mimeType: "text/plain",
+            filename: "",
+            body: { data: b64("Need a GM") },
+          },
+          {
+            mimeType: "text/plain",
+            filename: "secret.txt",
+            body: { data: b64("ATTACHMENT_SECRET") },
+          },
+          {
+            mimeType: "text/plain",
+            headers: [
+              { name: "Content-Disposition", value: 'attachment; filename="note.txt"' },
+            ],
+            body: { data: b64("DISPOSITION_SECRET") },
+          },
+          {
+            mimeType: "text/plain",
+            body: { attachmentId: "att-1", data: b64("ATTACHMENT_ID_SECRET") },
+          },
+        ],
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.jobDescription, "Need a GM");
+    }
+  });
+
+  it("reads a job description nested in a forwarded message attachment", () => {
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "multipart/mixed",
+        parts: [
+          {
+            mimeType: "text/plain",
+            body: { data: b64("FYI") },
+          },
+          {
+            mimeType: "message/rfc822",
+            filename: "Role.eml",
+            headers: [
+              {
+                name: "Content-Disposition",
+                value: 'attachment; filename="Role.eml"',
+              },
+            ],
+            parts: [
+              {
+                mimeType: "text/plain",
+                body: { data: b64("Need a GM") },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.jobDescription, "FYI\n\nNeed a GM");
+    }
+  });
+
+  it("fails when the only text parts are attachments", () => {
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "multipart/mixed",
+        parts: [
+          {
+            mimeType: "text/plain",
+            filename: "jd.txt",
+            body: { data: b64("Need a GM") },
+          },
+        ],
+      },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /no usable text/);
     }
   });
 });
