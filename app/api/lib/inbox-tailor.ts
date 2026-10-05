@@ -48,7 +48,7 @@ function leaseRenewalFailure(
   return null;
 }
 
-async function withClaimLease<T>(
+export async function withClaimLease<T>(
   messageId: string,
   claimToken: string,
   work: (signal: AbortSignal) => Promise<T>

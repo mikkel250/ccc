@@ -42,6 +42,7 @@ const VALID_BODY = JSON.stringify({
   sessionId: "test-session",
 });
 
+/** Stub a successful strict pipeline response while leaving real validation enabled. */
 function mockPipelineSuccess(
   curated: Record<string, unknown> = FIXTURE_CURATED
 ) {
@@ -873,6 +874,23 @@ describe("runTailorCore — in-process curator path", () => {
     assert.doesNotMatch(seenPrompt, /Emit curated JSON only\./);
     assert.equal(seenLangfuse?.version, 0);
     assert.equal(seenLangfuse?.isFallback, true);
+  });
+
+  it("maps getCuratorPrompt fetch failures to 503 instead of throwing", async () => {
+    mock.method(tailorCvDeps, "getCuratorPrompt", async () => {
+      throw new TypeError("fetch failed");
+    });
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "AI service error. Please try again.");
+    }
   });
 
   it("returns 503 before prompt retrieval when the signal is already aborted", async () => {
