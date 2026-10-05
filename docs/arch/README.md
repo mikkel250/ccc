@@ -83,8 +83,7 @@ See [Pipeline enhancements](./PIPELINE_ENHANCEMENTS.md) for the two-pass pipelin
 - Do NOT leave Langfuse `cv-curator-json` `production` on the previous shape (e.g. bare CV JSON) after a curator-contract release. New processes substitute the hardcoded fallback when that text omits `reply_text`, but processes still inside the prompt cache TTL keep serving whatever they already fetched. Publish via `scripts/create-langfuse-prompts.ts` in the same release and recycle those processes.
 - Do NOT rely on Langfuse `latest` label in production — always use `production` label for deterministic prompt versioning.
 - Do NOT route inbox scan through `POST /api/tailor-cv` or share its rate-limit buckets — inbox tailor is in-process (product contract R8).
-- Do NOT block **user-facing** HTTP routes on native LLM batch submit/poll/retrieve loops. When built, batch steps belong on a cron/CLI path with durable batch-id state (Upstash or similar) between ticks — not on `POST /api/tailor-cv`.
-- Do NOT build Anthropic/DeepSeek native batch processing inside the Next.js request path.
+- Do NOT block **user-facing** HTTP routes on native LLM batch submit/poll/retrieve loops. When built, batch steps belong on a cron/CLI path with durable batch-id state (Upstash or similar) between ticks — not on `POST /api/tailor-cv`. A cron-only route is allowed; do not run submit/poll/retrieve inside user-facing handlers.
 - Do NOT commit to a batch LLM pricing tier before operator smoke review confirms the sync curator quality bar.
 
 ## File layout
@@ -110,7 +109,7 @@ See [File layout reference](./FILE_LAYOUT.md).
 **Why Railway stays the pragmatic v1 choice**
 
 1. **Sync tailor is the core path** — HTTP API, smoke, and inbox all use live `chat()` today, not batch APIs.
-2. **One long-lived Node app** — same deployment, env vars, and Upstash Redis for rate limits, inbox claims, and (later) batch job state. Railway cron (M8.6) is planned to run the same scan entrypoint as local `npm run inbox:scan`.
+2. **Same repo and library code** — web and cron share env vars and Upstash Redis for rate limits, inbox claims, and (later) batch job state. Railway cron (M8.6) is planned as its own cron service (`startCommand` `npm run inbox:scan`) alongside the long-lived web service, not a second product codebase.
 3. **Vercel free does not remove LLM cost** — the dominant spend is inference, not hosting. Hobby's 300s cap is enough for a short sync call and not enough for a serial multi-message scan or a call that runs past five minutes.
 4. **Local-first is valid until M8.6** — `npm run inbox:scan` and `npm run dev` need **$0 hosting** until unattended schedule matters. Railway is for “laptop closed” cron, not day-to-day dev.
 

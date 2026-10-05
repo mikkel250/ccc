@@ -44,7 +44,7 @@ _Why it serves the approach:_ that depth is the bet against “paste a JD into C
 
 Scheduled inbox scan (default ~5am, extra windows if they want faster replies) and on-demand sync tailor call the same curation. Do not fork prompts per surface.
 
-The inbox scan is **library code in this repo** (`app/api/lib/*`). `tailorLabeledMessage` calls `runTailorCore` in-process, not `POST /api/tailor-cv`. A future local `npm run inbox:scan` tsx CLI and, when deployed, Railway cron (M8.6) are the same job. Gmail is the review surface; no product UI in v1. Until M8.6, the loop can stay local with **$0 hosting**; Railway is for unattended cron when the laptop is closed. The CLI is not in `package.json` yet.
+The inbox scan is **library code in this repo** (`app/api/lib/*`). `tailorLabeledMessage` calls `runTailorCore` in-process, not `POST /api/tailor-cv`. The local `npm run inbox:scan` tsx CLI and, when deployed, Railway cron (M8.6) are the same job. Gmail is the review surface; no product UI in v1. Until M8.6, the loop can stay local with **$0 hosting**; Railway is for unattended cron when the laptop is closed.
 
 _Why it serves the approach:_ inbound is the paid job; the UI is the same engine when they are sitting there.
 

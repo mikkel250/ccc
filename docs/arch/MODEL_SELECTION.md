@@ -18,7 +18,7 @@ All models use the `provider/model` namespace (see [Provider/model namespace](./
 
 **Complete:** Live JSON quality via `npm run smoke` (dual artifacts; operator reviews the files). Historical markdown-era composites informed the initial `TAILOR_MODEL` default.
 
-**Deferred:** Anthropic Message Batches API (submit → periodic poll → retrieve). Do not block user-facing HTTP on poll loops. Durable batch-id state between cron ticks is the infra requirement — not a long-lived waiter on the model. This is **not** inbox tailor (`runTailorCore` uses sync `chat()`). The scan CLI is not on this tree. See [Pipeline enhancements — batch](./PIPELINE_ENHANCEMENTS.md#native-llm-batch-apis-deferred) and [Deployment hosting](./README.md#deployment-hosting-railway-vs-vercel).
+**Deferred:** Anthropic Message Batches API (submit → periodic poll → retrieve). Do not block user-facing HTTP on poll loops. Durable batch-id state between cron ticks is the infra requirement — not a long-lived waiter on the model. This is **not** inbox tailor (`runTailorCore` uses sync `chat()` via `npm run inbox:scan`). See [Pipeline enhancements — batch](./PIPELINE_ENHANCEMENTS.md#native-llm-batch-apis-deferred) and [Deployment hosting](./README.md#deployment-hosting-railway-vs-vercel).
 
 ## Provider strategy
 

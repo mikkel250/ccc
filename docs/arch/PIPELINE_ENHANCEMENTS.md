@@ -81,13 +81,13 @@ Flow:
 ```text
 Trigger: npm run inbox:scan (local tsx CLI)  OR  Railway cron (M8.6, same entrypoint)
   ↓
-List labeled Gmail messages; claim unprocessed ids (Upstash Redis)
+List labeled Gmail messages; skip already-processed ids
   ↓
-Extract JD from message body
+Fetch message → existing thread draft? mark processed (reuse) : claim thread
   ↓
-runTailorCore (strict, in-process — same curator + mechanical .docx as HTTP tailor)
+tailorLabeledMessage (claim message + extract JD + runTailorCore)
   ↓
-Create Gmail thread draft with replyText + CV .docx attach (M8.5)
+ensureReplyDraft (replyText + CV .docx attach)
   ↓
 Mark message processed in Redis
 ```
@@ -121,9 +121,9 @@ Write artifacts / notify operator (no v1 product UI)
 
 Key decisions:
 
-- **Not the inbox scan job**: In-process tailor uses **sync** `runTailorCore`, not Message Batches. The scan CLI, drafts, and cron are later milestones. Native LLM batch APIs stay deferred until single-pass quality is settled and poll/state infra exists.
+- **Not the inbox scan job**: In-process tailor uses **sync** `runTailorCore`, not Message Batches. Railway cron (M8.6) is still planned; native LLM batch APIs stay deferred until single-pass quality is settled and poll/state infra exists.
 - **Do not block user-facing routes**: Submit/poll/retrieve must not run inside a single `POST /api/tailor-cv` request. A future cron-triggered poller (could be a route **only** invoked by cron) is fine; see [MODEL_SELECTION](./MODEL_SELECTION.md).
-- **Vercel is not ruled out for batch-only polling** — earlier “serverless timeout” wording targeted **sync** tailor, not periodic poll. v1 still defaults to Railway because a sync call or a future serial scan can exceed Hobby's 300s fluid cap.
+- **Vercel is not ruled out for batch-only polling** — earlier “serverless timeout” wording targeted **sync** tailor, not periodic poll. v1 still defaults to Railway because a sync call or the serial scan can exceed Hobby's 300s fluid cap.
 - **Depends on judge-free sync path**: One curator call per JD (see [retire LLM judges](../plans/2026-09-03-001-feat-retire-llm-judges-plan.md)).
 - **Tiered delivery (future)**: Sync path = interactive; batch path = economy tier (async, cost-optimized). BYOK is out of product scope (`STRATEGY.md`).
 
