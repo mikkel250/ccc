@@ -233,6 +233,10 @@ describe("parseParityStatusJson", () => {
       /Invalid parity-status/
     );
     assert.throws(
+      () => parseParityStatusJson({ cells: [] }),
+      /Invalid parity-status/
+    );
+    assert.throws(
       () => parseParityStatusJson({ cells: { "anthropic/sonnet": null } }),
       /Invalid parity-status/
     );

@@ -289,14 +289,8 @@ describe("buildTailorResponse — pipeline orchestration", () => {
 
   it("ignores valid IPs outside the rightmost XFF entry window", async () => {
     const checkRateLimitSpy = mock.method(tailorCvDeps, "checkRateLimit");
-    const beyondWindow = [
-      "198.51.100.42",
-      "pad1",
-      "pad2",
-      "pad3",
-      "pad4",
-      "pad5",
-    ].join(", ");
+    // Empty hops are skipped, so the valid IP sits outside the rightmost five entries.
+    const beyondWindow = ["198.51.100.42", "", "", "", "", ""].join(", ");
     const result = await buildTailorResponse(
       tailorCvDeps,
       buildPostRequest(
