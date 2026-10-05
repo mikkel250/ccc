@@ -8,6 +8,7 @@ import {
   getGmailClientId,
   getGmailHttpTimeoutMs,
   getGmailListMaxResults,
+  getGmailOauthAuthUrl,
   getGmailOauthScope,
   getGmailOauthTokenUrl,
   getGmailRefreshToken,
@@ -29,6 +30,7 @@ const KEYS = [
   "GMAIL_AUTH_BIND_HOST",
   "GMAIL_LIST_MAX_RESULTS",
   "GMAIL_LIST_MAX_RESULTS_LIMIT",
+  "GMAIL_OAUTH_AUTH_URL",
   "GMAIL_OAUTH_TOKEN_URL",
   "GMAIL_API_BASE_URL",
   "GMAIL_HTTP_TIMEOUT_MS",
@@ -131,6 +133,10 @@ describe("gmail-config", () => {
     for (const value of ["not-a-url", "http://gmail.example.test/gmail/v1"]) {
       process.env.GMAIL_API_BASE_URL = value;
       assert.throws(() => getGmailApiBaseUrl(), /GMAIL_API_BASE_URL/);
+    }
+    for (const value of ["not-a-url", "http://accounts.example.test/o/oauth2/v2/auth"]) {
+      process.env.GMAIL_OAUTH_AUTH_URL = value;
+      assert.throws(() => getGmailOauthAuthUrl(), /GMAIL_OAUTH_AUTH_URL/);
     }
   });
 });

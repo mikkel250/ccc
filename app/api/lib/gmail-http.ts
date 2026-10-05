@@ -1,7 +1,7 @@
 /**
  * Gmail REST JSON helper (injected fetch). No SDK.
  */
-import type { FetchLike } from "./gmail-oauth";
+import { gmailAbortAfter, type FetchLike } from "./gmail-oauth";
 import { getGmailHttpTimeoutMs } from "./gmail-config";
 
 /** Non-array object from unknown JSON. Shared by list/message/draft parsers. */
@@ -59,6 +59,19 @@ export function encodeMimeHeaderValue(value: string): string {
   return chunks.map((part) => mimeEncodedWordB(part)).join("\r\n ");
 }
 
+function combineAbortSignals(left: AbortSignal, right: AbortSignal): AbortSignal {
+  if (left.aborted || right.aborted) {
+    const aborted = new AbortController();
+    aborted.abort();
+    return aborted.signal;
+  }
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  left.addEventListener("abort", abort, { once: true });
+  right.addEventListener("abort", abort, { once: true });
+  return controller.signal;
+}
+
 export type GmailHttpResult =
   | { ok: true; body: unknown }
   | { ok: false; error: string };
@@ -69,8 +82,14 @@ export async function gmailFetchJson(params: {
   fetchImpl: FetchLike;
   method?: string;
   jsonBody?: unknown;
+  signal?: AbortSignal;
 }): Promise<GmailHttpResult> {
   const method = params.method ?? "GET";
+  const deadline = gmailAbortAfter(getGmailHttpTimeoutMs());
+  const signal =
+    params.signal === undefined
+      ? deadline.signal
+      : combineAbortSignals(params.signal, deadline.signal);
   let response: Response;
   try {
     const headers: Record<string, string> = {
@@ -82,13 +101,15 @@ export async function gmailFetchJson(params: {
     response = await params.fetchImpl(params.url, {
       method,
       headers,
-      signal: AbortSignal.timeout(getGmailHttpTimeoutMs()),
+      signal,
       ...(params.jsonBody !== undefined
         ? { body: JSON.stringify(params.jsonBody) }
         : {}),
     });
   } catch {
     return { ok: false, error: "Gmail API request failed" };
+  } finally {
+    deadline.cancel();
   }
   if (!response.ok) {
     return { ok: false, error: `Gmail API HTTP ${response.status}` };

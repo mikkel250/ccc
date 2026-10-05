@@ -15,6 +15,19 @@ export type FetchLike = (
   init?: RequestInit
 ) => Promise<Response>;
 
+/** Referenced deadline so a hung fetch still aborts when it is the only waiter. */
+export function gmailAbortAfter(timeoutMs: number): {
+  signal: AbortSignal;
+  cancel: () => void;
+} {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timer),
+  };
+}
+
 export type GmailTokenSet = {
   accessToken: string;
   refreshToken?: string;
@@ -137,6 +150,7 @@ async function postTokenRequest(
   tokenUrl: string,
   requireRefreshToken: boolean
 ): Promise<GmailOauthResult<GmailTokenSet>> {
+  const deadline = gmailAbortAfter(getGmailHttpTimeoutMs());
   let response: Response;
   try {
     response = await fetchImpl(tokenUrl, {
@@ -144,10 +158,12 @@ async function postTokenRequest(
       redirect: "error",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
-      signal: AbortSignal.timeout(getGmailHttpTimeoutMs()),
+      signal: deadline.signal,
     });
   } catch {
     return { ok: false, error: "Gmail token request failed" };
+  } finally {
+    deadline.cancel();
   }
   if (!response.ok) {
     return { ok: false, error: `Gmail token HTTP ${response.status}` };
@@ -244,6 +260,7 @@ export async function refreshGmailAccessToken(params?: {
   });
   const fetchImpl = params?.fetchImpl ?? fetch;
   const tokenUrl = getGmailOauthTokenUrl();
+  const deadline = gmailAbortAfter(getGmailHttpTimeoutMs());
   let response: Response;
   try {
     response = await fetchImpl(tokenUrl, {
@@ -251,10 +268,12 @@ export async function refreshGmailAccessToken(params?: {
       redirect: "error",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
-      signal: AbortSignal.timeout(getGmailHttpTimeoutMs()),
+      signal: deadline.signal,
     });
   } catch {
     return { ok: false, error: "Gmail token request failed" };
+  } finally {
+    deadline.cancel();
   }
   if (!response.ok) {
     return { ok: false, error: `Gmail token HTTP ${response.status}` };

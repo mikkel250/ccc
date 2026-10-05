@@ -3,15 +3,21 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tailorCvDeps } from "../app/api/lib/tailor-cv-deps";
+import { isLlmServiceError } from "../app/api/lib/llm";
 import {
   __injectInboxKvForTest,
   claimInboxMessage,
   inboxClaimKey,
   inboxProcessedKey,
   markInboxProcessed,
+  INBOX_CLAIM_LOST_ERROR,
+  INBOX_REDIS_TIMEOUT_ERROR,
   type InboxKv,
 } from "../app/api/lib/inbox-processed-store";
 import { tailorLabeledMessage } from "../app/api/lib/inbox-tailor";
+import type { TailorPipelineDeps } from "../app/api/lib/tailor-pipeline";
+
+type ChatArgs = Parameters<TailorPipelineDeps["chat"]>;
 import { BUILDER_VERSION } from "../app/api/lib/json-docx-builder";
 import {
   DEFAULT_STRICT_REPLY,
@@ -44,28 +50,86 @@ function plainMessage(text: string): unknown {
 
 function createMemoryKv(): InboxKv & { store: Map<string, string> } {
   const store = new Map<string, string>();
-  const memory: InboxKv & { store: Map<string, string> } = {
+  const expiresAt = new Map<string, number>();
+  function purge(key: string): void {
+    const exp = expiresAt.get(key);
+    if (exp !== undefined && exp <= Date.now()) {
+      store.delete(key);
+      expiresAt.delete(key);
+    }
+  }
+  return {
     store,
-    get: async (key) => store.get(key) ?? null,
+    get: async (key) => {
+      purge(key);
+      return store.get(key) ?? null;
+    },
     set: async (key, value, opts) => {
       await new Promise<void>((resolve) => setImmediate(resolve));
+      purge(key);
       if (opts?.nx && store.has(key)) {
         return null;
       }
       store.set(key, value);
+      if (opts?.ex !== undefined) {
+        expiresAt.set(key, Date.now() + opts.ex * 1000);
+      } else {
+        expiresAt.delete(key);
+      }
       return "OK";
     },
     deleteIfValue: async (key, value) => {
+      purge(key);
       if (store.get(key) !== value) {
         return false;
       }
       store.delete(key);
+      expiresAt.delete(key);
       return true;
     },
-    expireIfValue: async (key: string, value: string) =>
-      store.get(key) === value,
+    expireIfOwned: async (key, value, ttlSeconds) => {
+      purge(key);
+      if (store.get(key) !== value) {
+        return false;
+      }
+      expiresAt.set(key, Date.now() + ttlSeconds * 1000);
+      return true;
+    },
+    markProcessedIfOwned: async (claimKey, processedKey, token, ttlSeconds) => {
+      purge(claimKey);
+      purge(processedKey);
+      const current = store.get(claimKey);
+      if (current !== token) {
+        return false;
+      }
+      store.set(processedKey, "1");
+      if (ttlSeconds > 0) {
+        expiresAt.set(processedKey, Date.now() + ttlSeconds * 1000);
+      } else {
+        expiresAt.delete(processedKey);
+      }
+      store.delete(claimKey);
+      expiresAt.delete(claimKey);
+      return true;
+    },
   };
-  return memory;
+}
+
+async function sleepUnlessAborted(
+  ms: number,
+  signal?: AbortSignal
+): Promise<void> {
+  if (signal?.aborted) {
+    throw new DOMException("The operation was aborted", "AbortError");
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("The operation was aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function mockPipelineSuccess(): void {
@@ -112,7 +176,12 @@ describe("tailorLabeledMessage", () => {
   });
 
   it("skips a processed id without calling chat", async () => {
-    const marked = await markInboxProcessed(ID);
+    const claimed = await claimInboxMessage(ID);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won claim");
+    }
+    const marked = await markInboxProcessed(ID, claimed.token);
     assert.equal(marked.ok, true);
     const chatSpy = mock.method(tailorCvDeps, "chat", async () => {
       throw new Error("chat must not run for processed ids");
@@ -150,26 +219,6 @@ describe("tailorLabeledMessage", () => {
       assert.equal(result.status, "skipped-claimed");
     }
     assert.equal(chatSpy.mock.callCount(), 0);
-  });
-
-  it("stops when the claim expires while runTailorCore is running", async () => {
-    mock.method(tailorCvDeps, "chat", async () => {
-      memory.store.set(inboxClaimKey(ID), "replacement-token");
-      return {
-        content: strictCuratorJson(FIXTURE_CURATED),
-        usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-        model: "anthropic/sonnet",
-        finishReason: "stop",
-      };
-    });
-
-    const result = await tailorLabeledMessage(tailorCvDeps, {
-      messageId: ID,
-      message: plainMessage(JD),
-    });
-
-    assert.deepEqual(result, { ok: true, status: "skipped-claimed" });
-    assert.equal(memory.store.get(inboxClaimKey(ID)), "replacement-token");
   });
 
   it("strict-tailors an extracted JD without rate-limit, Bearer, or processed mark", async () => {
@@ -216,6 +265,7 @@ describe("tailorLabeledMessage", () => {
         assert.equal(result.body.curationMode, "strict");
         assert.equal("remaining" in result.body, false);
         assert.equal("resetTime" in result.body, false);
+        assert.equal(memory.store.get(inboxClaimKey(ID)), result.claimToken);
       }
     }
   });
@@ -239,6 +289,7 @@ describe("tailorLabeledMessage", () => {
       assert.match(result.error, /reply_text/);
     }
     assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
   });
 
   it("rejects a JD longer than TAILOR_JD_MAX_CHARS without calling chat", async () => {
@@ -258,10 +309,241 @@ describe("tailorLabeledMessage", () => {
         assert.match(result.error, /size limit/i);
       }
       assert.equal(chatSpy.mock.callCount(), 0);
-      assert.equal(memory.store.has(inboxClaimKey(ID)), true);
+      assert.equal(memory.store.has(inboxClaimKey(ID)), false);
     } finally {
       if (previous === undefined) delete process.env.TAILOR_JD_MAX_CHARS;
       else process.env.TAILOR_JD_MAX_CHARS = previous;
+    }
+  });
+
+  it("returns 503 when inbox Redis times out during claim", async () => {
+    memory.get = async () => {
+      throw new Error("Inbox Redis timed out");
+    };
+    const chatSpy = mock.method(tailorCvDeps, "chat", async () => {
+      throw new Error("chat must not run when Redis times out");
+    });
+    const result = await tailorLabeledMessage(tailorCvDeps, {
+      messageId: ID,
+      message: plainMessage(JD),
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "Inbox Redis timed out");
+    }
+    assert.equal(chatSpy.mock.callCount(), 0);
+  });
+
+  it("returns 500 and keeps the claim when chat throws a programmer error", async () => {
+    mock.method(tailorCvDeps, "chat", async () => {
+      throw new TypeError("curatorResponse.content is undefined");
+    });
+
+    const result = await tailorLabeledMessage(tailorCvDeps, {
+      messageId: ID,
+      message: plainMessage(JD),
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 500);
+      assert.equal(result.error, "Internal server error. Please try again later.");
+      assert.doesNotMatch(result.error, /curatorResponse/);
+    }
+    assert.equal(memory.store.has(inboxClaimKey(ID)), true);
+    assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
+  });
+
+  it("returns 503 and releases the claim when chat times out", async () => {
+    mock.method(tailorCvDeps, "isLlmServiceError", isLlmServiceError);
+    mock.method(tailorCvDeps, "chat", async () => {
+      throw new Error("Request timed out.");
+    });
+
+    const result = await tailorLabeledMessage(tailorCvDeps, {
+      messageId: ID,
+      message: plainMessage(JD),
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "AI service error. Please try again.");
+    }
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+  });
+
+  it("returns 503 without leaking when getCuratorPrompt rejects", async () => {
+    mock.method(tailorCvDeps, "getCuratorPrompt", async () => {
+      throw new Error("LANGFUSE_SECRET_KEY is not configured");
+    });
+
+    const result = await tailorLabeledMessage(tailorCvDeps, {
+      messageId: ID,
+      message: plainMessage(JD),
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "AI service error. Please try again.");
+      assert.doesNotMatch(result.error, /LANGFUSE_SECRET_KEY/);
+    }
+    assert.equal(memory.store.has(inboxClaimKey(ID)), false);
+    assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
+  });
+
+  it("keeps claim ownership when core work outlasts the initial lease", async () => {
+    const previous = process.env.INBOX_CLAIM_TTL_SECONDS;
+    process.env.INBOX_CLAIM_TTL_SECONDS = "1";
+    mock.method(
+      tailorCvDeps,
+      "chat",
+      async (...[_messages, _system, options]: ChatArgs) => {
+      await sleepUnlessAborted(1100, options.signal);
+      return {
+        content: strictCuratorJson(FIXTURE_CURATED),
+        usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+        model: "anthropic/sonnet",
+        finishReason: "stop",
+      };
+    }
+    );
+    try {
+      const result = await tailorLabeledMessage(tailorCvDeps, {
+        messageId: ID,
+        message: plainMessage(JD),
+      });
+      assert.equal(result.ok, true);
+      assert.equal(result.status, "tailored");
+      if (result.ok && result.status === "tailored") {
+        assert.equal(await memory.get(inboxClaimKey(ID)), result.claimToken);
+      }
+    } finally {
+      if (previous === undefined) delete process.env.INBOX_CLAIM_TTL_SECONDS;
+      else process.env.INBOX_CLAIM_TTL_SECONDS = previous;
+    }
+  });
+
+  it("does not tailor when claim renewal fails before core work", async () => {
+    memory.expireIfOwned = async () => false;
+    const chatSpy = mock.method(tailorCvDeps, "chat", async () => {
+      throw new Error("chat must not run after a failed claim renewal");
+    });
+
+    const result = await tailorLabeledMessage(tailorCvDeps, {
+      messageId: ID,
+      message: plainMessage(JD),
+    });
+
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.status, "skipped-claimed");
+    }
+    assert.equal(chatSpy.mock.callCount(), 0);
+    assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
+  });
+
+  it("aborts tailoring when claim ownership is lost during core work", async () => {
+    const previous = process.env.INBOX_CLAIM_TTL_SECONDS;
+    process.env.INBOX_CLAIM_TTL_SECONDS = "1";
+    const origExpire = memory.expireIfOwned.bind(memory);
+    let workerToken: string | undefined;
+    let renewals = 0;
+    memory.expireIfOwned = async (key, value, ttlSeconds) => {
+      workerToken = value;
+      renewals += 1;
+      if (renewals === 1) {
+        return origExpire(key, value, ttlSeconds);
+      }
+      memory.store.set(key, "replacement-token");
+      return origExpire(key, value, ttlSeconds);
+    };
+    let chatCompleted = false;
+    mock.method(
+      tailorCvDeps,
+      "chat",
+      async (...[_messages, _system, options]: ChatArgs) => {
+      await sleepUnlessAborted(1100, options.signal);
+      chatCompleted = true;
+      return {
+        content: strictCuratorJson(FIXTURE_CURATED),
+        usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+        model: "anthropic/sonnet",
+        finishReason: "stop",
+      };
+    }
+    );
+    try {
+      const result = await tailorLabeledMessage(tailorCvDeps, {
+        messageId: ID,
+        message: plainMessage(JD),
+      });
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.equal(result.status, 503);
+        assert.equal(result.error, INBOX_CLAIM_LOST_ERROR);
+      }
+      assert.equal(chatCompleted, false);
+      assert.equal(typeof workerToken, "string");
+      assert.equal(memory.store.get(inboxClaimKey(ID)), "replacement-token");
+      assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
+      if (typeof workerToken === "string") {
+        const marked = await markInboxProcessed(ID, workerToken);
+        assert.equal(marked.ok, false);
+        assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
+        assert.equal(memory.store.get(inboxClaimKey(ID)), "replacement-token");
+      }
+    } finally {
+      if (previous === undefined) delete process.env.INBOX_CLAIM_TTL_SECONDS;
+      else process.env.INBOX_CLAIM_TTL_SECONDS = previous;
+    }
+  });
+
+  it("aborts tailoring when claim renewal hits Redis failure during core work", async () => {
+    const previous = process.env.INBOX_CLAIM_TTL_SECONDS;
+    process.env.INBOX_CLAIM_TTL_SECONDS = "1";
+    const origExpire = memory.expireIfOwned.bind(memory);
+    let renewals = 0;
+    memory.expireIfOwned = async (key, value, ttlSeconds) => {
+      renewals += 1;
+      if (renewals === 1) {
+        return origExpire(key, value, ttlSeconds);
+      }
+      throw new Error(INBOX_REDIS_TIMEOUT_ERROR);
+    };
+    let chatCompleted = false;
+    mock.method(
+      tailorCvDeps,
+      "chat",
+      async (...[_messages, _system, options]: ChatArgs) => {
+      await sleepUnlessAborted(1100, options.signal);
+      chatCompleted = true;
+      return {
+        content: strictCuratorJson(FIXTURE_CURATED),
+        usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+        model: "anthropic/sonnet",
+        finishReason: "stop",
+      };
+    }
+    );
+    try {
+      const result = await tailorLabeledMessage(tailorCvDeps, {
+        messageId: ID,
+        message: plainMessage(JD),
+      });
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.equal(result.status, 503);
+        assert.equal(result.error, INBOX_REDIS_TIMEOUT_ERROR);
+      }
+      assert.equal(chatCompleted, false);
+      assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
+      assert.equal(memory.store.has(inboxClaimKey(ID)), true);
+    } finally {
+      if (previous === undefined) delete process.env.INBOX_CLAIM_TTL_SECONDS;
+      else process.env.INBOX_CLAIM_TTL_SECONDS = previous;
     }
   });
 });

@@ -15,6 +15,191 @@ import { initLangFuse } from "./tracers/langfuse";
 export const CURATOR_LANGFUSE_PROMPT_NAME = "cv-curator-json";
 export const FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME = "cv-curator-flexible-pivot";
 export const MASTER_CV_JSON_PLACEHOLDER = "{{MASTER_CV_JSON}}";
+
+const STRICT_WRAPPER_OBJECT =
+  /\{\s*"?curated_cv"?\s*,\s*"?reply_text"?\s*\}|\{\s*"?reply_text"?\s*,\s*"?curated_cv"?\s*\}/;
+const STRICT_JSON_KEY_CURATED = /"curated_cv"\s*:/;
+const STRICT_JSON_KEY_REPLY = /"reply_text"\s*:/;
+const PROHIBITION_VERBS = new Set([
+  "return",
+  "emit",
+  "include",
+  "output",
+  "use",
+]);
+/** Words that bind "never" / "do not" to keeping reply_text, not forbidding it. */
+const KEEPING_VERBS = new Set([
+  "omit",
+  "omitting",
+  "drop",
+  "dropping",
+  "exclude",
+  "excluding",
+]);
+const REPLY_CUE_WINDOW = 8;
+/** Sentence boundary. Not a word, so it cannot be confused with prompt text. */
+const SENTENCE_BREAK = "\0";
+
+const DEFAULT_PROMPT_FETCH_TIMEOUT_MS = 5000;
+
+/**
+ * Bound Langfuse prompt.get. The SDK uses 60s when fetchTimeoutMs is omitted.
+ */
+function curatorPromptFetchTimeoutMs(): number {
+  return Math.max(
+    1,
+    Math.floor(
+      getEnvNumber(
+        "LANGFUSE_PROMPT_FETCH_TIMEOUT_MS",
+        DEFAULT_PROMPT_FETCH_TIMEOUT_MS
+      )
+    )
+  );
+}
+
+/**
+ * Prohibition cues must see reply_text even when it sits inside wrapper syntax.
+ * "Never return the wrapper { curated_cv, reply_text }" would otherwise match
+ * STRICT_WRAPPER_OBJECT and be treated as a request.
+ * "Never omit reply_text" keeps the field; only return/emit/include/output/use
+ * after never/do not/don't forbid it. Commas do not break that window.
+ * Periods, question marks, exclamation marks, semicolons, and newlines do:
+ * a later sentence that asks for the wrapper is not part of the prohibition.
+ * ".docx" does not break, because the dot is not followed by whitespace.
+ */
+function promptWords(promptText: string): string[] {
+  const bridged = promptText.replace(
+    new RegExp(STRICT_WRAPPER_OBJECT.source, "g"),
+    " reply_text "
+  );
+  const marked = bridged.replace(
+    /[.!?]+(?=\s|$)|;+|\n+/g,
+    ` ${SENTENCE_BREAK} `
+  );
+  return marked.toLowerCase().match(/[a-z0-9_']+|\0/g) ?? [];
+}
+
+function windowHasReplyText(words: string[], start: number): boolean {
+  const end = Math.min(words.length, start + REPLY_CUE_WINDOW);
+  for (let i = start; i < end; i += 1) {
+    const word = words[i];
+    if (word === SENTENCE_BREAK) {
+      return false;
+    }
+    if (word === "reply_text") {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** "return the CV without reply_text" keeps the field; a bare "without" does not. */
+function replyMentionIsKept(words: string[], start: number): boolean {
+  const end = Math.min(words.length, start + REPLY_CUE_WINDOW);
+  for (let i = start; i < end; i += 1) {
+    const word = words[i];
+    if (word === SENTENCE_BREAK || word === "reply_text") {
+      return false;
+    }
+    if (word === "without" || (word !== undefined && KEEPING_VERBS.has(word))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function negatedEarlierInSentence(words: string[], index: number): boolean {
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const word = words[i];
+    if (word === SENTENCE_BREAK) {
+      return false;
+    }
+    if (word === "never" || word === "don't") {
+      return true;
+    }
+    if (word === "not" && words[i - 1] === "do") {
+      return true;
+    }
+  }
+  return false;
+}
+
+function prohibitionCueLength(words: string[], index: number): number {
+  const word = words[index];
+  if (word === "never" || word === "don't") {
+    return 1;
+  }
+  if (word === "do" && words[index + 1] === "not") {
+    return 2;
+  }
+  return 0;
+}
+
+function cueForbidsReplyText(words: string[], index: number, cueLength: number): boolean {
+  const limit = Math.min(words.length, index + cueLength + REPLY_CUE_WINDOW);
+  for (let j = index + cueLength; j < limit; j += 1) {
+    const word = words[j]!;
+    if (word === SENTENCE_BREAK || KEEPING_VERBS.has(word)) {
+      return false;
+    }
+    if (PROHIBITION_VERBS.has(word)) {
+      if (replyMentionIsKept(words, j + 1)) {
+        return false;
+      }
+      return windowHasReplyText(words, j + 1);
+    }
+  }
+  return false;
+}
+
+function bareOmitForbidsReplyText(words: string[], index: number): boolean {
+  const word = words[index];
+  if (word !== "omit" && word !== "without") {
+    return false;
+  }
+  const prev = words[index - 1];
+  const prev2 = words[index - 2];
+  if (word === "omit" && (prev === "never" || prev === "don't" || (prev === "not" && prev2 === "do"))) {
+    return false;
+  }
+  const next = words[index + 1];
+  if (word === "without" && (next === "omitting" || next === "omitted" || next === "omits")) {
+    return false;
+  }
+  if (word === "without" && negatedEarlierInSentence(words, index)) {
+    return false;
+  }
+  return windowHasReplyText(words, index + 1);
+}
+
+function promptProhibitsReplyText(promptText: string): boolean {
+  const words = promptWords(promptText);
+  for (let i = 0; i < words.length; i += 1) {
+    const cueLength = prohibitionCueLength(words, i);
+    if (cueLength > 0 && cueForbidsReplyText(words, i, cueLength)) {
+      return true;
+    }
+    if (bareOmitForbidsReplyText(words, i)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Live Langfuse strict prompts must request the wrapper, not bare CV JSON. */
+export function strictPromptRequestsReplyWrapper(promptText: string): boolean {
+  if (promptProhibitsReplyText(promptText)) {
+    return false;
+  }
+  if (STRICT_WRAPPER_OBJECT.test(promptText)) {
+    return true;
+  }
+  return (
+    STRICT_JSON_KEY_CURATED.test(promptText) &&
+    STRICT_JSON_KEY_REPLY.test(promptText)
+  );
+}
+
 /** Langfuse prompt cache TTL (seconds). Default 300. */
 const CURATOR_PROMPT_CACHE_TTL_SECONDS = Math.max(
   0,
@@ -157,20 +342,6 @@ export function getCuratorPromptFallbackText(): string {
   return FALLBACK_PROMPT;
 }
 
-/**
- * Strict Langfuse production copy may still ask for bare CV JSON.
- * Use the local fallback until that prompt names `reply_text`.
- */
-export function resolveStrictCuratorSystemPrompt(
-  remotePrompt: string,
-  fallbackPrompt: string
-): { systemPrompt: string; usedFallback: boolean } {
-  if (remotePrompt.includes("reply_text")) {
-    return { systemPrompt: remotePrompt, usedFallback: false };
-  }
-  return { systemPrompt: fallbackPrompt, usedFallback: true };
-}
-
 export async function getCuratorPrompt(mode?: CurationMode): Promise<{
   systemPrompt: string;
   langfusePrompt?: { name: string; version: number; isFallback?: boolean };
@@ -199,26 +370,21 @@ export async function getCuratorPrompt(mode?: CurationMode): Promise<{
     const prompt = await client.prompt.get(promptName, {
       label: "production",
       cacheTtlSeconds: CURATOR_PROMPT_CACHE_TTL_SECONDS,
+      fetchTimeoutMs: curatorPromptFetchTimeoutMs(),
     });
 
-    if (!isFlexible && typeof prompt.prompt === "string") {
-      const resolved = resolveStrictCuratorSystemPrompt(
-        prompt.prompt,
-        fallbackPrompt
+    if (!isFlexible && !strictPromptRequestsReplyWrapper(prompt.prompt)) {
+      console.warn(
+        `Langfuse prompt "${prompt.name}" v${prompt.version} omitted the reply wrapper; using hardcoded fallback`
       );
-      if (resolved.usedFallback) {
-        console.warn(
-          `Langfuse prompt "${promptName}" v${prompt.version} omits reply_text; using hardcoded fallback`
-        );
-        return {
-          systemPrompt: resolved.systemPrompt,
-          langfusePrompt: {
-            name: promptName,
-            version: 0,
-            isFallback: true,
-          },
-        };
-      }
+      return {
+        systemPrompt: fallbackPrompt,
+        langfusePrompt: {
+          name: promptName,
+          version: 0,
+          isFallback: true,
+        },
+      };
     }
 
     return {

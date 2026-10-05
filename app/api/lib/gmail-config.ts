@@ -57,7 +57,7 @@ export function getGmailRecruiterLabel(): string {
 }
 
 export function getGmailOauthAuthUrl(): string {
-  return getEnvString("GMAIL_OAUTH_AUTH_URL", DEFAULT_OAUTH_AUTH_URL)!;
+  return requireHttpsUrl("GMAIL_OAUTH_AUTH_URL", DEFAULT_OAUTH_AUTH_URL);
 }
 
 export function getGmailOauthTokenUrl(): string {
