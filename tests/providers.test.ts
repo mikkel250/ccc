@@ -32,6 +32,14 @@ describe("parseNamespacedProvider", () => {
       /Invalid model string/
     );
     assert.throws(
+      () => parseNamespacedProvider("anthropic//sonnet"),
+      /Invalid model string/
+    );
+    assert.throws(
+      () => parseNamespacedProvider("openrouter/./gpt"),
+      /Invalid model string/
+    );
+    assert.throws(
       () => parseNamespacedProvider("anthropic/"),
       /Invalid model string/
     );
