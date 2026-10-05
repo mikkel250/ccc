@@ -1,8 +1,8 @@
 /**
- * CV tailoring pipeline — orchestrates all 10 steps from auth through DOCX generation.
+ * CV tailoring pipeline — HTTP adapter plus shared curator/DOCX core.
  *
- * Returns a discriminated union: the route handler maps to HTTP status codes.
- * Extracted from route.ts so the pipeline can be unit-tested without HTTP mocking.
+ * `buildTailorResponse` maps NextRequest (IP, rate-limit, Bearer, body) onto
+ * `runTailorCore`. The route handler maps the result to HTTP status codes.
  */
 import { isIP } from "node:net";
 import type { NextRequest } from "next/server";
@@ -24,7 +24,11 @@ import {
   getTailorRequestMaxBytes,
   getTailorResponseMaxBytes,
 } from "./cv-schema";
-import { CURATOR_LANGFUSE_PROMPT_NAME } from "./curator-prompt";
+import {
+  CURATOR_LANGFUSE_PROMPT_NAME,
+  getCuratorPromptFallbackText,
+  strictPromptRequestsReplyWrapper,
+} from "./curator-prompt";
 import {
   isCuratedCvWrapper,
   isFlexibleWrapper,
@@ -55,6 +59,15 @@ export interface TailorResponseBody {
   /** Present only for strict mode — recruiter reply email body. */
   replyText?: string;
 }
+
+export type TailorCoreSuccess = Omit<
+  TailorResponseBody,
+  "remaining" | "resetTime"
+>;
+
+export type TailorCoreResult =
+  | { ok: true; body: TailorCoreSuccess }
+  | { ok: false; error: string; status: 422 | 503 };
 
 export type TailorPipelineResult =
   | { ok: true; body: TailorResponseBody }
@@ -195,6 +208,7 @@ export interface TailorPipelineDeps {
       };
       source: string;
       reasoningEffort?: ReasoningEffort;
+      signal?: AbortSignal;
     }
   ) => Promise<{
     content: string;
@@ -322,10 +336,153 @@ export async function buildTailorResponse(
 
   const { jobDescription, curationMode } = validated;
 
+  const core = await runTailorCore(deps, {
+    jobDescription,
+    curationMode,
+    signal: request.signal,
+  });
+  if (!core.ok) {
+    return core;
+  }
+
+  const responseBody: TailorResponseBody = {
+    ...core.body,
+    remaining: rateLimit.remaining,
+    resetTime: rateLimit.resetTime,
+  };
+
+  const responseBytes = Buffer.byteLength(
+    JSON.stringify(responseBody),
+    "utf8"
+  );
+  if (responseBytes > getTailorResponseMaxBytes()) {
+    return {
+      ok: false,
+      error: "Tailor response exceeds configured size limit",
+      status: 422,
+    };
+  }
+
+  return { ok: true, body: responseBody };
+}
+
+function isProgrammerError(error: unknown): boolean {
+  return (
+    error instanceof TypeError ||
+    error instanceof ReferenceError ||
+    error instanceof SyntaxError ||
+    error instanceof RangeError
+  );
+}
+
+function abortCoreResult(): TailorCoreResult {
+  return {
+    ok: false,
+    error: "AI service error. Please try again.",
+    status: 503,
+  };
+}
+
+type Abortable<T> = { aborted: false; value: T } | { aborted: true };
+
+/** Settle when `signal` aborts, without waiting for `start` to finish. */
+async function awaitUnlessAborted<T>(
+  start: () => Promise<T>,
+  signal?: AbortSignal
+): Promise<Abortable<T>> {
+  if (!signal) {
+    return { aborted: false, value: await start() };
+  }
+  if (signal.aborted) {
+    return { aborted: true };
+  }
+  return new Promise((resolve, reject) => {
+    const onAbort = (): void => {
+      signal.removeEventListener("abort", onAbort);
+      resolve({ aborted: true });
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    start().then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        if (signal.aborted) resolve({ aborted: true });
+        else resolve({ aborted: false, value });
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        if (signal.aborted) resolve({ aborted: true });
+        else reject(error);
+      }
+    );
+  });
+}
+
+/**
+ * Shared curator + DOCX path. No Bearer, no RATE_LIMIT_* buckets (R8).
+ */
+export async function runTailorCore(
+  deps: TailorPipelineDeps,
+  input: {
+    jobDescription: string;
+    curationMode: CurationMode;
+    signal?: AbortSignal;
+  }
+): Promise<TailorCoreResult> {
+  const { jobDescription, curationMode, signal } = input;
+  if (signal?.aborted) {
+    return abortCoreResult();
+  }
+
   // 6. Prompt construction
-  const masterCv = deps.requireMasterCv();
-  const { systemPrompt: promptText, langfusePrompt } =
-    await deps.getCuratorPrompt(curationMode);
+  let masterCv: unknown;
+  try {
+    masterCv = deps.requireMasterCv();
+  } catch (error: unknown) {
+    if (error instanceof ServiceError) {
+      return { ok: false, error: error.message, status: 503 };
+    }
+    throw error;
+  }
+  let prompted: Abortable<
+    Awaited<ReturnType<TailorPipelineDeps["getCuratorPrompt"]>>
+  >;
+  try {
+    prompted = await awaitUnlessAborted(
+      () => deps.getCuratorPrompt(curationMode),
+      signal
+    );
+  } catch (error: unknown) {
+    if (isProgrammerError(error)) {
+      throw error;
+    }
+    if (error instanceof ServiceError) {
+      return { ok: false, error: error.message, status: 503 };
+    }
+    return {
+      ok: false,
+      error: "AI service error. Please try again.",
+      status: 503,
+    };
+  }
+  if (prompted.aborted) {
+    return abortCoreResult();
+  }
+  let { systemPrompt: promptText, langfusePrompt } = prompted.value;
+  if (
+    curationMode === "strict" &&
+    langfusePrompt?.isFallback !== true &&
+    !strictPromptRequestsReplyWrapper(promptText)
+  ) {
+    console.warn(
+      "Live Langfuse strict prompt omitted the reply wrapper; using hardcoded fallback"
+    );
+    promptText = getCuratorPromptFallbackText();
+    langfusePrompt = {
+      name: langfusePrompt?.name ?? CURATOR_LANGFUSE_PROMPT_NAME,
+      version: 0,
+      isFallback: true,
+    };
+  }
   const modePrompt = deps.applyCurationModePolicy(promptText, curationMode);
   const compiled = deps.compileCuratorPrompt(modePrompt, masterCv);
   if (!compiled.ok) {
@@ -338,20 +495,44 @@ export async function buildTailorResponse(
   );
 
   // 7. Curator LLM call
-  const curatorResponse = await deps.chat(
-    [{ role: "user" as const, content: userContent }],
-    systemPrompt,
-    {
-      model: getTailorModel(),
-      reasoningEffort: getTailorReasoningEffort(),
-      langfusePrompt: langfusePrompt ?? {
-        name: CURATOR_LANGFUSE_PROMPT_NAME,
-        version: 0,
-        isFallback: true,
-      },
-      source: "tailor-cv-curator",
+  let curatorResponse: Awaited<ReturnType<typeof deps.chat>>;
+  try {
+    curatorResponse = await deps.chat(
+      [{ role: "user" as const, content: userContent }],
+      systemPrompt,
+      {
+        model: getTailorModel(),
+        reasoningEffort: getTailorReasoningEffort(),
+        langfusePrompt: langfusePrompt ?? {
+          name: CURATOR_LANGFUSE_PROMPT_NAME,
+          version: 0,
+          isFallback: true,
+        },
+        source: "tailor-cv-curator",
+        signal,
+      }
+    );
+  } catch (error: unknown) {
+    if (signal?.aborted) {
+      return abortCoreResult();
     }
-  );
+    const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof ServiceError) {
+      return { ok: false, error: error.message, status: 503 };
+    }
+    if (deps.isLlmServiceError(message)) {
+      return {
+        ok: false,
+        error: "AI service error. Please try again.",
+        status: 503,
+      };
+    }
+    throw error;
+  }
+
+  if (signal?.aborted) {
+    return abortCoreResult();
+  }
 
   // 8. Extract + schema validate + size check
   let curatedRaw: unknown;
@@ -416,6 +597,9 @@ export async function buildTailorResponse(
   const sanitized = deps.sanitizeForResponse(schemaResult.data);
 
   const built = await deps.buildJsonDocxBase64(schemaResult.data);
+  if (signal?.aborted) {
+    return abortCoreResult();
+  }
   if (!built.ok) {
     console.error("Docx builder failed after valid curated JSON");
     return {
@@ -425,31 +609,16 @@ export async function buildTailorResponse(
     };
   }
 
-  // 10. Build response body
-  const responseBody: TailorResponseBody = {
+  const body: TailorCoreSuccess = {
     cv: built.base64,
     curatedJson: sanitized,
     builderVersion: built.builderVersion,
     curationMode,
     model: getTailorModel(),
     usage: curatorResponse.usage,
-    remaining: rateLimit.remaining,
-    resetTime: rateLimit.resetTime,
     ...(coverLetter !== undefined ? { coverLetter } : {}),
     ...(replyText !== undefined ? { replyText } : {}),
   };
 
-  const responseBytes = Buffer.byteLength(
-    JSON.stringify(responseBody),
-    "utf8"
-  );
-  if (responseBytes > getTailorResponseMaxBytes()) {
-    return {
-      ok: false,
-      error: "Tailor response exceeds configured size limit",
-      status: 422,
-    };
-  }
-
-  return { ok: true, body: responseBody };
+  return { ok: true, body };
 }

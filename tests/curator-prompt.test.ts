@@ -8,6 +8,7 @@ import {
   resolveFetchedCuratorPrompt,
   CURATOR_LANGFUSE_PROMPT_NAME,
   FLEXIBLE_PIVOT_LANGFUSE_PROMPT_NAME,
+  strictPromptRequestsReplyWrapper,
 } from "../app/api/lib/curator-prompt";
 
 describe("curator-prompt", () => {
@@ -68,6 +69,103 @@ describe("curator-prompt", () => {
   it("compileCuratorPrompt fails closed when placeholder is missing", () => {
     const compiled = compileCuratorPrompt("no placeholder here", { name: "X" });
     assert.equal(compiled.ok, false);
+  });
+
+  it("strictPromptRequestsReplyWrapper rejects a bare-CV Langfuse prompt", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Emit curated JSON only. {{MASTER_CV_JSON}}"
+      ),
+      false
+    );
+    assert.equal(
+      strictPromptRequestsReplyWrapper(getCuratorPromptFallbackText()),
+      true
+    );
+  });
+
+  it("strictPromptRequestsReplyWrapper rejects field names that are only substrings", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Mention curated_cv and reply_text in the narrative. Emit curated JSON only."
+      ),
+      false
+    );
+  });
+
+  it("strictPromptRequestsReplyWrapper rejects a prompt that prohibits reply_text", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        'Return JSON with "curated_cv": {} and "reply_text": "". Never emit reply_text.'
+      ),
+      false
+    );
+  });
+
+  it("strictPromptRequestsReplyWrapper rejects a wrapper-shaped prohibition", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Never return the wrapper { curated_cv, reply_text }; emit curated_cv only."
+      ),
+      false
+    );
+  });
+
+  it("strictPromptRequestsReplyWrapper keeps a prompt that forbids omitting reply_text", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        'Never omit reply_text. Return { "curated_cv": {}, "reply_text": "" }'
+      ),
+      true
+    );
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Never drop the { curated_cv, reply_text } object"
+      ),
+      true
+    );
+  });
+
+  it("strictPromptRequestsReplyWrapper rejects a punctuated prohibition", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Never, under any circumstances, return the wrapper { curated_cv, reply_text }"
+      ),
+      false
+    );
+  });
+
+  it("strictPromptRequestsReplyWrapper keeps a later sentence that requests the wrapper", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Do not wrap the JSON in markdown fences. Return { curated_cv, reply_text } only."
+      ),
+      true
+    );
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Do not write the audit into the response. Emit { curated_cv, reply_text }."
+      ),
+      true
+    );
+  });
+
+  it("strictPromptRequestsReplyWrapper keeps a negated without-reply_text instruction", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        "Never return the CV without reply_text. Return { curated_cv, reply_text }."
+      ),
+      true
+    );
+  });
+
+  it("strictPromptRequestsReplyWrapper rejects an unnegated without-reply_text instruction", () => {
+    assert.equal(
+      strictPromptRequestsReplyWrapper(
+        'Return { "curated_cv": {}, "reply_text": "" } without reply_text.'
+      ),
+      false
+    );
   });
 
   it("has flexible pivot Langfuse prompt name", () => {
