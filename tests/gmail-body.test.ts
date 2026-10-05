@@ -186,6 +186,14 @@ describe("htmlToText", () => {
     assert.doesNotMatch(text, /TRACKING/);
   });
 
+  it("does not stack-overflow on nested unclosed hidden openers before the JD", () => {
+    const nested = '<div style="display:none">'.repeat(8000);
+    assert.doesNotThrow(() => {
+      const text = htmlToText(`${nested}<p>Need a GM</p>`);
+      assert.match(text, /Need a GM/);
+    });
+  });
+
   it("does not recover a block tag from an unclosed hidden script", () => {
     const text = htmlToText(
       '<script style="display:none">var x="<p>SECRET</p>"'

@@ -170,6 +170,10 @@ function recoverUnclosedHiddenTail(
       continue;
     }
     if (!isClose && RECOVERY_BLOCK_TAGS.has(name)) {
+      // Nested unclosed hidden openers must not restart recovery (stack DoS).
+      if (isHiddenOpeningTag(raw)) {
+        continue;
+      }
       return tail.slice(index);
     }
   }
