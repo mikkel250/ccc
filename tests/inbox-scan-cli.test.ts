@@ -1,6 +1,17 @@
-import { describe, it } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { inboxScanCliExitCode } from "../scripts/inbox-scan";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { ServiceError } from "../app/api/lib/errors";
+import {
+  __resetMasterCvCacheForTest,
+  requireMasterCv,
+} from "../app/api/lib/master-cv";
+import { inboxScanCliExitCode, runInboxScanCli } from "../scripts/inbox-scan";
+
+const validCv = JSON.parse(
+  readFileSync(join(process.cwd(), "tests/fixtures/curated-cv-valid.json"), "utf8")
+) as unknown;
 
 describe("inboxScanCliExitCode", () => {
   it("is 0 when every item succeeded or was skipped", () => {
@@ -39,5 +50,58 @@ describe("inboxScanCliExitCode", () => {
       }),
       1
     );
+  });
+});
+
+describe("runInboxScanCli master CV preload", () => {
+  const saved: Record<string, string | undefined> = {};
+  const keys = ["MASTER_CV_JSON", "MASTER_CV_PATH", "GMAIL_REFRESH_TOKEN"] as const;
+
+  beforeEach(() => {
+    __resetMasterCvCacheForTest();
+    for (const key of keys) {
+      saved[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    __resetMasterCvCacheForTest();
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  });
+
+  it("fills the cache before scan so requireMasterCv can serve the master", async () => {
+    process.env.MASTER_CV_JSON = JSON.stringify(validCv);
+    await assert.rejects(
+      () => runInboxScanCli(),
+      (error: unknown) => {
+        assert.ok(error instanceof ServiceError);
+        assert.match(error.message, /GMAIL_REFRESH_TOKEN/);
+        return true;
+      }
+    );
+    assert.deepEqual(requireMasterCv(), validCv);
+  });
+
+  it("returns the master CV error and does not scan when preload fails", async () => {
+    let fetchCalls = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => {
+      fetchCalls += 1;
+      throw new Error("inbox scan test must not call fetch");
+    };
+    try {
+      const result = await runInboxScanCli();
+      assert.deepEqual(result, {
+        ok: false,
+        error: "Master CV configuration is unavailable",
+      });
+      assert.equal(fetchCalls, 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

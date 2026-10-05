@@ -1,5 +1,7 @@
 /**
  * Scan labeled recruiter mail, tailor in-process, create or reuse a thread draft (R13).
+ * This process does not run Next.js instrumentation, so it fills the master CV cache
+ * before any tailor call. `requireMasterCv` only reads that cache.
  *
  * Usage: npm run inbox:scan
  */
@@ -7,6 +9,7 @@ import { config as loadDotenv } from "dotenv";
 import { pathToFileURL } from "node:url";
 import { scanInbox } from "../app/api/lib/inbox-scan";
 import type { InboxScanItem } from "../app/api/lib/inbox-scan";
+import { preloadMasterCv } from "../app/api/lib/master-cv";
 
 loadDotenv();
 
@@ -37,6 +40,10 @@ export function inboxScanCliExitCode(
 export async function runInboxScanCli(): Promise<
   { ok: true; lines: string[]; items: InboxScanItem[] } | { ok: false; error: string }
 > {
+  const loaded = await preloadMasterCv();
+  if (!loaded.ok) {
+    return { ok: false, error: loaded.error };
+  }
   const result = await scanInbox();
   if (!result.ok) {
     return { ok: false, error: result.error };

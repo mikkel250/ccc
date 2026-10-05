@@ -154,7 +154,7 @@ Requires a Google Cloud Desktop OAuth client with the Gmail API enabled. Tokens 
 ```bash
 npm run gmail:auth   # loopback consent; prints GMAIL_REFRESH_TOKEN=
 npm run gmail:list   # lists { id, threadId } for GMAIL_RECRUITER_LABEL
-npm run inbox:scan   # tailor labeled mail in-process; create or reuse a Gmail reply draft
+npm run inbox:scan   # preload MASTER_CV_* in this process, then tailor labeled mail; create or reuse a Gmail reply draft
 ```
 
 Railway (M8.6): add a **second service** from this repo, set its config-as-code path to `railway.inbox-scan.toml`, and copy the same secrets (`GMAIL_*`, `MASTER_CV_*`, LLM keys, Upstash). That service runs `npm run inbox:scan` at 05:00 UTC and must exit. Do not put `cronSchedule` on the always-on API `railway.toml`.
