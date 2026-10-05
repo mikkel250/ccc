@@ -99,8 +99,8 @@ Fast, no server, no API keys:
 npm test
 npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 npm run lint              # eslint; production `any` and Jest/Vitest/Sinon imports are errors
-# Optional live Upstash claim/processed (not CI):
-RUN_INBOX_REDIS_TESTS=true npm test
+# Optional live Upstash claim/processed (not CI; export Upstash REST creds — npm test does not load .env):
+RUN_INBOX_REDIS_TESTS=1 UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... npm test
 ```
 
 

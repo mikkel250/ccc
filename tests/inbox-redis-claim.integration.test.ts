@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { getEnvBoolean } from "../lib/env";
 import { getRedisClient, resetRedisClientForTest } from "../app/api/lib/redis";
 import {
   __injectInboxKvForTest,
@@ -10,27 +11,42 @@ import {
   markInboxProcessed,
 } from "../app/api/lib/inbox-processed-store";
 
-const runLive = process.env.RUN_INBOX_REDIS_TESTS === "true";
+const runLive =
+  getEnvBoolean("RUN_INBOX_REDIS_TESTS", false) &&
+  Boolean(process.env.UPSTASH_REDIS_REST_URL) &&
+  Boolean(process.env.UPSTASH_REDIS_REST_TOKEN);
 
 describe("inbox Redis claim integration", { concurrency: 1 }, () => {
   async function withLivePrefix(
     run: (messageId: string) => Promise<void>
   ): Promise<void> {
-    const previous = process.env.INBOX_REDIS_PREFIX;
+    const previousPrefix = process.env.INBOX_REDIS_PREFIX;
+    const previousProcessedTtl = process.env.INBOX_PROCESSED_TTL_SECONDS;
     const prefix = `inbox-it-${randomUUID().replace(/-/g, "")}`;
     const messageId = `msg-${randomUUID().replace(/-/g, "")}`;
     process.env.INBOX_REDIS_PREFIX = prefix;
+    // Live keys must expire if cleanup is interrupted (default processed TTL is 0).
+    process.env.INBOX_PROCESSED_TTL_SECONDS = "60";
     __injectInboxKvForTest(null);
     try {
       await run(messageId);
     } finally {
-      await getRedisClient()
-        .del(inboxClaimKey(messageId), inboxProcessedKey(messageId))
-        .catch(() => undefined);
+      try {
+        await getRedisClient()
+          .del(inboxClaimKey(messageId), inboxProcessedKey(messageId))
+          .catch(() => undefined);
+      } catch {
+        // Missing Upstash config must not mask the test assertion error.
+      }
       __injectInboxKvForTest(null);
       resetRedisClientForTest();
-      if (previous === undefined) delete process.env.INBOX_REDIS_PREFIX;
-      else process.env.INBOX_REDIS_PREFIX = previous;
+      if (previousPrefix === undefined) delete process.env.INBOX_REDIS_PREFIX;
+      else process.env.INBOX_REDIS_PREFIX = previousPrefix;
+      if (previousProcessedTtl === undefined) {
+        delete process.env.INBOX_PROCESSED_TTL_SECONDS;
+      } else {
+        process.env.INBOX_PROCESSED_TTL_SECONDS = previousProcessedTtl;
+      }
     }
   }
 
