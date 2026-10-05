@@ -66,6 +66,7 @@ function mockFlexiblePipelineSuccess() {
   mock.method(tailorCvDeps, "isLlmServiceError", () => false);
 }
 
+/** Stub the pipeline dependencies with a caller-supplied strict curator response. */
 function mockStrictPipeline(chatContent: string) {
   mock.method(tailorCvDeps, "requireMasterCv", () => FIXTURE_CURATED);
   mock.method(tailorCvDeps, "getCuratorPrompt", async () => ({
@@ -93,6 +94,7 @@ function mockStrictPipeline(chatContent: string) {
   mock.method(tailorCvDeps, "isLlmServiceError", () => false);
 }
 
+/** Build the default strict tailoring request body for a test session. */
 function strictJdBody(sessionId: string): string {
   return JSON.stringify({
     jobDescription: "We need a senior engineer with React experience.",
@@ -147,6 +149,23 @@ describe("flexible curation — cover letter + wrapper response", () => {
     }
   });
 
+  it("trims replyText on strict success", async () => {
+    mockStrictPipeline(
+      JSON.stringify({
+        curated_cv: FIXTURE_CURATED,
+        reply_text: "  Thanks for reaching out.  ",
+      })
+    );
+    const result = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(strictJdBody("strict-trim-reply"), XFF)
+    );
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.body.replyText, "Thanks for reaching out.");
+    }
+  });
+
   it("returns 422 when strict curator output is missing reply_text", async () => {
     mockStrictPipeline(JSON.stringify({ curated_cv: FIXTURE_CURATED }));
     const result = await buildTailorResponse(
@@ -173,6 +192,7 @@ describe("flexible curation — cover letter + wrapper response", () => {
     if (!result.ok) {
       assert.equal(result.status, 422);
       assert.match(result.error, /reply_text/);
+      assert.equal("body" in result, false);
     }
   });
 
@@ -188,6 +208,7 @@ describe("flexible curation — cover letter + wrapper response", () => {
     if (!result.ok) {
       assert.equal(result.status, 422);
       assert.match(result.error, /reply_text/);
+      assert.equal("body" in result, false);
     }
   });
 
