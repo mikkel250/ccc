@@ -151,42 +151,47 @@ async function postTokenRequest(
   requireRefreshToken: boolean
 ): Promise<GmailOauthResult<GmailTokenSet>> {
   const deadline = gmailAbortAfter(getGmailHttpTimeoutMs());
-  let response: Response;
   try {
-    response = await fetchImpl(tokenUrl, {
-      method: "POST",
-      redirect: "error",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-      signal: deadline.signal,
-    });
-  } catch {
-    return { ok: false, error: "Gmail token request failed" };
+    let response: Response;
+    try {
+      response = await fetchImpl(tokenUrl, {
+        method: "POST",
+        redirect: "error",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+        signal: deadline.signal,
+      });
+    } catch {
+      return { ok: false, error: "Gmail token request failed" };
+    }
+    if (!response.ok) {
+      return { ok: false, error: `Gmail token HTTP ${response.status}` };
+    }
+    let parsed: unknown;
+    try {
+      parsed = await response.json();
+    } catch {
+      if (deadline.signal.aborted) {
+        return { ok: false, error: "Gmail token request failed" };
+      }
+      return { ok: false, error: "Gmail token response was not valid JSON" };
+    }
+    const token = parseTokenPayload(parsed, requireRefreshToken);
+    if (!token.ok) {
+      return token;
+    }
+    return {
+      ok: true,
+      data: {
+        accessToken: token.data.accessToken,
+        ...(token.data.refreshToken !== undefined
+          ? { refreshToken: token.data.refreshToken }
+          : {}),
+      },
+    };
   } finally {
     deadline.cancel();
   }
-  if (!response.ok) {
-    return { ok: false, error: `Gmail token HTTP ${response.status}` };
-  }
-  let parsed: unknown;
-  try {
-    parsed = await response.json();
-  } catch {
-    return { ok: false, error: "Gmail token response was not valid JSON" };
-  }
-  const token = parseTokenPayload(parsed, requireRefreshToken);
-  if (!token.ok) {
-    return token;
-  }
-  return {
-    ok: true,
-    data: {
-      accessToken: token.data.accessToken,
-      ...(token.data.refreshToken !== undefined
-        ? { refreshToken: token.data.refreshToken }
-        : {}),
-    },
-  };
 }
 
 function cacheAccessToken(
@@ -261,46 +266,51 @@ export async function refreshGmailAccessToken(params?: {
   const fetchImpl = params?.fetchImpl ?? fetch;
   const tokenUrl = getGmailOauthTokenUrl();
   const deadline = gmailAbortAfter(getGmailHttpTimeoutMs());
-  let response: Response;
   try {
-    response = await fetchImpl(tokenUrl, {
-      method: "POST",
-      redirect: "error",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-      signal: deadline.signal,
-    });
-  } catch {
-    return { ok: false, error: "Gmail token request failed" };
+    let response: Response;
+    try {
+      response = await fetchImpl(tokenUrl, {
+        method: "POST",
+        redirect: "error",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+        signal: deadline.signal,
+      });
+    } catch {
+      return { ok: false, error: "Gmail token request failed" };
+    }
+    if (!response.ok) {
+      return { ok: false, error: `Gmail token HTTP ${response.status}` };
+    }
+    let parsed: unknown;
+    try {
+      parsed = await response.json();
+    } catch {
+      if (deadline.signal.aborted) {
+        return { ok: false, error: "Gmail token request failed" };
+      }
+      return { ok: false, error: "Gmail token response was not valid JSON" };
+    }
+    const token = parseTokenPayload(parsed, false);
+    if (!token.ok) {
+      return token;
+    }
+    cacheAccessToken(
+      refreshToken,
+      token.data.accessToken,
+      token.data.expiresInSeconds,
+      nowMs
+    );
+    return {
+      ok: true,
+      data: {
+        accessToken: token.data.accessToken,
+        ...(token.data.refreshToken !== undefined
+          ? { refreshToken: token.data.refreshToken }
+          : {}),
+      },
+    };
   } finally {
     deadline.cancel();
   }
-  if (!response.ok) {
-    return { ok: false, error: `Gmail token HTTP ${response.status}` };
-  }
-  let parsed: unknown;
-  try {
-    parsed = await response.json();
-  } catch {
-    return { ok: false, error: "Gmail token response was not valid JSON" };
-  }
-  const token = parseTokenPayload(parsed, false);
-  if (!token.ok) {
-    return token;
-  }
-  cacheAccessToken(
-    refreshToken,
-    token.data.accessToken,
-    token.data.expiresInSeconds,
-    nowMs
-  );
-  return {
-    ok: true,
-    data: {
-      accessToken: token.data.accessToken,
-      ...(token.data.refreshToken !== undefined
-        ? { refreshToken: token.data.refreshToken }
-        : {}),
-    },
-  };
 }

@@ -90,33 +90,38 @@ export async function gmailFetchJson(params: {
     params.signal === undefined
       ? deadline.signal
       : combineAbortSignals(params.signal, deadline.signal);
-  let response: Response;
   try {
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${params.accessToken}`,
-    };
-    if (params.jsonBody !== undefined) {
-      headers["Content-Type"] = "application/json";
+    let response: Response;
+    try {
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${params.accessToken}`,
+      };
+      if (params.jsonBody !== undefined) {
+        headers["Content-Type"] = "application/json";
+      }
+      response = await params.fetchImpl(params.url, {
+        method,
+        headers,
+        signal,
+        ...(params.jsonBody !== undefined
+          ? { body: JSON.stringify(params.jsonBody) }
+          : {}),
+      });
+    } catch {
+      return { ok: false, error: "Gmail API request failed" };
     }
-    response = await params.fetchImpl(params.url, {
-      method,
-      headers,
-      signal,
-      ...(params.jsonBody !== undefined
-        ? { body: JSON.stringify(params.jsonBody) }
-        : {}),
-    });
-  } catch {
-    return { ok: false, error: "Gmail API request failed" };
+    if (!response.ok) {
+      return { ok: false, error: `Gmail API HTTP ${response.status}` };
+    }
+    try {
+      return { ok: true, body: await response.json() };
+    } catch {
+      if (deadline.signal.aborted || params.signal?.aborted) {
+        return { ok: false, error: "Gmail API request failed" };
+      }
+      return { ok: false, error: "Gmail API response was not valid JSON" };
+    }
   } finally {
     deadline.cancel();
-  }
-  if (!response.ok) {
-    return { ok: false, error: `Gmail API HTTP ${response.status}` };
-  }
-  try {
-    return { ok: true, body: await response.json() };
-  } catch {
-    return { ok: false, error: "Gmail API response was not valid JSON" };
   }
 }

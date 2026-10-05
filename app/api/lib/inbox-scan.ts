@@ -115,11 +115,14 @@ async function scanOneMessage(params: {
         return { messageId, status: "skipped-claimed" };
       }
       const marked = await markInboxProcessed(messageId, claimed.token);
-      return {
-        messageId,
-        status: "reused-draft",
-        ...(marked.ok ? {} : { error: marked.error }),
-      };
+      if (!marked.ok) {
+        return {
+          messageId,
+          status: "draft-failed",
+          error: marked.error,
+        };
+      }
+      return { messageId, status: "reused-draft" };
     }
     const tailored = await tailorLabeledMessage(deps, {
       messageId,
@@ -179,10 +182,16 @@ async function scanOneMessage(params: {
       };
     }
     const marked = await markInboxProcessed(messageId, tailored.claimToken);
+    if (!marked.ok) {
+      return {
+        messageId,
+        status: "draft-failed",
+        error: marked.error,
+      };
+    }
     return {
       messageId,
       status: drafted.status === "reused" ? "reused-draft" : "drafted",
-      ...(marked.ok ? {} : { error: marked.error }),
     };
   } catch (error: unknown) {
     if (claimToken) {

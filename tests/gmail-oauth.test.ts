@@ -353,4 +353,28 @@ describe("gmail-oauth", () => {
       assert.match(result.error, /token request failed/);
     }
   });
+
+  it("fails closed when the token body stalls after headers", { timeout: 500 }, async () => {
+    process.env.GMAIL_HTTP_TIMEOUT_MS = "30";
+    const result = await refreshGmailAccessToken({
+      fetchImpl: async (_input, init) =>
+        Object.assign(new Response(null, { status: 200 }), {
+          json: () =>
+            new Promise((_resolve, reject) => {
+              const signal = init?.signal;
+              if (signal?.aborted) {
+                reject(new DOMException("Aborted", "AbortError"));
+                return;
+              }
+              signal?.addEventListener("abort", () => {
+                reject(new DOMException("Aborted", "AbortError"));
+              });
+            }),
+        }),
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /token request failed/);
+    }
+  });
 });

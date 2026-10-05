@@ -243,6 +243,27 @@ describe("scanInbox", () => {
     assert.equal(memory.store.has(inboxProcessedKey("m1")), true);
   });
 
+  it("does not report drafted when the processed mark fails", async () => {
+    memory.markProcessedIfOwned = async () => false;
+    let draftCreates = 0;
+    const result = await scanInbox({
+      fetchImpl: gmailFetch({
+        onDraftCreate: () => {
+          draftCreates += 1;
+        },
+      }),
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.items[0]?.status, "draft-failed");
+      assert.match(result.items[0]?.error ?? "", /claim/i);
+    }
+    assert.equal(draftCreates, 1);
+    assert.equal(memory.store.has(inboxProcessedKey("m1")), false);
+  });
+
   it("does not create a draft when claim ownership is lost immediately beforehand", async () => {
     let renewals = 0;
     memory.expireIfOwned = async (key, value) => {

@@ -74,4 +74,29 @@ describe("gmailFetchJson", () => {
       assert.match(result.error, /Gmail API request failed/);
     }
   });
+
+  it("fails closed when the response body stalls after headers", { timeout: 500 }, async () => {
+    const result = await gmailFetchJson({
+      url: "https://gmail.example.test/gmail/v1/users/me/labels",
+      accessToken: "token",
+      fetchImpl: async (_input, init) =>
+        Object.assign(new Response(null, { status: 200 }), {
+          json: () =>
+            new Promise((_resolve, reject) => {
+              const signal = init?.signal;
+              if (signal?.aborted) {
+                reject(new DOMException("Aborted", "AbortError"));
+                return;
+              }
+              signal?.addEventListener("abort", () => {
+                reject(new DOMException("Aborted", "AbortError"));
+              });
+            }),
+        }),
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /Gmail API request failed/);
+    }
+  });
 });
