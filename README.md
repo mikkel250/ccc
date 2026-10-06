@@ -95,7 +95,7 @@ See [`docs/test/TESTING.md`](docs/test/TESTING.md).
 
 ## Deployment (Railway)
 
-Default v1 host for **sync** tailor and the serial inbox scan (`npm run inbox:scan`). Vercel Hobby fluid functions cap at 300s, so a multi-minute call or a multi-message scan can still time out there. Deferred batch polling is cron-friendly and could use Vercel later without moving sync off Railway. Local `npm run inbox:scan` / `npm run dev` need no hosting until M8.6 cron exists.
+Default v1 host for **sync** tailor and the serial inbox scan (`npm run inbox:scan`). Vercel Hobby fluid functions cap at 300s, so a multi-minute call or a multi-message scan can still time out there. Deferred batch polling is cron-friendly and could use Vercel later without moving sync off Railway. Local `npm run inbox:scan` / `npm run dev` need no hosting. Unattended runs use `railway.inbox-scan.toml`.
 
 - Config: [`railway.toml`](railway.toml), [`.env.example`](.env.example).
 - Rationale: [`docs/arch/README.md#deployment-hosting-railway-vs-vercel`](docs/arch/README.md#deployment-hosting-railway-vs-vercel)

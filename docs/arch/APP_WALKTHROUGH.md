@@ -76,7 +76,7 @@ Upstash Redis dual sliding windows (`RATE_LIMIT_MAX` + `RATE_LIMIT_SECRET_MAX`).
 |------|------|----------|
 | Master load | `app/api/lib/master-cv.ts` | `requireMasterCv()` |
 
-Resolves `MASTER_CV_JSON` (preferred) or `MASTER_CV_PATH` (non-world-readable), schema-validates with Ajv. Preloaded asynchronously at process startup (`preloadMasterCv`); request path serves the cache only. Failures → **503**. Markdown `knowledge-base/` is **not** the tailor source.
+Resolves `MASTER_CV_JSON` (preferred) or `MASTER_CV_PATH` (non-world-readable), schema-validates with Ajv. Preloaded asynchronously at process startup (`preloadMasterCv`); request path serves the cache only. `npm run inbox:scan` is a separate process and preloads the same cache before `scanInbox` (a failed preload exits the job; it does not tailor). Failures → **503**. Markdown `knowledge-base/` is **not** the tailor source.
 
 ### 5. Curator system prompt
 
@@ -188,10 +188,10 @@ Prompt files cloned from the portfolio chat bot remain for a hypothetical future
 
 ## Inbox runtime (not HTTP)
 
-Inbox scan is **not** a client of `POST /api/tailor-cv`. `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a Gmail payload, then calls `runTailorCore` in-process (strict `cv` + `replyText`, no Bearer, no public rate-limit buckets). `npm run inbox:scan` and a planned Railway cron (M8.6) invoke the same library code — see [Pipeline enhancements — inbox scan runtime](./PIPELINE_ENHANCEMENTS.md#inbox-scan-runtime). Deferred native LLM batch APIs use submit/poll/retrieve (cron-friendly); inbox and HTTP tailor use **sync** `chat()` today — see [Deployment hosting](./README.md#deployment-hosting-railway-vs-vercel).
+Inbox scan is **not** a client of `POST /api/tailor-cv`. `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a Gmail payload, then calls `runTailorCore` in-process (strict `cv` + `replyText`, no Bearer, no public rate-limit buckets). `npm run inbox:scan` and Railway cron (`railway.inbox-scan.toml`) invoke the same library code — see [Pipeline enhancements — inbox scan runtime](./PIPELINE_ENHANCEMENTS.md#inbox-scan-runtime). Deferred native LLM batch APIs use submit/poll/retrieve (cron-friendly); inbox and HTTP tailor use **sync** `chat()` today — see [Deployment hosting](./README.md#deployment-hosting-railway-vs-vercel).
 
 ---
 
 ## Planned but not implemented
 
-See [PIPELINE_ENHANCEMENTS](./PIPELINE_ENHANCEMENTS.md) (exploratory two-pass/critic; [deferred LLM batch APIs](./PIPELINE_ENHANCEMENTS.md#native-llm-batch-apis-deferred)) and [LEARNING_SYSTEM](./LEARNING_SYSTEM.md) (SQLite feedback). Railway cron for `inbox:scan` (M8.6) remains the unattended schedule. Still deferred: selective RAG.
+See [PIPELINE_ENHANCEMENTS](./PIPELINE_ENHANCEMENTS.md) (exploratory two-pass/critic; [deferred LLM batch APIs](./PIPELINE_ENHANCEMENTS.md#native-llm-batch-apis-deferred)) and [LEARNING_SYSTEM](./LEARNING_SYSTEM.md) (SQLite feedback). Still deferred: selective RAG. Unattended inbox scan is the Railway cron service in `railway.inbox-scan.toml`.

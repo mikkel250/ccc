@@ -47,7 +47,7 @@ Operator loop (`npm run smoke:parity` / `--parity`) that fills **one** `SMOKE_PA
 The recruiter-facing email body returned on a successful `strict` tailor. Curator JSON key `reply_text`; HTTP and in-process result field `replyText`. Grounded in the Master CV with the same no-invention rules as the Curated CV. The inbox worker copies it into the Gmail draft body. Distinct from flexible-mode `coverLetter`.
 
 ### Inbox scan
-On-demand job in this repo (`npm run inbox:scan`): list Gmail messages with the recruiter label, skip claimed or processed ids, strict-tailor the body in-process via `runTailorCore`, then create a thread reply draft with reply text and the CV `.docx`. Railway cron (M8.6) is meant to invoke the **same implementation** — not a separate service and not HTTP through `POST /api/tailor-cv`.
+On-demand job in this repo (`npm run inbox:scan`): list Gmail messages with the recruiter label, skip claimed or processed ids, strict-tailor the body in-process via `runTailorCore`, then create a thread reply draft with reply text and the CV `.docx`. Railway cron (`railway.inbox-scan.toml`) invokes the **same implementation** — not a separate service and not HTTP through `POST /api/tailor-cv`.
 
 ### LLM batch dispatch
 Deferred cost path: provider native batch APIs (Anthropic Message Batches, DeepSeek batch). Flow is **submit** (get `batch_id`) → **poll** status on a schedule (short HTTP calls; model may finish minutes later) → **retrieve** results — not one long blocking wait on the model. Distinct from inbox tailor (sync `chat()`). Needs durable state between poll ticks; poller could run on Vercel cron or Railway cron when built. Sync tailor and the serial scan are why v1 defaults to Railway: Vercel Hobby fluid functions cap at 300s.

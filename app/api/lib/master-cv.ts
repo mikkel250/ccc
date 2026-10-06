@@ -2,8 +2,9 @@
  * Load the canonical Master CV from env (MASTER_CV_JSON preferred, else MASTER_CV_PATH).
  * Fail closed on missing/invalid master; enforce non-world-readable path perms (R1a).
  *
- * Production: `preloadMasterCv()` runs at server startup (async fs). Request path
- * `requireMasterCv()` serves the preloaded cache only — no sync disk I/O.
+ * Production: `preloadMasterCv()` runs at server startup (async fs) and at
+ * `inbox:scan` process start. Request path `requireMasterCv()` serves the
+ * preloaded cache only — no sync disk I/O.
  * Tests may call `loadMasterCv()` which can resolve + cache synchronously.
  *
  * Cache lives on `globalThis` so Next.js instrumentation and the route bundle
