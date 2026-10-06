@@ -7,8 +7,7 @@
  */
 import { config as loadDotenv } from "dotenv";
 import { pathToFileURL } from "node:url";
-import { scanInbox } from "../app/api/lib/inbox-scan";
-import type { InboxScanItem } from "../app/api/lib/inbox-scan";
+import { scanInbox, type InboxScanItem, type InboxScanResult } from "../app/api/lib/inbox-scan";
 import { preloadMasterCv } from "../app/api/lib/master-cv";
 
 loadDotenv();
@@ -40,29 +39,30 @@ export function inboxScanCliExitCode(
   return 0;
 }
 
-export async function runInboxScanCli(): Promise<
+export async function runInboxScanCli(options?: {
+  scan?: () => Promise<InboxScanResult>;
+}): Promise<
   { ok: true; lines: string[]; items: InboxScanItem[] } | { ok: false; error: string }
 > {
   const loaded = await preloadMasterCv();
   if (!loaded.ok) {
     return { ok: false, error: loaded.error };
   }
-  const result = await scanInbox();
+  const result = await (options?.scan ?? scanInbox)();
   if (!result.ok) {
     return { ok: false, error: result.error };
   }
   return { ok: true, lines: result.items.map(formatScanItemLine), items: result.items };
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const result = await runInboxScanCli();
   if (!result.ok) {
     console.error(result.error);
-    process.exitCode = 1;
-    return;
-  }
-  for (const line of result.lines) {
-    console.log(line);
+  } else {
+    for (const line of result.lines) {
+      console.log(line);
+    }
   }
   process.exitCode = inboxScanCliExitCode(result);
 }
