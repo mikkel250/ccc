@@ -220,6 +220,7 @@ describe("parseParityStatusJson", () => {
     });
     assert.equal(status.cells["anthropic/sonnet"]?.ok, true);
     assert.equal(status.cells["deepseek/deepseek-v4-pro"]?.ok, false);
+    assert.deepEqual(status.pending, ["deepseek/deepseek-v4-pro"]);
   });
 
   it("rejects non-object roots", () => {
@@ -245,6 +246,28 @@ describe("parseParityStatusJson", () => {
       () =>
         parseParityStatusJson({
           cells: { "anthropic/sonnet": { ok: "yes" } },
+        }),
+      /Invalid parity-status/
+    );
+  });
+
+  it("rejects a non-array pending field", () => {
+    assert.throws(
+      () =>
+        parseParityStatusJson({
+          cells: { "anthropic/sonnet": { ok: true } },
+          pending: "deepseek/deepseek-v4-pro",
+        }),
+      /Invalid parity-status/
+    );
+  });
+
+  it("rejects non-string pending entries", () => {
+    assert.throws(
+      () =>
+        parseParityStatusJson({
+          cells: { "anthropic/sonnet": { ok: true } },
+          pending: ["deepseek/deepseek-v4-pro", 1],
         }),
       /Invalid parity-status/
     );
