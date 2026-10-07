@@ -900,6 +900,45 @@ describe("runTailorCore — in-process curator path", () => {
     }
   });
 
+  it("returns generic 503 when chat fails after the abort signal fires", async () => {
+    const abortController = new AbortController();
+    const chatSpy = mock.method(tailorCvDeps, "chat", async () => {
+      abortController.abort();
+      throw new Error("The operation was aborted");
+    });
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+      signal: abortController.signal,
+    });
+
+    assert.equal(chatSpy.mock.callCount(), 1);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "AI service error. Please try again.");
+      assert.doesNotMatch(result.error, /aborted/i);
+    }
+  });
+
+  it("passes ServiceError messages from chat through verbatim as 503", async () => {
+    mock.method(tailorCvDeps, "chat", async () => {
+      throw new ServiceError("Master CV is not loaded.");
+    });
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "Master CV is not loaded.");
+    }
+  });
+
   it("echoes namespaced TAILOR_MODEL instead of the provider model id", async () => {
     const previous = process.env.TAILOR_MODEL;
     process.env.TAILOR_MODEL = "anthropic/sonnet";

@@ -7,15 +7,15 @@ import {
   claimInboxThread,
   inboxClaimKey,
   inboxProcessedKey,
+  INBOX_CLAIM_TOKEN_REQUIRED_ERROR,
+  INBOX_REDIS_TIMEOUT_ERROR,
+  INBOX_REDIS_UNAVAILABLE_ERROR,
   inboxThreadClaimKey,
   isInboxProcessed,
   markInboxProcessed,
   parseInboxMessageId,
   releaseInboxClaim,
   renewInboxClaim,
-  INBOX_CLAIM_TOKEN_REQUIRED_ERROR,
-  INBOX_REDIS_TIMEOUT_ERROR,
-  INBOX_REDIS_UNAVAILABLE_ERROR,
   type InboxKv,
 } from "../app/api/lib/inbox-processed-store";
 
@@ -111,6 +111,18 @@ describe("parseInboxMessageId", () => {
   it("accepts a Gmail-shaped id", () => {
     const result = parseInboxMessageId(ID);
     assert.equal(result.ok, true);
+  });
+
+  it("rejects ids longer than INBOX_MESSAGE_ID_MAX_CHARS", () => {
+    const saved = process.env.INBOX_MESSAGE_ID_MAX_CHARS;
+    process.env.INBOX_MESSAGE_ID_MAX_CHARS = "8";
+    const tooLong = parseInboxMessageId("123456789");
+    if (saved === undefined) delete process.env.INBOX_MESSAGE_ID_MAX_CHARS;
+    else process.env.INBOX_MESSAGE_ID_MAX_CHARS = saved;
+    assert.equal(tooLong.ok, false);
+    if (!tooLong.ok) {
+      assert.match(tooLong.error, /max length/i);
+    }
   });
 });
 
@@ -524,6 +536,15 @@ describe("inbox processed store", () => {
     const result = await renewInboxClaim(ID, claimed.token);
     assert.deepEqual(result, { ok: false, error: INBOX_REDIS_UNAVAILABLE_ERROR });
     assert.equal(memory.store.get(inboxClaimKey(ID)), claimed.token);
+  });
+
+  it("rejects a processed mark with a missing token", async () => {
+    const missing = await markInboxProcessed(ID, "");
+    assert.deepEqual(missing, {
+      ok: false,
+      error: INBOX_CLAIM_TOKEN_REQUIRED_ERROR,
+    });
+    assert.equal(memory.store.size, 0);
   });
 
   it("lets only one concurrent thread claim win", async () => {
