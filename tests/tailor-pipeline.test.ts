@@ -7,7 +7,10 @@ import { tailorCvDeps } from "../app/api/lib/tailor-cv-deps";
 import { isLlmServiceError } from "../app/api/lib/llm";
 import { RateLimitError, ServiceError } from "../app/api/lib/errors";
 import { resetRedisClientForTest } from "../app/api/lib/redis";
-import { createFailingMock } from "../tests/helpers/rate-limit-mock";
+import {
+  createFailingMock,
+  createSlidingWindowMock,
+} from "../tests/helpers/rate-limit-mock";
 import { BUILDER_VERSION } from "../app/api/lib/json-docx-builder";
 import { getTailorJdMaxChars } from "../app/api/lib/cv-schema";
 import {
@@ -18,6 +21,7 @@ import {
   getRateLimitConfig,
   hashTailorApiKeyForRateLimit,
   __injectRatelimitForTest,
+  __injectSecretRatelimitForTest,
 } from "../app/api/lib/rate-limit";
 import {
   buildTailorResponse,
@@ -141,6 +145,44 @@ describe("buildTailorResponse — pipeline orchestration", () => {
     if (!blocked.ok) assert.equal(blocked.status, 429);
   });
 
+  it("does not drain the configured-key secret bucket on failed auth", async () => {
+    const config = getRateLimitConfig();
+    __injectRatelimitForTest(
+      createSlidingWindowMock({
+        maxRequests: 100,
+        windowMs: config.windowMs,
+      })
+    );
+    __injectSecretRatelimitForTest(
+      createSlidingWindowMock({
+        maxRequests: config.secretMaxRequests,
+        windowMs: config.windowMs,
+      })
+    );
+    mockPipelineSuccess();
+
+    for (let i = 0; i < config.secretMaxRequests; i++) {
+      const failed = await buildTailorResponse(
+        tailorCvDeps,
+        buildPostRequest(VALID_BODY, {
+          "x-forwarded-for": `203.0.113.${10 + i}`,
+          authorization: "Bearer wrong-key",
+        })
+      );
+      assert.equal(failed.ok, false);
+      if (!failed.ok) assert.equal(failed.status, 401);
+    }
+
+    const legit = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(VALID_BODY, {
+        "x-forwarded-for": "198.51.100.88",
+        authorization: `Bearer ${TEST_API_KEY}`,
+      })
+    );
+    assert.equal(legit.ok, true);
+  });
+
   it("calls rate limit before auth when Authorization is missing", async () => {
     const events: string[] = [];
     const secretKeys: string[] = [];
@@ -169,6 +211,74 @@ describe("buildTailorResponse — pipeline orchestration", () => {
     assert.equal(result.ok, false);
     if (!result.ok) assert.equal(result.status, 401);
     assert.deepEqual(events.slice(0, 2), ["rate-limit", "auth"]);
+    assert.deepEqual(secretKeys, [
+      hashTailorApiKeyForRateLimit("unauth:missing"),
+    ]);
+  });
+
+  it("keys wrong Bearer tokens onto a shared invalid-auth secret bucket", async () => {
+    const secretKeys: string[] = [];
+    mock.method(
+      tailorCvDeps,
+      "checkRateLimit",
+      async (_phase: string, _ip: string, secretBucketKey: string) => {
+        secretKeys.push(secretBucketKey);
+        return {
+          allowed: true,
+          remaining: 10,
+          resetTime: Date.now() + 60_000,
+        };
+      }
+    );
+
+    const first = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(VALID_BODY, {
+        "x-forwarded-for": "198.51.100.42",
+        authorization: "Bearer wrong-key",
+      })
+    );
+    const second = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(VALID_BODY, {
+        "x-forwarded-for": "198.51.100.43",
+        authorization: "Bearer another-wrong-key",
+      })
+    );
+    assert.equal(first.ok, false);
+    assert.equal(second.ok, false);
+    if (!first.ok) assert.equal(first.status, 401);
+    if (!second.ok) assert.equal(second.status, 401);
+    const invalidBucket = hashTailorApiKeyForRateLimit("unauth:invalid");
+    assert.deepEqual(secretKeys, [invalidBucket, invalidBucket]);
+    assert.notEqual(invalidBucket, hashTailorApiKeyForRateLimit(TEST_API_KEY));
+    assert.notEqual(
+      invalidBucket,
+      hashTailorApiKeyForRateLimit("unauth:missing")
+    );
+  });
+
+  it("still keys the secret bucket on the real key when the presented Bearer matches", async () => {
+    const secretKeys: string[] = [];
+    mock.method(
+      tailorCvDeps,
+      "checkRateLimit",
+      async (_phase: string, _ip: string, secretBucketKey: string) => {
+        secretKeys.push(secretBucketKey);
+        return {
+          allowed: true,
+          remaining: 10,
+          resetTime: Date.now() + 60_000,
+        };
+      }
+    );
+    mockPipelineSuccess();
+
+    const result = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(VALID_BODY, XFF)
+    );
+    assert.equal(result.ok, true);
     assert.deepEqual(secretKeys, [
       hashTailorApiKeyForRateLimit(TEST_API_KEY),
     ]);
