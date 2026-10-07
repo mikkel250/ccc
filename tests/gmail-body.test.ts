@@ -354,6 +354,29 @@ describe("extractGmailJobDescription", () => {
     }
   });
 
+  it("fails when the Gmail payload is not an object", () => {
+    for (const message of [null, undefined, "nope"]) {
+      const result = extractGmailJobDescription(message);
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.match(result.error, /not an object/i);
+      }
+    }
+  });
+
+  it("fails when mime parts have empty body data", () => {
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "text/plain",
+        body: { data: "" },
+      },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /no usable text/);
+    }
+  });
+
   it("ignores MIME parts that are attachments", () => {
     const result = extractGmailJobDescription({
       payload: {
@@ -439,6 +462,24 @@ describe("extractGmailJobDescription", () => {
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.match(result.error, /no usable text/);
+    }
+  });
+  it("skips blank plain parts and uses html fallback", () => {
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "multipart/alternative",
+        parts: [
+          { mimeType: "text/plain", body: { data: b64("   ") } },
+          {
+            mimeType: "text/html",
+            body: { data: b64("<p>HTML JD after empty plain.</p>") },
+          },
+        ],
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.jobDescription, "HTML JD after empty plain.");
     }
   });
 });
