@@ -74,7 +74,7 @@ Key decisions:
 
 ## Inbox scan runtime
 
-The Gmail inbox worker is **library code in this Next.js repo**, not a second deployed service. `tailorLabeledMessage` claims and extracts a labeled payload, then calls `runTailorCore` in-process (strict `cv` + `replyText`, no Bearer, no public rate-limit buckets). `npm run inbox:scan` lists labeled mail, drafts, and marks processed. Railway cron for that same job is `railway.inbox-scan.toml` (05:00 UTC): a second Railway service, not a second codebase.
+The Gmail inbox worker is **library code in this Next.js repo**. `tailorLabeledMessage` claims and extracts a labeled payload, then calls `runTailorCore` in-process (strict `cv` + `replyText`, no Bearer, no public rate-limit buckets). `npm run inbox:scan` lists labeled mail, drafts, and marks processed. Railway deploys two services from this repo: the long-lived web service (`railway.toml`) and the cron service (`railway.inbox-scan.toml`, 05:00 UTC). Both services share the same scan implementation; the cron service is not a second codebase.
 
 Flow:
 
