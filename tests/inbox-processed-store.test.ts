@@ -112,6 +112,24 @@ describe("parseInboxMessageId", () => {
     const result = parseInboxMessageId(ID);
     assert.equal(result.ok, true);
   });
+
+  it("rejects ids longer than the configured max length", () => {
+    const key = "INBOX_MESSAGE_ID_MAX_CHARS";
+    const previous = process.env[key];
+    const maxChars = 8;
+    process.env[key] = String(maxChars);
+    try {
+      assert.equal(parseInboxMessageId("1".repeat(maxChars)).ok, true);
+      const result = parseInboxMessageId("1".repeat(maxChars + 1));
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.match(result.error, /max length/);
+      }
+    } finally {
+      if (previous === undefined) delete process.env[key];
+      else process.env[key] = previous;
+    }
+  });
 });
 
 describe("inbox processed store", () => {
