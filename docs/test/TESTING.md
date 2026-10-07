@@ -99,7 +99,8 @@ Fast, no server, no API keys:
 npm test
 npm run typecheck:tests   # tsc for tests/ (next build excludes tests/)
 npm run lint              # eslint; production `any` and Jest/Vitest/Sinon imports are errors
-# Optional live Upstash claim/processed (not CI; export Upstash REST creds — npm test does not load .env):
+# Optional live Upstash claim/processed (not CI). npm test does not load .env.
+# Flag off skips the suite. Flag on fails if either Redis credential is missing.
 RUN_INBOX_REDIS_TESTS=1 UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... npm test
 ```
 
@@ -126,7 +127,7 @@ RUN_INBOX_REDIS_TESTS=1 UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... 
 | `tests/gmail-message.test.ts` | Reply headers from a Gmail message resource |
 | `tests/gmail-drafts.test.ts` | MIME + draft create vs thread reuse |
 | `tests/inbox-processed-store.test.ts` | Claim SET NX vs token-owned processed mark; thread claim; crash recovery / Redis timeout results |
-| `tests/inbox-redis-claim.integration.test.ts` | Opt-in live Upstash claim/processed checks (`RUN_INBOX_REDIS_TESTS=true`; skipped in CI) |
+| `tests/inbox-redis-claim.integration.test.ts` | Opt-in live Upstash claim/processed checks (skipped unless `RUN_INBOX_REDIS_TESTS` is set; missing Redis credentials fail the file) |
 | `tests/inbox-tailor.test.ts` | In-process strict tailor from labeled payload; lease renewal abort on lost claim |
 | `tests/inbox-scan.test.ts` | Scan job: one thread draft, reuse, 422 skip, processed skip |
 | `tests/route.test.ts` | Auth, curator cutover, dual response |
