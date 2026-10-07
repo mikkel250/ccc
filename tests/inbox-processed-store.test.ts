@@ -32,7 +32,10 @@ function plainMessage(text: string): unknown {
   };
 }
 
-function createMemoryKv(): InboxKv & { store: Map<string, string> } {
+function createMemoryKv(): InboxKv & {
+  store: Map<string, string>;
+  expiresAt: Map<string, number>;
+} {
   const store = new Map<string, string>();
   const expiresAt = new Map<string, number>();
   function purge(key: string): void {
@@ -44,6 +47,7 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
   }
   return {
     store,
+    expiresAt,
     get: async (key) => {
       purge(key);
       return store.get(key) ?? null;
@@ -536,6 +540,75 @@ describe("inbox processed store", () => {
     const result = await renewInboxClaim(ID, claimed.token);
     assert.deepEqual(result, { ok: false, error: INBOX_REDIS_UNAVAILABLE_ERROR });
     assert.equal(memory.store.get(inboxClaimKey(ID)), claimed.token);
+  });
+
+  it("extends claim expiry only for the owning token", async () => {
+    const previous = process.env.INBOX_CLAIM_TTL_SECONDS;
+    process.env.INBOX_CLAIM_TTL_SECONDS = "30";
+    try {
+      const claimed = await claimInboxMessage(ID);
+      assert.equal(claimed.ok, true);
+      if (!claimed.ok || claimed.outcome !== "won") {
+        throw new Error("expected a won claim");
+      }
+      const key = inboxClaimKey(ID);
+      const before = memory.expiresAt.get(key);
+      assert.equal(typeof before, "number");
+
+      const stolen = await renewInboxClaim(ID, "other-worker-token");
+      assert.deepEqual(stolen, { ok: true, renewed: false });
+      assert.equal(memory.expiresAt.get(key), before);
+      assert.equal(memory.store.get(key), claimed.token);
+
+      process.env.INBOX_CLAIM_TTL_SECONDS = "120";
+      const started = Date.now();
+      const renewed = await renewInboxClaim(ID, claimed.token);
+      const finished = Date.now();
+      assert.deepEqual(renewed, { ok: true, renewed: true });
+      const after = memory.expiresAt.get(key);
+      assert.equal(typeof after, "number");
+      if (typeof after === "number") {
+        assert.ok(after >= started + 120_000);
+        assert.ok(after <= finished + 120_000);
+      }
+      assert.equal(memory.store.get(key), claimed.token);
+    } finally {
+      if (previous === undefined) delete process.env.INBOX_CLAIM_TTL_SECONDS;
+      else process.env.INBOX_CLAIM_TTL_SECONDS = previous;
+    }
+  });
+
+  it("does not release or renew an id past the configured max length", async () => {
+    const saved = process.env.INBOX_MESSAGE_ID_MAX_CHARS;
+    process.env.INBOX_MESSAGE_ID_MAX_CHARS = "8";
+    let deletes = 0;
+    let expires = 0;
+    memory.deleteIfValue = async () => {
+      deletes += 1;
+      return true;
+    };
+    memory.expireIfOwned = async () => {
+      expires += 1;
+      return true;
+    };
+    try {
+      const released = await releaseInboxClaim("123456789", "token");
+      const renewed = await renewInboxClaim("123456789", "token");
+      assert.equal(released.ok, false);
+      assert.equal(renewed.ok, false);
+      if (!released.ok) {
+        assert.match(released.error, /max length/i);
+      }
+      if (!renewed.ok) {
+        assert.match(renewed.error, /max length/i);
+      }
+      assert.equal(deletes, 0);
+      assert.equal(expires, 0);
+      assert.equal(memory.store.size, 0);
+    } finally {
+      if (saved === undefined) delete process.env.INBOX_MESSAGE_ID_MAX_CHARS;
+      else process.env.INBOX_MESSAGE_ID_MAX_CHARS = saved;
+    }
   });
 
   it("lets only one concurrent thread claim win", async () => {
