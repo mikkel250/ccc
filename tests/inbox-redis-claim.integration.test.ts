@@ -12,49 +12,69 @@ import {
   markInboxProcessed,
 } from "../app/api/lib/inbox-processed-store";
 
-function missingRedisCredentialError(
+type InboxRedisLiveGate =
+  | { action: "skip" }
+  | { action: "fail"; error: string }
+  | { action: "run" };
+
+function resolveInboxRedisLiveGate(
+  runInboxRedisTests: boolean,
   url: string | undefined,
   token: string | undefined
-): string | undefined {
+): InboxRedisLiveGate {
+  if (!runInboxRedisTests) {
+    return { action: "skip" };
+  }
   const missing: string[] = [];
   if (!url) missing.push("UPSTASH_REDIS_REST_URL");
   if (!token) missing.push("UPSTASH_REDIS_REST_TOKEN");
-  if (missing.length === 0) return undefined;
-  return `missing Redis credentials: ${missing.join(", ")}`;
+  if (missing.length > 0) {
+    return {
+      action: "fail",
+      error: `missing Redis credentials: ${missing.join(", ")}`,
+    };
+  }
+  return { action: "run" };
 }
 
-const runLive = getEnvBoolean("RUN_INBOX_REDIS_TESTS", false);
+const inboxRedisLiveGate = resolveInboxRedisLiveGate(
+  getEnvBoolean("RUN_INBOX_REDIS_TESTS", false),
+  process.env.UPSTASH_REDIS_REST_URL,
+  process.env.UPSTASH_REDIS_REST_TOKEN
+);
 
 describe("inbox Redis live credential gate", () => {
-  it("names each absent Redis credential when the live flag is on", () => {
-    assert.equal(
-      missingRedisCredentialError("https://example.upstash.io", "token"),
-      undefined
+  it("fails an opted-in run when a Redis credential is missing and skips when the flag is off", () => {
+    assert.deepEqual(resolveInboxRedisLiveGate(false, undefined, undefined), {
+      action: "skip",
+    });
+    assert.deepEqual(
+      resolveInboxRedisLiveGate(false, "https://example.upstash.io", "token"),
+      { action: "skip" }
     );
-    assert.equal(
-      missingRedisCredentialError(undefined, "token"),
-      "missing Redis credentials: UPSTASH_REDIS_REST_URL"
+    assert.deepEqual(
+      resolveInboxRedisLiveGate(true, "https://example.upstash.io", "token"),
+      { action: "run" }
     );
-    assert.equal(
-      missingRedisCredentialError("https://example.upstash.io", undefined),
-      "missing Redis credentials: UPSTASH_REDIS_REST_TOKEN"
-    );
-    assert.equal(
-      missingRedisCredentialError(undefined, undefined),
-      "missing Redis credentials: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN"
-    );
+    assert.deepEqual(resolveInboxRedisLiveGate(true, undefined, "token"), {
+      action: "fail",
+      error: "missing Redis credentials: UPSTASH_REDIS_REST_URL",
+    });
+    assert.deepEqual(resolveInboxRedisLiveGate(true, "https://example.upstash.io", undefined), {
+      action: "fail",
+      error: "missing Redis credentials: UPSTASH_REDIS_REST_TOKEN",
+    });
+    assert.deepEqual(resolveInboxRedisLiveGate(true, undefined, undefined), {
+      action: "fail",
+      error: "missing Redis credentials: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN",
+    });
   });
 });
 
 describe("inbox Redis claim integration", { concurrency: 1 }, () => {
   before(() => {
-    if (!runLive) return;
-    const error = missingRedisCredentialError(
-      process.env.UPSTASH_REDIS_REST_URL,
-      process.env.UPSTASH_REDIS_REST_TOKEN
-    );
-    if (error !== undefined) {
-      throw new Error(error);
+    if (inboxRedisLiveGate.action === "fail") {
+      throw new Error(inboxRedisLiveGate.error);
     }
   });
 
@@ -91,7 +111,7 @@ describe("inbox Redis claim integration", { concurrency: 1 }, () => {
     }
   }
 
-  it("lets only one concurrent Redis claim win", { skip: !runLive }, async () => {
+  it("lets only one concurrent Redis claim win", { skip: inboxRedisLiveGate.action === "skip" }, async () => {
     await withLivePrefix(async (messageId) => {
       const [a, b] = await Promise.all([
         claimInboxMessage(messageId),
@@ -112,7 +132,7 @@ describe("inbox Redis claim integration", { concurrency: 1 }, () => {
 
   it(
     "returns processed on Redis when the marker already exists",
-    { skip: !runLive },
+    { skip: inboxRedisLiveGate.action === "skip" },
     async () => {
       await withLivePrefix(async (messageId) => {
         const seeded = await claimInboxMessage(messageId);
