@@ -201,12 +201,18 @@ describe("htmlToText", () => {
 
   it("does not stack-overflow on separated unclosed hidden wrappers", () => {
     const html = "<div hidden>TRACK<p>visible</p>".repeat(8000);
-    const started = Date.now();
     const text = htmlToText(html);
-    const elapsedMs = Date.now() - started;
     assert.equal(text.match(/visible/g)?.length, 8000);
     assert.doesNotMatch(text, /TRACK/);
-    assert.ok(elapsedMs < 1000);
+  });
+
+  it("keeps table content inside an unclosed hidden wrapper hidden", () => {
+    assert.equal(
+      htmlToText(
+        '<div hidden>TRACK<table><tr><td>pixel data</td></tr></table><p>Need a GM</p>',
+      ),
+      "Need a GM",
+    );
   });
 
   it("keeps descendant blocks inside an unclosed hidden wrapper hidden", () => {

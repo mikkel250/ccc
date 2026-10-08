@@ -198,16 +198,17 @@ function closedOpenerIndices(html: string): Set<number> {
 
 /**
  * A depth-0 content block ends the broken preheader.
+ * Depth counts every non-void element opened during recovery, not only div.
  * A plain div does not: its text stays with the hidden ancestor.
  * Positive font-size still reveals a div inside a font-size:0 frame.
  */
 function isRecoveryBoundary(
   raw: string,
   name: string,
-  divDepth: number,
+  recoveryDepth: number,
   frames: readonly TextFrame[],
 ): boolean {
-  if (divDepth !== 0 || isHiddenOpeningTag(raw)) {
+  if (recoveryDepth !== 0 || isHiddenOpeningTag(raw)) {
     return false;
   }
   if (RECOVERY_BLOCK_TAGS.has(name)) {
@@ -230,7 +231,8 @@ function omitHiddenHtml(html: string): string {
   let skipDepth = 0;
   let recoveryMode = false;
   let resumeRecovery = false;
-  let divDepth = 0;
+  /** Non-void elements opened during recovery, relative to the hidden opener. */
+  let recoveryDepth = 0;
   let rawTextName: string | null = null;
   let headInnerDepth = 0;
   const textFrames: TextFrame[] = [];
@@ -272,33 +274,18 @@ function omitHiddenHtml(html: string): string {
           continue;
         }
         if (!hiddenOpener && !headOpener) {
-          if (recoveryClose && recoveryName === "div" && divDepth > 0) {
-            divDepth -= 1;
+          if (recoveryVoid || recoveryClose) {
+            if (recoveryClose && !recoveryVoid && recoveryDepth > 0) {
+              recoveryDepth -= 1;
+            }
             continue;
           }
-          if (
-            !recoveryClose &&
-            !recoveryVoid &&
-            recoveryName === "div" &&
-            !isHiddenOpeningTag(raw)
-          ) {
-            if (isRecoveryBoundary(raw, recoveryName, divDepth, textFrames)) {
-              recoveryMode = false;
-              divDepth = 0;
-              last = index;
-            } else {
-              divDepth += 1;
-              continue;
-            }
-          } else if (
-            !recoveryClose &&
-            !recoveryVoid &&
-            isRecoveryBoundary(raw, recoveryName, divDepth, textFrames)
-          ) {
+          if (isRecoveryBoundary(raw, recoveryName, recoveryDepth, textFrames)) {
             recoveryMode = false;
-            divDepth = 0;
+            recoveryDepth = 0;
             last = index;
           } else {
+            recoveryDepth += 1;
             continue;
           }
         }
@@ -372,7 +359,7 @@ function omitHiddenHtml(html: string): string {
           isHiddenOpeningTag(raw) && !WHOLE_TAG_SKIP.has(name);
         if (recoverable && !closedOpeners.has(index)) {
           recoveryMode = true;
-          divDepth = 0;
+          recoveryDepth = 0;
           continue;
         }
         if (recoveryMode) {
