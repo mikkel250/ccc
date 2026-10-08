@@ -179,19 +179,64 @@ describe("htmlToText", () => {
   });
 
   it("recovers block text after an unclosed hidden tracking opener", () => {
-    const text = htmlToText(
+    const closed = htmlToText(
       '<div style="display:none">TRACKING<p>Need a GM</p>'
     );
-    assert.match(text, /Need a GM/);
-    assert.doesNotMatch(text, /TRACKING/);
+    assert.match(closed, /Need a GM/);
+    assert.doesNotMatch(closed, /TRACKING/);
+
+    const unclosed = htmlToText(
+      '<div style="display:none">TRACKING<p>Need a GM'
+    );
+    assert.match(unclosed, /Need a GM/);
+    assert.doesNotMatch(unclosed, /TRACKING/);
   });
 
   it("does not stack-overflow on nested unclosed hidden openers before the JD", () => {
-    const nested = '<div style="display:none">'.repeat(8000);
-    assert.doesNotThrow(() => {
-      const text = htmlToText(`${nested}<p>Need a GM</p>`);
-      assert.match(text, /Need a GM/);
-    });
+    const nested = '<div style="display:none">SECRET'.repeat(8000);
+    const text = htmlToText(`${nested}<p>Need a GM</p>`);
+    assert.match(text, /Need a GM/);
+    assert.doesNotMatch(text, /SECRET/);
+  });
+
+  it("does not stack-overflow on separated unclosed hidden wrappers", () => {
+    const html = "<div hidden>TRACK<p>visible</p>".repeat(8000);
+    const started = Date.now();
+    const text = htmlToText(html);
+    const elapsedMs = Date.now() - started;
+    assert.equal(text.match(/visible/g)?.length, 8000);
+    assert.doesNotMatch(text, /TRACK/);
+    assert.ok(elapsedMs < 1000);
+  });
+
+  it("keeps descendant blocks inside an unclosed hidden wrapper hidden", () => {
+    assert.equal(
+      htmlToText('<div hidden>TRACK<div>pixel data</div><p>Need a GM</p>'),
+      "Need a GM",
+    );
+    assert.equal(
+      htmlToText(
+        '<div hidden>TRACK<div><p>pixel data</p></div><p>Need a GM</p>',
+      ),
+      "Need a GM",
+    );
+    assert.equal(
+      htmlToText(
+        '<div hidden>TRACK<div hidden><p>pixel data</p></div><p>Need a GM</p>',
+      ),
+      "Need a GM",
+    );
+  });
+
+  it("recovers text directly inside section, article, and main", () => {
+    for (const tag of ["section", "article", "main"]) {
+      assert.equal(
+        htmlToText(
+          `<div style="display:none">pixel<${tag}>Need a GM</${tag}>`,
+        ),
+        "Need a GM",
+      );
+    }
   });
 
   it("does not recover a block tag from an unclosed hidden script", () => {
