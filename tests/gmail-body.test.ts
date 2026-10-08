@@ -178,12 +178,129 @@ describe("htmlToText", () => {
     assert.doesNotMatch(nestedSvg, /SECRET/);
   });
 
-  it("omits an unclosed hidden container through EOF", () => {
-    const text = htmlToText(
+  it("recovers block text after an unclosed hidden tracking opener", () => {
+    const closed = htmlToText(
       '<div style="display:none">TRACKING<p>Need a GM</p>'
     );
+    assert.match(closed, /Need a GM/);
+    assert.doesNotMatch(closed, /TRACKING/);
+
+    const unclosed = htmlToText(
+      '<div style="display:none">TRACKING<p>Need a GM'
+    );
+    assert.match(unclosed, /Need a GM/);
+    assert.doesNotMatch(unclosed, /TRACKING/);
+  });
+
+  it("does not stack-overflow on nested unclosed hidden openers before the JD", () => {
+    const nested = '<div style="display:none">SECRET'.repeat(8000);
+    const text = htmlToText(`${nested}<p>Need a GM</p>`);
+    assert.match(text, /Need a GM/);
+    assert.doesNotMatch(text, /SECRET/);
+  });
+
+  it("does not stack-overflow on separated unclosed hidden wrappers", () => {
+    const html = "<div hidden>TRACK<p>visible</p>".repeat(8000);
+    const text = htmlToText(html);
+    assert.equal(text.match(/visible/g)?.length, 8000);
+    assert.doesNotMatch(text, /TRACK/);
+  });
+
+  it("keeps table content inside an unclosed hidden wrapper hidden", () => {
+    assert.equal(
+      htmlToText(
+        '<div hidden>TRACK<table><tr><td>pixel data</td></tr></table><p>Need a GM</p>',
+      ),
+      "Need a GM",
+    );
+  });
+
+  it("keeps descendant blocks inside an unclosed hidden wrapper hidden", () => {
+    assert.equal(
+      htmlToText('<div hidden>TRACK<div>pixel data</div><p>Need a GM</p>'),
+      "Need a GM",
+    );
+    assert.equal(
+      htmlToText(
+        '<div hidden>TRACK<div><p>pixel data</p></div><p>Need a GM</p>',
+      ),
+      "Need a GM",
+    );
+    assert.equal(
+      htmlToText(
+        '<div hidden>TRACK<div hidden><p>pixel data</p></div><p>Need a GM</p>',
+      ),
+      "Need a GM",
+    );
+  });
+
+  it("recovers text directly inside section, article, and main", () => {
+    for (const tag of ["section", "article", "main"]) {
+      assert.equal(
+        htmlToText(
+          `<div style="display:none">pixel<${tag}>Need a GM</${tag}>`,
+        ),
+        "Need a GM",
+      );
+    }
+  });
+
+  it("does not recover a block tag from an unclosed hidden script", () => {
+    const text = htmlToText(
+      '<script style="display:none">var x="<p>SECRET</p>"'
+    );
+    assert.doesNotMatch(text, /SECRET/);
+  });
+
+  it("keeps a font-size:0 parent hidden across unclosed recovery", () => {
+    const hidden = htmlToText(
+      '<div style="font-size:0"><div style="display:none">track<p>SECRET</p>'
+    );
+    assert.doesNotMatch(hidden, /SECRET/);
+
+    const visible = htmlToText(
+      '<div style="font-size:0"><div style="display:none">track<div style="font-size:13px">Need a GM</div>'
+    );
+    assert.match(visible, /Need a GM/);
+    assert.doesNotMatch(visible, /track/);
+  });
+
+  it("does not recover a block tag inside a comment or script", () => {
+    const comment = htmlToText(
+      '<div style="display:none"><!-- <p>SECRET</p> --><p>Need a GM</p>'
+    );
+    assert.match(comment, /Need a GM/);
+    assert.doesNotMatch(comment, /SECRET/);
+
+    const script = htmlToText(
+      '<div style="display:none"><script>var x="<p>SECRET</p>";</script><p>Need a GM</p>'
+    );
+    assert.match(script, /Need a GM/);
+    assert.doesNotMatch(script, /SECRET/);
+  });
+
+  it("omits a closed hidden container inside recovered block text", () => {
+    const text = htmlToText(
+      '<div style="display:none">TRACKING<p>Need a GM<div style="display:none">SECRET</div></p>'
+    );
+    assert.match(text, /Need a GM/);
+    assert.doesNotMatch(text, /SECRET/);
     assert.doesNotMatch(text, /TRACKING/);
-    assert.doesNotMatch(text, /Need a GM/);
+  });
+
+  it("omits an unclosed hidden container that has no block tag", () => {
+    const text = htmlToText(
+      '<div style="display:none">SECRET_TRACKING_TOKEN visible-tail'
+    );
+    assert.doesNotMatch(text, /SECRET_TRACKING_TOKEN/);
+    assert.doesNotMatch(text, /visible-tail/);
+  });
+
+  it("does not repeat the body when a hidden head is left unclosed", () => {
+    const text = htmlToText(
+      '<head style="display:none"><body><p>Need a GM</p><div style="font-size:0">SECRET'
+    );
+    assert.equal(text, "Need a GM");
   });
 
   it("does not treat a body token inside head script as skip recovery", () => {
@@ -338,6 +455,22 @@ describe("extractGmailJobDescription", () => {
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.match(result.error, /no usable text/);
+    }
+  });
+
+  it("extracts JD from html-only mail with unclosed hidden tracking div", () => {
+    const html =
+      '<div style="display:none">utm_pixel<p>General Manager role — requirements</p>';
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "text/html",
+        body: { data: b64(html) },
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.match(result.jobDescription, /General Manager role/);
+      assert.doesNotMatch(result.jobDescription, /utm_pixel/);
     }
   });
 

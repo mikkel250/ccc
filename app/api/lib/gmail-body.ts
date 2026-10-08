@@ -19,6 +19,27 @@ function decodeGmailBodyData(data: unknown): string | undefined {
 }
 
 const WHOLE_TAG_SKIP = new Set(["head", "script", "style"]);
+/** Visible blocks that can end a broken hidden preheader. Div is not one: a descendant div stays inside the hidden wrapper. */
+const RECOVERY_BLOCK_TAGS = new Set([
+  "p",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "li",
+  "td",
+  "th",
+  "blockquote",
+  "section",
+  "article",
+  "main",
+]);
+
+function htmlTokenRe(): RegExp {
+  return /<!--[\s\S]*?-->|<\/?([a-zA-Z][\w:-]*)\b[^>]*>/gi;
+}
 const RAW_TEXT_ELEMENTS = new Set(["script", "style"]);
 /** Tags that end an unclosed head in HTML and start message content. */
 const HEAD_CONTENT_START = new Set([
@@ -125,21 +146,154 @@ function isHiddenOpeningTag(raw: string): boolean {
   );
 }
 
+type OpenTag = { name: string; index: number };
+
+function markClosed(stack: OpenTag[], closed: Set<number>, name: string): void {
+  for (let i = stack.length - 1; i >= 0; i -= 1) {
+    if (stack[i]!.name === name) {
+      closed.add(stack[i]!.index);
+      stack.length = i;
+      return;
+    }
+  }
+}
+
+/** Opener indexes that have a matching close tag. Unclosed hidden wrappers are absent. */
+function closedOpenerIndices(html: string): Set<number> {
+  const closed = new Set<number>();
+  const stack: OpenTag[] = [];
+  let rawTextName: string | null = null;
+  for (const match of html.matchAll(htmlTokenRe())) {
+    const raw = match[0];
+    const index = match.index ?? 0;
+    if (raw.startsWith("<!--")) {
+      continue;
+    }
+    const name = match[1]!.toLowerCase();
+    const isClose = raw.startsWith("</");
+    const selfClosing = /\/\s*>$/.test(raw);
+    if (rawTextName !== null) {
+      if (isClose && name === rawTextName) {
+        markClosed(stack, closed, name);
+        rawTextName = null;
+      }
+      continue;
+    }
+    if (selfClosing || VOID_HTML_ELEMENTS.has(name)) {
+      continue;
+    }
+    if (!isClose && RAW_TEXT_ELEMENTS.has(name)) {
+      rawTextName = name;
+      stack.push({ name, index });
+      continue;
+    }
+    if (!isClose) {
+      stack.push({ name, index });
+      continue;
+    }
+    markClosed(stack, closed, name);
+  }
+  return closed;
+}
+
+/**
+ * A depth-0 content block ends the broken preheader.
+ * Depth counts every non-void element opened during recovery, not only div.
+ * A plain div does not: its text stays with the hidden ancestor.
+ * Positive font-size still reveals a div inside a font-size:0 frame.
+ */
+function isRecoveryBoundary(
+  raw: string,
+  name: string,
+  recoveryDepth: number,
+  frames: readonly TextFrame[],
+): boolean {
+  if (recoveryDepth !== 0 || isHiddenOpeningTag(raw)) {
+    return false;
+  }
+  if (RECOVERY_BLOCK_TAGS.has(name)) {
+    return true;
+  }
+  if (name !== "div" || frames.at(-1)?.hide !== true) {
+    return false;
+  }
+  const style = tagStyle(raw);
+  return style !== undefined && styleDeclaresPositiveFontSize(style);
+}
+
 /** Depth-aware omit of comments, head/script/style, and hidden containers. */
 function omitHiddenHtml(html: string): string {
-  const tokenRe = /<!--[\s\S]*?-->|<\/?([a-zA-Z][\w:-]*)\b[^>]*>/gi;
+  const closedOpeners = closedOpenerIndices(html);
+  const tokenRe = htmlTokenRe();
   let out = "";
   let last = 0;
   let skipName: string | null = null;
   let skipDepth = 0;
+  let recoveryMode = false;
+  let resumeRecovery = false;
+  /** Non-void elements opened during recovery, relative to the hidden opener. */
+  let recoveryDepth = 0;
   let rawTextName: string | null = null;
   let headInnerDepth = 0;
   const textFrames: TextFrame[] = [];
   const textHidden = (): boolean => textFrames.at(-1)?.hide === true;
-  for (const match of html.matchAll(tokenRe)) {
+
+  let match: RegExpExecArray | null;
+  while ((match = tokenRe.exec(html)) !== null) {
     const index = match.index ?? 0;
     const raw = match[0];
-    if (skipDepth === 0 && !textHidden()) {
+    if (recoveryMode) {
+      if (!raw.startsWith("<!--")) {
+        const recoveryName = match[1]!.toLowerCase();
+        const recoveryClose = raw.startsWith("</");
+        const recoverySelfClosing = /\/\s*>$/.test(raw);
+        if (rawTextName !== null) {
+          if (recoveryClose && recoveryName === rawTextName) {
+            rawTextName = null;
+          }
+          continue;
+        }
+        if (
+          !recoveryClose &&
+          !recoverySelfClosing &&
+          RAW_TEXT_ELEMENTS.has(recoveryName)
+        ) {
+          rawTextName = recoveryName;
+          continue;
+        }
+        const recoveryVoid =
+          recoverySelfClosing || VOID_HTML_ELEMENTS.has(recoveryName);
+        const hiddenOpener =
+          !recoveryClose &&
+          !recoveryVoid &&
+          isHiddenOpeningTag(raw) &&
+          !WHOLE_TAG_SKIP.has(recoveryName);
+        const headOpener =
+          !recoveryClose && !recoveryVoid && recoveryName === "head";
+        if (hiddenOpener && !closedOpeners.has(index)) {
+          continue;
+        }
+        if (!hiddenOpener && !headOpener) {
+          if (recoveryVoid || recoveryClose) {
+            if (recoveryClose && !recoveryVoid && recoveryDepth > 0) {
+              recoveryDepth -= 1;
+            }
+            continue;
+          }
+          if (isRecoveryBoundary(raw, recoveryName, recoveryDepth, textFrames)) {
+            recoveryMode = false;
+            recoveryDepth = 0;
+            last = index;
+          } else {
+            recoveryDepth += 1;
+            continue;
+          }
+        }
+      } else {
+        continue;
+      }
+    }
+    if (skipDepth === 0 && !recoveryMode && !textHidden()) {
       out += html.slice(last, index);
     }
     last = index + raw.length;
@@ -170,6 +324,7 @@ function omitHiddenHtml(html: string): string {
           skipDepth = 0;
           skipName = null;
           headInnerDepth = 0;
+          resumeRecovery = false;
           out += raw;
           continue;
         }
@@ -189,6 +344,10 @@ function omitHiddenHtml(html: string): string {
         if (skipDepth === 0) {
           skipName = null;
           headInnerDepth = 0;
+          if (resumeRecovery) {
+            recoveryMode = true;
+            resumeRecovery = false;
+          }
         }
       }
       continue;
@@ -196,6 +355,17 @@ function omitHiddenHtml(html: string): string {
     const voidElement = selfClosing || VOID_HTML_ELEMENTS.has(name);
     if (!isClose && (WHOLE_TAG_SKIP.has(name) || isHiddenOpeningTag(raw))) {
       if (!voidElement) {
+        const recoverable =
+          isHiddenOpeningTag(raw) && !WHOLE_TAG_SKIP.has(name);
+        if (recoverable && !closedOpeners.has(index)) {
+          recoveryMode = true;
+          recoveryDepth = 0;
+          continue;
+        }
+        if (recoveryMode) {
+          resumeRecovery = true;
+          recoveryMode = false;
+        }
         skipName = name;
         skipDepth = 1;
         if (name === "head") {
@@ -226,7 +396,7 @@ function omitHiddenHtml(html: string): string {
     }
     out += raw;
   }
-  if (skipDepth === 0 && !textHidden()) {
+  if (skipDepth === 0 && !recoveryMode && !textHidden()) {
     out += html.slice(last);
   }
   return out;
