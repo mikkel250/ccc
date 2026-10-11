@@ -398,6 +398,27 @@ describe("buildTailorResponse — pipeline orchestration", () => {
     assert.equal(checkRateLimitSpy.mock.callCount(), 0);
   });
 
+  it("ignores valid IPs beyond TAILOR_MAX_XFF_ENTRIES rightmost hops", async () => {
+    const checkRateLimitSpy = mock.method(tailorCvDeps, "checkRateLimit");
+    const trailingInvalid = Array.from({ length: 5 }, () => "not-an-ip").join(
+      ", "
+    );
+    const forwarded = `203.0.113.77, ${trailingInvalid}`;
+    const result = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(
+        VALID_BODY,
+        authHeaders({ "x-forwarded-for": forwarded })
+      )
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 400);
+      assert.equal(result.error, "Cannot determine client IP");
+    }
+    assert.equal(checkRateLimitSpy.mock.callCount(), 0);
+  });
+
   // --- Rate limiting ---
 
   it("returns rate limit error when RateLimitError is thrown", async () => {
