@@ -234,6 +234,25 @@ describe("htmlToText", () => {
     );
   });
 
+  it("keeps job text when a closer pops unclosed divs inside a hidden wrapper", () => {
+    assert.equal(
+      htmlToText(
+        '<div hidden><p><div>TRACKING</p>STILL_HIDDEN</div><p>Need a GM</p>',
+      ),
+      "Need a GM",
+    );
+    assert.equal(
+      htmlToText(
+        '<div hidden><blockquote><div><div>TRACKING</blockquote>STILL_HIDDEN</div><p>Need a GM</p>',
+      ),
+      "Need a GM",
+    );
+    assert.equal(
+      htmlToText('<div hidden><p><div>TRACKING</p></div>Need a GM'),
+      "Need a GM",
+    );
+  });
+
   it("recovers text directly inside section, article, and main", () => {
     for (const tag of ["section", "article", "main"]) {
       assert.equal(

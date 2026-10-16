@@ -147,14 +147,27 @@ function isHiddenOpeningTag(raw: string): boolean {
 }
 
 type OpenTag = { name: string; index: number };
+type NamedTag = { name: string };
 
-function markClosed(stack: OpenTag[], closed: Set<number>, name: string): void {
+/**
+ * Pop the nearest `name` opener and every unclosed tag after it.
+ * The match is first. Later entries are intervening tags, not separate closes.
+ */
+function popThroughMatch<T extends NamedTag>(stack: T[], name: string): T[] {
   for (let i = stack.length - 1; i >= 0; i -= 1) {
     if (stack[i]!.name === name) {
-      closed.add(stack[i]!.index);
+      const removed = stack.slice(i);
       stack.length = i;
-      return;
+      return removed;
     }
+  }
+  return [];
+}
+
+function markClosed(stack: OpenTag[], closed: Set<number>, name: string): void {
+  const matched = popThroughMatch(stack, name)[0];
+  if (matched !== undefined) {
+    closed.add(matched.index);
   }
 }
 
@@ -229,6 +242,8 @@ function omitHiddenHtml(html: string): string {
   let last = 0;
   let skipName: string | null = null;
   let skipDepth = 0;
+  /** Openers inside the current skip, including the skipped root. */
+  const skipStack: NamedTag[] = [];
   let recoveryMode = false;
   let resumeRecovery = false;
   /** Non-void elements opened during recovery, relative to the hidden opener. */
@@ -323,6 +338,7 @@ function omitHiddenHtml(html: string): string {
         ) {
           skipDepth = 0;
           skipName = null;
+          skipStack.length = 0;
           headInnerDepth = 0;
           resumeRecovery = false;
           out += raw;
@@ -337,12 +353,24 @@ function omitHiddenHtml(html: string): string {
           continue;
         }
       }
-      if (!isClose && !selfClosing && name === skipName) {
-        skipDepth += 1;
-      } else if (isClose && name === skipName) {
-        skipDepth -= 1;
-        if (skipDepth === 0) {
+      const skipVoid = selfClosing || VOID_HTML_ELEMENTS.has(name);
+      if (!isClose && !skipVoid) {
+        skipStack.push({ name });
+        if (name === skipName) {
+          skipDepth += 1;
+        }
+      } else if (isClose && !skipVoid && skipName !== null) {
+        // Same pop as closedOpenerIndices: a </p> drops unclosed inner divs,
+        // so this skip must stop expecting those divs to close themselves.
+        const removed = popThroughMatch(skipStack, name);
+        for (const frame of removed) {
+          if (frame.name === skipName) {
+            skipDepth -= 1;
+          }
+        }
+        if (removed.length > 0 && skipDepth === 0) {
           skipName = null;
+          skipStack.length = 0;
           headInnerDepth = 0;
           if (resumeRecovery) {
             recoveryMode = true;
@@ -368,6 +396,8 @@ function omitHiddenHtml(html: string): string {
         }
         skipName = name;
         skipDepth = 1;
+        skipStack.length = 0;
+        skipStack.push({ name });
         if (name === "head") {
           headInnerDepth = 0;
         }
