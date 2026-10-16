@@ -253,15 +253,49 @@ describe("htmlToText", () => {
     );
   });
 
-  it("recovers text directly inside section, article, and main", () => {
-    for (const tag of ["section", "article", "main"]) {
+  it("recovers text directly inside every recovery block tag", () => {
+    for (const tag of [
+      "p",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6",
+      "li",
+      "td",
+      "th",
+      "blockquote",
+      "section",
+      "article",
+      "main",
+    ]) {
       assert.equal(
         htmlToText(
           `<div style="display:none">pixel<${tag}>Need a GM</${tag}>`,
         ),
         "Need a GM",
+        tag,
       );
     }
+  });
+
+  it("recovers a block after a closer pops a nested unclosed inline", () => {
+    assert.equal(
+      htmlToText(
+        '<div style="display:none">pixel<span><em>track</span><p>Need a GM</p>',
+      ),
+      "Need a GM",
+    );
+  });
+
+  it("does not let an unmatched close expose a block inside an open inline", () => {
+    assert.equal(
+      htmlToText(
+        '<div style="display:none">pixel<span>track</em><p>SECRET</p></span><p>Need a GM</p>',
+      ),
+      "Need a GM",
+    );
   });
 
   it("does not recover a block tag from an unclosed hidden script", () => {

@@ -149,22 +149,78 @@ function isHiddenOpeningTag(raw: string): boolean {
 type OpenTag = { name: string; index: number };
 type NamedTag = { name: string };
 
+/** Openers plus the index of each name, newest last, so a close finds its match in O(1). */
+type TagStack<T extends NamedTag> = {
+  items: T[];
+  positions: Map<string, number[]>;
+};
+
+function createTagStack<T extends NamedTag>(): TagStack<T> {
+  return { items: [], positions: new Map() };
+}
+
+function pushTag<T extends NamedTag>(stack: TagStack<T>, tag: T): void {
+  const at = stack.items.length;
+  stack.items.push(tag);
+  const open = stack.positions.get(tag.name);
+  if (open === undefined) {
+    stack.positions.set(tag.name, [at]);
+    return;
+  }
+  open.push(at);
+}
+
+function clearTagStack<T extends NamedTag>(stack: TagStack<T>): void {
+  stack.items.length = 0;
+  stack.positions.clear();
+}
+
+function dropOpenerPosition<T extends NamedTag>(
+  stack: TagStack<T>,
+  name: string,
+): void {
+  const open = stack.positions.get(name);
+  if (open === undefined) {
+    return;
+  }
+  open.pop();
+  if (open.length === 0) {
+    stack.positions.delete(name);
+  }
+}
+
 /**
  * Pop the nearest `name` opener and every unclosed tag after it.
  * The match is first. Later entries are intervening tags, not separate closes.
+ * An unmatched close leaves the stack unchanged.
+ * Each tag is pushed and dropped once, so a parse stays linear.
  */
-function popThroughMatch<T extends NamedTag>(stack: T[], name: string): T[] {
-  for (let i = stack.length - 1; i >= 0; i -= 1) {
-    if (stack[i]!.name === name) {
-      const removed = stack.slice(i);
-      stack.length = i;
-      return removed;
-    }
+function popThroughMatch<T extends NamedTag>(
+  stack: TagStack<T>,
+  name: string,
+): T[] {
+  const open = stack.positions.get(name);
+  const matchAt = open?.at(-1);
+  if (open === undefined || matchAt === undefined) {
+    return [];
   }
-  return [];
+  open.pop();
+  if (open.length === 0) {
+    stack.positions.delete(name);
+  }
+  const removed = stack.items.slice(matchAt);
+  stack.items.length = matchAt;
+  for (let i = removed.length - 1; i >= 1; i -= 1) {
+    dropOpenerPosition(stack, removed[i]!.name);
+  }
+  return removed;
 }
 
-function markClosed(stack: OpenTag[], closed: Set<number>, name: string): void {
+function markClosed(
+  stack: TagStack<OpenTag>,
+  closed: Set<number>,
+  name: string,
+): void {
   const matched = popThroughMatch(stack, name)[0];
   if (matched !== undefined) {
     closed.add(matched.index);
@@ -174,7 +230,7 @@ function markClosed(stack: OpenTag[], closed: Set<number>, name: string): void {
 /** Opener indexes that have a matching close tag. Unclosed hidden wrappers are absent. */
 function closedOpenerIndices(html: string): Set<number> {
   const closed = new Set<number>();
-  const stack: OpenTag[] = [];
+  const stack = createTagStack<OpenTag>();
   let rawTextName: string | null = null;
   for (const match of html.matchAll(htmlTokenRe())) {
     const raw = match[0];
@@ -197,11 +253,11 @@ function closedOpenerIndices(html: string): Set<number> {
     }
     if (!isClose && RAW_TEXT_ELEMENTS.has(name)) {
       rawTextName = name;
-      stack.push({ name, index });
+      pushTag(stack, { name, index });
       continue;
     }
     if (!isClose) {
-      stack.push({ name, index });
+      pushTag(stack, { name, index });
       continue;
     }
     markClosed(stack, closed, name);
@@ -243,11 +299,11 @@ function omitHiddenHtml(html: string): string {
   let skipName: string | null = null;
   let skipDepth = 0;
   /** Openers inside the current skip, including the skipped root. */
-  const skipStack: NamedTag[] = [];
+  const skipStack = createTagStack<NamedTag>();
   let recoveryMode = false;
   let resumeRecovery = false;
   /** Non-void elements opened during recovery, relative to the hidden opener. */
-  let recoveryDepth = 0;
+  const recoveryStack = createTagStack<NamedTag>();
   let rawTextName: string | null = null;
   let headInnerDepth = 0;
   const textFrames: TextFrame[] = [];
@@ -290,17 +346,26 @@ function omitHiddenHtml(html: string): string {
         }
         if (!hiddenOpener && !headOpener) {
           if (recoveryVoid || recoveryClose) {
-            if (recoveryClose && !recoveryVoid && recoveryDepth > 0) {
-              recoveryDepth -= 1;
+            if (recoveryClose && !recoveryVoid) {
+              // Unmatched closes leave the stack unchanged. A match drops
+              // every unclosed tag opened after it, not just one level.
+              popThroughMatch(recoveryStack, recoveryName);
             }
             continue;
           }
-          if (isRecoveryBoundary(raw, recoveryName, recoveryDepth, textFrames)) {
+          if (
+            isRecoveryBoundary(
+              raw,
+              recoveryName,
+              recoveryStack.items.length,
+              textFrames,
+            )
+          ) {
             recoveryMode = false;
-            recoveryDepth = 0;
+            clearTagStack(recoveryStack);
             last = index;
           } else {
-            recoveryDepth += 1;
+            pushTag(recoveryStack, { name: recoveryName });
             continue;
           }
         }
@@ -338,7 +403,7 @@ function omitHiddenHtml(html: string): string {
         ) {
           skipDepth = 0;
           skipName = null;
-          skipStack.length = 0;
+          clearTagStack(skipStack);
           headInnerDepth = 0;
           resumeRecovery = false;
           out += raw;
@@ -355,7 +420,7 @@ function omitHiddenHtml(html: string): string {
       }
       const skipVoid = selfClosing || VOID_HTML_ELEMENTS.has(name);
       if (!isClose && !skipVoid) {
-        skipStack.push({ name });
+        pushTag(skipStack, { name });
         if (name === skipName) {
           skipDepth += 1;
         }
@@ -370,7 +435,7 @@ function omitHiddenHtml(html: string): string {
         }
         if (removed.length > 0 && skipDepth === 0) {
           skipName = null;
-          skipStack.length = 0;
+          clearTagStack(skipStack);
           headInnerDepth = 0;
           if (resumeRecovery) {
             recoveryMode = true;
@@ -387,7 +452,7 @@ function omitHiddenHtml(html: string): string {
           isHiddenOpeningTag(raw) && !WHOLE_TAG_SKIP.has(name);
         if (recoverable && !closedOpeners.has(index)) {
           recoveryMode = true;
-          recoveryDepth = 0;
+          clearTagStack(recoveryStack);
           continue;
         }
         if (recoveryMode) {
@@ -396,8 +461,8 @@ function omitHiddenHtml(html: string): string {
         }
         skipName = name;
         skipDepth = 1;
-        skipStack.length = 0;
-        skipStack.push({ name });
+        clearTagStack(skipStack);
+        pushTag(skipStack, { name });
         if (name === "head") {
           headInnerDepth = 0;
         }
