@@ -987,7 +987,7 @@ describe("runTailorCore — in-process curator path", () => {
 
     assert.equal(chatSpy.mock.callCount(), 1);
     assert.equal(chatSignal, controller.signal);
-    assert.equal(chatSignal.aborted, true);
+    assert.equal(controller.signal.aborted, true);
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.equal(result.status, 503);
