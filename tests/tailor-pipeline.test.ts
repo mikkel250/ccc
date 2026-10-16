@@ -289,9 +289,18 @@ describe("buildTailorResponse — pipeline orchestration", () => {
   });
 
   it("ignores valid IPs outside the rightmost XFF entry window", async () => {
+    mockPipelineSuccess();
     const checkRateLimitSpy = mock.method(tailorCvDeps, "checkRateLimit");
-    // Empty hops are skipped, so the valid IP sits outside the rightmost five entries.
-    const beyondWindow = ["198.51.100.42", "", "", "", "", ""].join(", ");
+    const outsideWindow = "198.51.100.42";
+    const inWindow = "203.0.113.5";
+    const beyondWindow = [
+      outsideWindow,
+      "203.0.113.1",
+      "203.0.113.2",
+      "203.0.113.3",
+      "203.0.113.4",
+      inWindow,
+    ].join(", ");
     const result = await buildTailorResponse(
       tailorCvDeps,
       buildPostRequest(
@@ -299,12 +308,9 @@ describe("buildTailorResponse — pipeline orchestration", () => {
         authHeaders({ "x-forwarded-for": beyondWindow })
       )
     );
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.equal(result.status, 400);
-      assert.equal(result.error, "Cannot determine client IP");
-    }
-    assert.equal(checkRateLimitSpy.mock.callCount(), 0);
+    assert.equal(result.ok, true);
+    assert.equal(checkRateLimitSpy.mock.callCount(), 1);
+    assert.equal(checkRateLimitSpy.mock.calls[0]?.arguments[1], inWindow);
   });
 
   // --- Rate limiting ---
