@@ -398,6 +398,31 @@ describe("buildTailorResponse — pipeline orchestration", () => {
     assert.equal(checkRateLimitSpy.mock.callCount(), 0);
   });
 
+  it("ignores valid IPs outside the rightmost XFF entry window", async () => {
+    mockPipelineSuccess();
+    const checkRateLimitSpy = mock.method(tailorCvDeps, "checkRateLimit");
+    const outsideWindow = "198.51.100.42";
+    const inWindow = "203.0.113.5";
+    const beyondWindow = [
+      outsideWindow,
+      "203.0.113.1",
+      "203.0.113.2",
+      "203.0.113.3",
+      "203.0.113.4",
+      inWindow,
+    ].join(", ");
+    const result = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(
+        VALID_BODY,
+        authHeaders({ "x-forwarded-for": beyondWindow })
+      )
+    );
+    assert.equal(result.ok, true);
+    assert.equal(checkRateLimitSpy.mock.callCount(), 1);
+    assert.equal(checkRateLimitSpy.mock.calls[0]?.arguments[1], inWindow);
+  });
+
   // --- Rate limiting ---
 
   it("returns rate limit error when RateLimitError is thrown", async () => {
