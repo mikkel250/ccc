@@ -112,7 +112,73 @@ describe("parseInboxMessageId", () => {
     const result = parseInboxMessageId(ID);
     assert.equal(result.ok, true);
   });
+
+  it("rejects ids longer than the configured max length", () => {
+    withMessageIdMaxChars(8, () => {
+      assert.equal(parseInboxMessageId("1".repeat(8)).ok, true);
+      const result = parseInboxMessageId("1".repeat(9));
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.match(result.error, /max length/);
+      }
+    });
+  });
+
+  it("applies an explicit maxChars argument at the boundary", () => {
+    assert.equal(parseInboxMessageId("12345", 5).ok, true);
+    const result = parseInboxMessageId("123456", 5);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /max length/);
+    }
+  });
+
+  it("caps an explicit maxChars at the configured limit", () => {
+    withMessageIdMaxChars(8, () => {
+      assert.equal(parseInboxMessageId("1".repeat(8), 10_000).ok, true);
+      const result = parseInboxMessageId("1".repeat(9), 10_000);
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.match(result.error, /max length/);
+      }
+    });
+  });
+
+  it("falls back to the configured max when maxChars is not a positive integer", () => {
+    withMessageIdMaxChars(8, () => {
+      const within = "1".repeat(8);
+      const over = "1".repeat(9);
+      const invalid = [
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+        Number.NEGATIVE_INFINITY,
+        -1,
+        0,
+        1.5,
+      ];
+      for (const maxChars of invalid) {
+        assert.equal(parseInboxMessageId(within, maxChars).ok, true, String(maxChars));
+        const result = parseInboxMessageId(over, maxChars);
+        assert.equal(result.ok, false, String(maxChars));
+        if (!result.ok) {
+          assert.match(result.error, /max length/);
+        }
+      }
+    });
+  });
 });
+
+function withMessageIdMaxChars(maxChars: number, run: () => void): void {
+  const key = "INBOX_MESSAGE_ID_MAX_CHARS";
+  const previous = process.env[key];
+  process.env[key] = String(maxChars);
+  try {
+    run();
+  } finally {
+    if (previous === undefined) delete process.env[key];
+    else process.env[key] = previous;
+  }
+}
 
 describe("inbox processed store", () => {
   let memory: ReturnType<typeof createMemoryKv>;

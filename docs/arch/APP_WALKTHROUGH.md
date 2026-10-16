@@ -68,7 +68,7 @@ The root page (`app/page.tsx :: Home`) calls `notFound()` — there is intention
 |------|------|----------|
 | Burst limit | `app/api/lib/rate-limit.ts` | `checkRateLimit("pre-body", ipAddress, secretBucketKey)` |
 
-Upstash Redis dual sliding windows (`RATE_LIMIT_MAX` + `RATE_LIMIT_SECRET_MAX`). Secret bucket is checked first so secret exhaustion does not burn IP quota. Runs after IP resolution and **before** auth so failed credential guesses still consume quota; also runs before body parse so invalid authorized floods still count. **Quota exhaustion → 429** with more-restrictive `remaining`/`resetTime`. **Redis / rate-limit service failure → 503**. Unresolvable IP → **400** before rate limiting.
+Upstash Redis dual sliding windows (`RATE_LIMIT_MAX` + `RATE_LIMIT_SECRET_MAX`). Secret bucket is checked first so secret exhaustion does not burn IP quota. Runs after IP resolution and **before** auth so failed credential guesses still consume IP quota (and a shared missing/invalid-auth secret bucket — not the configured `TAILOR_API_KEY` hash). Also runs before body parse so invalid authorized floods still count. **Quota exhaustion → 429** with more-restrictive `remaining`/`resetTime`. **Redis / rate-limit service failure → 503**. Unresolvable IP → **400** before rate limiting.
 
 ### 4. Load master CV
 
@@ -76,7 +76,7 @@ Upstash Redis dual sliding windows (`RATE_LIMIT_MAX` + `RATE_LIMIT_SECRET_MAX`).
 |------|------|----------|
 | Master load | `app/api/lib/master-cv.ts` | `requireMasterCv()` |
 
-Resolves `MASTER_CV_JSON` (preferred) or `MASTER_CV_PATH` (non-world-readable), schema-validates with Ajv. Preloaded asynchronously at process startup (`preloadMasterCv`); request path serves the cache only. Failures → **503**. Markdown `knowledge-base/` is **not** the tailor source.
+Resolves `MASTER_CV_JSON` (preferred) or `MASTER_CV_PATH` (non-world-readable), schema-validates with Ajv. Preloaded asynchronously at process startup (`preloadMasterCv`); request path serves the cache only. `npm run inbox:scan` is a separate process and preloads the same cache before `scanInbox` (a failed preload exits the job; it does not tailor). Failures → **503**. Markdown `knowledge-base/` is **not** the tailor source.
 
 ### 5. Curator system prompt
 

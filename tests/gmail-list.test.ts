@@ -186,6 +186,38 @@ describe("listLabeledRecruiterMail", () => {
     assert.equal(urls.some((u) => u.includes("/token")), true);
   });
 
+  it("strips a trailing slash from GMAIL_API_BASE_URL before list calls", async () => {
+    process.env.GMAIL_API_BASE_URL = "https://gmail.example.test/gmail/v1/";
+    const urls: string[] = [];
+    const result = await listLabeledRecruiterMail({
+      fetchImpl: async (input) => {
+        const url = String(input);
+        urls.push(url);
+        if (url.includes("/token")) {
+          return jsonResponse({ access_token: "access" });
+        }
+        if (url.endsWith("/users/me/labels")) {
+          return jsonResponse({
+            labels: [{ id: "Label_1", name: "Recruiter" }],
+          });
+        }
+        if (url.includes("/users/me/messages")) {
+          return jsonResponse({
+            messages: [{ id: "m1", threadId: "t1" }],
+          });
+        }
+        return jsonResponse({}, 404);
+      },
+    });
+    assert.equal(result.ok, true);
+    const gmailUrls = urls.filter((u) => !u.includes("/token"));
+    assert.equal(gmailUrls.length > 0, true);
+    for (const url of gmailUrls) {
+      assert.doesNotMatch(url, /v1\/\//);
+      assert.match(url, /^https:\/\/gmail\.example\.test\/gmail\/v1\//);
+    }
+  });
+
   it("fails closed when the label is missing", async () => {
     const result = await listLabeledRecruiterMail({
       fetchImpl: async (input) => {

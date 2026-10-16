@@ -45,6 +45,8 @@ export type ParityCellStatus = { ok: boolean };
 
 export type ParityStatus = {
   cells: Record<string, ParityCellStatus>;
+  /** Catalog snapshot written beside `cells`. Absent on in-memory merges. */
+  pending?: string[];
 };
 
 /** Last-write-wins per model key. Callers compute pending from catalog + cells. */
@@ -90,7 +92,24 @@ export function parseParityStatusJson(raw: unknown): ParityStatus {
     }
     cells[key] = { ok };
   }
-  return { cells };
+  if (!Object.hasOwn(root, "pending")) {
+    return { cells };
+  }
+  return { cells, pending: parsePendingModels(root.pending) };
+}
+
+function parsePendingModels(raw: unknown): string[] {
+  if (!Array.isArray(raw)) {
+    throw new Error("Invalid parity-status.json");
+  }
+  const pending: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "string") {
+      throw new Error("Invalid parity-status.json");
+    }
+    pending.push(entry);
+  }
+  return pending;
 }
 
 /** Catalog models that do not yet have an ok cell. */
