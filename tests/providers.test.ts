@@ -11,20 +11,32 @@ describe("parseNamespacedProvider", () => {
     );
   });
 
-  it("rejects null bytes and backslash path separators", () => {
+  it("rejects bare aliases without a provider prefix", () => {
+    assert.throws(() => parseNamespacedProvider("sonnet"), /Invalid model string/);
+    assert.throws(() => parseNamespacedProvider("gpt-4o"), /Invalid model string/);
+  });
+
+  it("rejects unknown provider prefixes", () => {
     assert.throws(
-      () => parseNamespacedProvider("anthropic/sonnet\u0000"),
-      /Invalid model string/
+      () => parseNamespacedProvider("cohere/command-r"),
+      /Unknown provider "cohere"/
     );
+  });
+
+  it("rejects leading and trailing empty segments", () => {
+    assert.throws(() => parseNamespacedProvider("anthropic/"), /Invalid model string/);
+    assert.throws(() => parseNamespacedProvider("/sonnet"), /Invalid model string/);
     assert.throws(
-      () => parseNamespacedProvider("anthropic/..\\outside"),
+      () => parseNamespacedProvider("/anthropic/sonnet"),
       /Invalid model string/
     );
   });
 
-  it("rejects empty, dot, and double-dot path segments", () => {
-    assert.throws(() => parseNamespacedProvider("anthropic/"), /Invalid model string/);
-    assert.throws(() => parseNamespacedProvider("/sonnet"), /Invalid model string/);
+  it("rejects interior empty, dot, and double-dot segments", () => {
+    assert.throws(
+      () => parseNamespacedProvider("anthropic//sonnet"),
+      /Invalid model string/
+    );
     assert.throws(
       () => parseNamespacedProvider("openrouter//openai/gpt"),
       /Invalid model string/
@@ -34,16 +46,35 @@ describe("parseNamespacedProvider", () => {
       /Invalid model string/
     );
     assert.throws(
+      () => parseNamespacedProvider("anthropic/sonnet/.."),
+      /Invalid model string/
+    );
+    assert.throws(
+      () => parseNamespacedProvider("openrouter/./gpt"),
+      /Invalid model string/
+    );
+    assert.throws(
       () => parseNamespacedProvider("anthropic/./sonnet"),
       /Invalid model string/
     );
   });
 
-  it("rejects bare aliases and unknown providers", () => {
-    assert.throws(() => parseNamespacedProvider("sonnet"), /Invalid model/);
+  it("rejects backslash and null-byte separators", () => {
     assert.throws(
-      () => parseNamespacedProvider("cohere/command-r"),
-      /Unknown provider/
+      () => parseNamespacedProvider("anthropic/..\\outside"),
+      /Invalid model string/
+    );
+    assert.throws(
+      () => parseNamespacedProvider("anthropic/..\\..\\outside"),
+      /Invalid model string/
+    );
+    assert.throws(
+      () => parseNamespacedProvider("anthropic/sonnet\u0000"),
+      /Invalid model string/
+    );
+    assert.throws(
+      () => parseNamespacedProvider("anthropic/sonnet\u0000extra"),
+      /Invalid model string/
     );
   });
 });
