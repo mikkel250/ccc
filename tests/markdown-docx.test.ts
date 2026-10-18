@@ -82,11 +82,18 @@ describe("markdown-docx", () => {
   });
 
   it("isValidDocxBase64 rejects improper padding before Buffer.from", async () => {
-    // Valid Base64 with "==" padding, drop one "=" → length % 4 === 3.
+    // Normalize to properly padded base64, drop one "=" → length % 4 === 3.
     // Charset still matches; Buffer.from still yields PK magic.
     const base64 = await markdownToDocxBase64(SAMPLE_CV);
-    assert.ok(base64.endsWith("="), "fixture must include padding");
-    const bad = base64.slice(0, -1);
+    let proper = base64.replace(/=+$/, "");
+    while (proper.length % 4 !== 0) {
+      proper += "=";
+    }
+    if (!proper.endsWith("=")) {
+      proper += "====";
+    }
+    assert.ok(proper.endsWith("="), "fixture must include padding");
+    const bad = proper.slice(0, -1);
     assert.equal(bad.length % 4, 3);
     assert.equal(isValidDocxBase64(bad), false);
   });
