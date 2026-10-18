@@ -27,7 +27,7 @@ The first `provider/` segment selects the transport: `openrouter/…` uses OpenR
 - Default `chat()` model: `openrouter/openai/gpt-5.4-mini`
 - CV generation uses a separate model (`TAILOR_MODEL` env var)
 - Optional `TAILOR_REASONING_EFFORT` pins thinking/reasoning for tailor-cv (unset = provider defaults). OpenRouter models get `reasoning.effort`; DeepSeek direct maps to `thinking` + `reasoning_effort` (see `.env.example`). Provider defaults differ sharply (e.g. Gemini 3.1 Pro mandatory medium; GPT-5.4 reasoning off by default; DeepSeek V4 Pro thinking high by default) — pin for fair model A/B.
-- Native batch APIs (Anthropic Message Batches, DeepSeek batch) are deferred — require durable batch-id state and cron/CLI poll ticks, not a blocking sync waiter. Hosting the poller on Vercel cron is plausible; v1 sync tailor stays on Railway because Hobby fluid functions cap at 300s. See [Deployment hosting](./README.md#deployment-hosting-railway-vs-vercel).
+- Native batch APIs (Anthropic Message Batches) are deferred — require durable batch-id state and cron/CLI poll ticks, not a blocking sync waiter. Hosting the poller on Vercel cron is plausible; v1 sync tailor stays on Railway because Hobby fluid functions cap at 300s. See [Deployment hosting](./README.md#deployment-hosting-railway-vs-vercel).
 
 ## Evaluation
 

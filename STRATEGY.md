@@ -55,6 +55,6 @@ _Why it serves the approach:_ inbound is the paid job; the UI is the same engine
 - LLM-as-judge in the tailor loop or as a smoke gate
 - Heavy mechanical grounding allowlists (add only if manual failures justify it)
 - Page-count as a hard requirement
-- Native LLM batch APIs (Anthropic Message Batches, DeepSeek batch) — deferred cost optimization. When built, submit/poll/retrieve runs on a cron or CLI tick with durable batch-id state, not inside `POST /api/tailor-cv`. A cron-only route is allowed. Not required for inbox tailor or sync tailor today.
+- Native LLM batch APIs (Anthropic Message Batches) — deferred cost optimization. When built, submit/poll/retrieve runs on a cron or CLI tick with durable batch-id state, not inside `POST /api/tailor-cv`. A cron-only route is allowed. Not required for inbox tailor or sync tailor today.
 - BYOK (we meter usage on our keys)
 - Crawling JD URLs (later)
