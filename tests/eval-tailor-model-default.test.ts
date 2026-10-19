@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { parseEvalModels } from "../app/api/lib/eval-cv-helpers";
+import { evalResultsArtifactsPresent } from "./helpers/eval-results";
 
 const EVAL_RESULTS_DIR = path.join(process.cwd(), "eval-results");
 const ENV_EXAMPLE_PATH = path.join(process.cwd(), ".env.example");
@@ -103,6 +104,12 @@ describe("eval-results — post-evaluation artifacts", () => {
   });
 
   it("each JD has JD-level extraction.json from stage 1 pipeline", () => {
+    if (!evalResultsArtifactsPresent(EVAL_RESULTS_DIR)) {
+      skip(
+        "eval-results/ is gitignored and absent — historical markdown eval artifacts; use npm run smoke for live quality"
+      );
+      return;
+    }
     const slugs = listTestJdSlugs();
     assert.ok(slugs.length >= 2);
     for (const slug of slugs) {
@@ -169,6 +176,12 @@ describe("TAILOR_MODEL default — .env.example and lib/env.ts consistency", () 
   });
 
   it("winning TAILOR_MODEL appears in eval-results for all JDs", () => {
+    if (!evalResultsArtifactsPresent(EVAL_RESULTS_DIR)) {
+      skip(
+        "eval-results/ is gitignored and absent — historical markdown eval artifacts; use npm run smoke for live quality"
+      );
+      return;
+    }
     const winningModel = readDefaultTailorModelFromEnvTs();
     const slugs = listTestJdSlugs();
     assert.ok(slugs.length >= 2);
