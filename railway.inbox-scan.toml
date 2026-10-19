@@ -1,0 +1,10 @@
+# Inbox scan cron service (same repo as the API).
+# Point this Railway service at this file (Settings → Config-as-code path).
+# Do not attach cronSchedule to railway.toml — npm start never exits.
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "npm run inbox:scan"
+cronSchedule = "0 5 * * *"
+restartPolicyType = "NEVER"

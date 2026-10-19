@@ -6,7 +6,7 @@ Start-to-finish guide to how the CV Tailoring API works. For stack decisions and
 
 ## What this app does
 
-A **Next.js backend** (no product UI) that accepts a job description, curates structured CV JSON from a master JSON, mechanically renders Word, and returns both artifacts. The inbox worker in this process claims + extracts a labeled Gmail payload via `tailorLabeledMessage`, then strict-tailors in-process with `runTailorCore` (no HTTP Bearer, no public rate-limit buckets). It returns `cv`, `replyText`, and `claimToken` for a later step; Gmail reply drafts with attached `.docx` are **M8.5** (not implemented here).
+A **Next.js backend** (no product UI) that accepts a job description, curates structured CV JSON from a master JSON, mechanically renders Word, and returns both artifacts. The inbox worker in this process claims + extracts a labeled Gmail payload via `tailorLabeledMessage`, then strict-tailors in-process with `runTailorCore` (no HTTP Bearer, no public rate-limit buckets) and can create a Gmail reply draft with the attached `.docx` via `npm run inbox:scan`.
 
 **Production entry point:** `POST /api/tailor-cv` → `app/api/tailor-cv/route.ts :: POST`
 
@@ -68,7 +68,7 @@ The root page (`app/page.tsx :: Home`) calls `notFound()` — there is intention
 |------|------|----------|
 | Burst limit | `app/api/lib/rate-limit.ts` | `checkRateLimit("pre-body", ipAddress, secretBucketKey)` |
 
-Upstash Redis dual sliding windows (`RATE_LIMIT_MAX` + `RATE_LIMIT_SECRET_MAX`). Secret bucket is checked first so secret exhaustion does not burn IP quota. Runs after IP resolution and **before** auth so failed credential guesses still consume quota; also runs before body parse so invalid authorized floods still count. **Quota exhaustion → 429** with more-restrictive `remaining`/`resetTime`. **Redis / rate-limit service failure → 503**. Unresolvable IP → **400** before rate limiting.
+Upstash Redis dual sliding windows (`RATE_LIMIT_MAX` + `RATE_LIMIT_SECRET_MAX`). Secret bucket is checked first so secret exhaustion does not burn IP quota. Runs after IP resolution and **before** auth so failed credential guesses still consume IP quota (and a shared missing/invalid-auth secret bucket — not the configured `TAILOR_API_KEY` hash). Also runs before body parse so invalid authorized floods still count. **Quota exhaustion → 429** with more-restrictive `remaining`/`resetTime`. **Redis / rate-limit service failure → 503**. Unresolvable IP → **400** before rate limiting.
 
 ### 4. Load master CV
 
@@ -76,7 +76,7 @@ Upstash Redis dual sliding windows (`RATE_LIMIT_MAX` + `RATE_LIMIT_SECRET_MAX`).
 |------|------|----------|
 | Master load | `app/api/lib/master-cv.ts` | `requireMasterCv()` |
 
-Resolves `MASTER_CV_JSON` (preferred) or `MASTER_CV_PATH` (non-world-readable), schema-validates with Ajv. Preloaded asynchronously at process startup (`preloadMasterCv`); request path serves the cache only. Failures → **503**. Markdown `knowledge-base/` is **not** the tailor source.
+Resolves `MASTER_CV_JSON` (preferred) or `MASTER_CV_PATH` (non-world-readable), schema-validates with Ajv. Preloaded asynchronously at process startup (`preloadMasterCv`); request path serves the cache only. `npm run inbox:scan` is a separate process and preloads the same cache before `scanInbox` (a failed preload exits the job; it does not tailor). Failures → **503**. Markdown `knowledge-base/` is **not** the tailor source.
 
 ### 5. Curator system prompt
 
@@ -186,6 +186,12 @@ Prompt files cloned from the portfolio chat bot remain for a hypothetical future
 
 ---
 
+## Inbox runtime (not HTTP)
+
+Inbox scan is **not** a client of `POST /api/tailor-cv`. `tailorLabeledMessage` (`app/api/lib/inbox-tailor.ts`) claims + extracts a Gmail payload, then calls `runTailorCore` in-process (strict `cv` + `replyText`, no Bearer, no public rate-limit buckets). `npm run inbox:scan` and Railway cron (`railway.inbox-scan.toml`) invoke the same library code — see [Pipeline enhancements — inbox scan runtime](./PIPELINE_ENHANCEMENTS.md#inbox-scan-runtime). Deferred native LLM batch APIs use submit/poll/retrieve (cron-friendly); inbox and HTTP tailor use **sync** `chat()` today — see [Deployment hosting](./README.md#deployment-hosting-railway-vs-vercel).
+
+---
+
 ## Planned but not implemented
 
-See [PIPELINE_ENHANCEMENTS](./PIPELINE_ENHANCEMENTS.md) (two-pass, critic) and [LEARNING_SYSTEM](./LEARNING_SYSTEM.md) (SQLite feedback). Still deferred: selective RAG.
+See [PIPELINE_ENHANCEMENTS](./PIPELINE_ENHANCEMENTS.md) (exploratory two-pass/critic; [deferred LLM batch APIs](./PIPELINE_ENHANCEMENTS.md#native-llm-batch-apis-deferred)) and [LEARNING_SYSTEM](./LEARNING_SYSTEM.md) (SQLite feedback). Still deferred: selective RAG. Unattended inbox scan is the Railway cron service in `railway.inbox-scan.toml`.
