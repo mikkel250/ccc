@@ -15,7 +15,9 @@ import {
   markInboxProcessed,
   parseInboxMessageId,
   releaseInboxClaim,
+  releaseInboxThreadClaim,
   renewInboxClaim,
+  renewInboxThreadClaim,
   type InboxKv,
 } from "../app/api/lib/inbox-processed-store";
 
@@ -619,5 +621,190 @@ describe("inbox processed store", () => {
       memory.store.get(inboxThreadClaimKey(ID)),
       memory.store.get(inboxClaimKey(ID))
     );
+  });
+
+  it("returns timeout instead of lost when thread SET times out and the claim key is still empty", async () => {
+    const threadId = "thread-timeout-empty";
+    const origSet = memory.set.bind(memory);
+    memory.set = async (key, value, opts) => {
+      if (key === inboxThreadClaimKey(threadId)) {
+        throw new Error(INBOX_REDIS_TIMEOUT_ERROR);
+      }
+      return origSet(key, value, opts);
+    };
+    const result = await claimInboxThread(threadId);
+    assert.deepEqual(result, { ok: false, error: INBOX_REDIS_TIMEOUT_ERROR });
+    assert.equal(memory.store.has(inboxThreadClaimKey(threadId)), false);
+  });
+
+  it("treats a timed-out thread SET that still committed as a won claim", async () => {
+    const threadId = "thread-timeout-won";
+    const origSet = memory.set.bind(memory);
+    let firstThreadSet = true;
+    memory.set = async (key, value, opts) => {
+      const result = await origSet(key, value, opts);
+      if (firstThreadSet && key === inboxThreadClaimKey(threadId)) {
+        firstThreadSet = false;
+        throw new Error(INBOX_REDIS_TIMEOUT_ERROR);
+      }
+      return result;
+    };
+    const result = await claimInboxThread(threadId);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.outcome, "won");
+      assert.equal(typeof result.token, "string");
+    }
+    assert.equal(typeof memory.store.get(inboxThreadClaimKey(threadId)), "string");
+  });
+
+  it("returns a Redis error when thread claim verification GET times out", async () => {
+    const threadId = "thread-verify-timeout";
+    const claimed = await claimInboxThread(threadId);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won thread claim");
+    }
+    const origGet = memory.get.bind(memory);
+    memory.get = async (key) => {
+      if (key === inboxThreadClaimKey(threadId)) {
+        throw new Error(INBOX_REDIS_TIMEOUT_ERROR);
+      }
+      return origGet(key);
+    };
+    const retry = await claimInboxThread(threadId);
+    assert.deepEqual(retry, { ok: false, error: INBOX_REDIS_TIMEOUT_ERROR });
+    assert.equal(memory.store.get(inboxThreadClaimKey(threadId)), claimed.token);
+  });
+
+  it("returns lost when thread ownership changes during verification", async () => {
+    const threadId = "thread-replaced";
+    const origGet = memory.get.bind(memory);
+    memory.get = async (key) => {
+      if (
+        key === inboxThreadClaimKey(threadId) &&
+        memory.store.has(key)
+      ) {
+        memory.store.set(key, "replacement-token");
+      }
+      return origGet(key);
+    };
+    const result = await claimInboxThread(threadId);
+    assert.deepEqual(result, { ok: true, outcome: "lost" });
+    assert.equal(memory.store.get(inboxThreadClaimKey(threadId)), "replacement-token");
+  });
+
+  it("rejects an invalid threadId without touching Redis", async () => {
+    const result = await claimInboxThread("bad:id");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /unsupported characters/);
+    }
+    assert.equal(memory.store.size, 0);
+  });
+
+  it("releases a thread claim only for the owning token", async () => {
+    const threadId = "thread-release";
+    const claimed = await claimInboxThread(threadId);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won thread claim");
+    }
+    const stolen = await releaseInboxThreadClaim(threadId, "other-worker-token");
+    assert.deepEqual(stolen, { ok: true, deleted: false });
+    assert.equal(memory.store.get(inboxThreadClaimKey(threadId)), claimed.token);
+
+    const released = await releaseInboxThreadClaim(threadId, claimed.token);
+    assert.deepEqual(released, { ok: true, deleted: true });
+    assert.equal(memory.store.has(inboxThreadClaimKey(threadId)), false);
+  });
+
+  it("rejects thread release with a missing token or invalid threadId", async () => {
+    const threadId = "thread-release-guard";
+    const claimed = await claimInboxThread(threadId);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won thread claim");
+    }
+    const missing = await releaseInboxThreadClaim(threadId, "");
+    assert.deepEqual(missing, {
+      ok: false,
+      error: INBOX_CLAIM_TOKEN_REQUIRED_ERROR,
+    });
+    assert.equal(memory.store.get(inboxThreadClaimKey(threadId)), claimed.token);
+
+    const invalid = await releaseInboxThreadClaim("bad:id", claimed.token);
+    assert.equal(invalid.ok, false);
+    if (!invalid.ok) {
+      assert.match(invalid.error, /unsupported characters/);
+    }
+    assert.equal(memory.store.get(inboxThreadClaimKey(threadId)), claimed.token);
+  });
+
+  it("returns a Redis error when thread release times out", async () => {
+    const threadId = "thread-release-timeout";
+    const claimed = await claimInboxThread(threadId);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won thread claim");
+    }
+    memory.deleteIfValue = async () => {
+      throw new Error(INBOX_REDIS_TIMEOUT_ERROR);
+    };
+    const result = await releaseInboxThreadClaim(threadId, claimed.token);
+    assert.deepEqual(result, { ok: false, error: INBOX_REDIS_TIMEOUT_ERROR });
+    assert.equal(memory.store.get(inboxThreadClaimKey(threadId)), claimed.token);
+  });
+
+  it("renews a thread claim only for the owning token", async () => {
+    const threadId = "thread-renew";
+    const claimed = await claimInboxThread(threadId);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won thread claim");
+    }
+    const stolen = await renewInboxThreadClaim(threadId, "other-worker-token");
+    assert.deepEqual(stolen, { ok: true, renewed: false });
+    assert.equal(memory.store.get(inboxThreadClaimKey(threadId)), claimed.token);
+
+    const renewed = await renewInboxThreadClaim(threadId, claimed.token);
+    assert.deepEqual(renewed, { ok: true, renewed: true });
+    assert.equal(memory.store.get(inboxThreadClaimKey(threadId)), claimed.token);
+  });
+
+  it("rejects thread renewal with a missing token or invalid threadId", async () => {
+    const threadId = "thread-renew-guard";
+    const claimed = await claimInboxThread(threadId);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won thread claim");
+    }
+    const missing = await renewInboxThreadClaim(threadId, "");
+    assert.deepEqual(missing, {
+      ok: false,
+      error: INBOX_CLAIM_TOKEN_REQUIRED_ERROR,
+    });
+
+    const invalid = await renewInboxThreadClaim("bad:id", claimed.token);
+    assert.equal(invalid.ok, false);
+    if (!invalid.ok) {
+      assert.match(invalid.error, /unsupported characters/);
+    }
+    assert.equal(memory.store.get(inboxThreadClaimKey(threadId)), claimed.token);
+  });
+
+  it("returns a Redis error when thread renewal fails", async () => {
+    const threadId = "thread-renew-fail";
+    const claimed = await claimInboxThread(threadId);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok || claimed.outcome !== "won") {
+      throw new Error("expected a won thread claim");
+    }
+    memory.expireIfOwned = async () => {
+      throw new Error("ECONNRESET");
+    };
+    const result = await renewInboxThreadClaim(threadId, claimed.token);
+    assert.deepEqual(result, { ok: false, error: INBOX_REDIS_UNAVAILABLE_ERROR });
+    assert.equal(memory.store.get(inboxThreadClaimKey(threadId)), claimed.token);
   });
 });
