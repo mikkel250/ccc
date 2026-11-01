@@ -142,9 +142,19 @@ function encodeUpstashResult(result: unknown): unknown {
   return result;
 }
 
+const PROBE_EVAL_SCRIPT = 'return redis.call("GET", KEYS[1])';
+
+function setIncludesEx60(command: unknown[]): boolean {
+  const tail = command.slice(3);
+  return tail.some((part, index) => {
+    return String(part).toUpperCase() === "EX" && Number(tail[index + 1]) === 60;
+  });
+}
+
 function runUpstashCommand(store: Map<string, string>, command: unknown[]): unknown {
   const op = String(command[0] ?? "").toUpperCase();
   if (op === "SET") {
+    assert.ok(setIncludesEx60(command), "SET must include EX 60");
     store.set(String(command[1]), String(command[2]));
     return "OK";
   }
@@ -152,9 +162,15 @@ function runUpstashCommand(store: Map<string, string>, command: unknown[]): unkn
     return store.get(String(command[1])) ?? null;
   }
   if (op === "EVAL") {
-    const numKeys = Number(command[2]);
-    const keys = command.slice(3, 3 + numKeys).map(String);
-    return store.get(keys[0] ?? "") ?? null;
+    const numKeys = command[2];
+    assert.equal(numKeys, 1, "EVAL numkeys");
+    const keys = command.slice(3, 3 + Number(numKeys));
+    const args = command.slice(3 + Number(numKeys));
+    assert.equal(keys.length, 1, "EVAL key");
+    assert.equal(typeof keys[0], "string", "EVAL key");
+    assert.deepEqual(args, [], "EVAL args");
+    assert.equal(command[1], PROBE_EVAL_SCRIPT, "EVAL script");
+    return store.get(String(keys[0])) ?? null;
   }
   throw new Error(`unsupported command ${op}`);
 }
@@ -203,12 +219,9 @@ describe("redis helpers through the Upstash REST client", () => {
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ result }));
         } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
           res.writeHead(200, { "content-type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: error instanceof Error ? error.message : String(error),
-            })
-          );
+          res.end(JSON.stringify(isPipeline ? [{ error: message }] : { error: message }));
         }
       });
     });
@@ -224,7 +237,7 @@ describe("redis helpers through the Upstash REST client", () => {
     assert.equal(await setRedisKey(client, key, "ok", { ex: 60 }), "OK");
     assert.equal(await getRedisKey(client, key), "ok");
     assert.equal(
-      await evalRedisScript(client, 'return redis.call("GET", KEYS[1])', key, []),
+      await evalRedisScript(client, PROBE_EVAL_SCRIPT, key, []),
       "ok"
     );
   });
