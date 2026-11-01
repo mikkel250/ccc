@@ -32,7 +32,10 @@ function plainMessage(text: string): unknown {
   };
 }
 
-function createMemoryKv(): InboxKv & { store: Map<string, string> } {
+function createMemoryKv(): InboxKv & {
+  store: Map<string, string>;
+  expiresAt: Map<string, number>;
+} {
   const store = new Map<string, string>();
   const expiresAt = new Map<string, number>();
   function purge(key: string): void {
@@ -44,6 +47,7 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
   }
   return {
     store,
+    expiresAt,
     get: async (key) => {
       purge(key);
       return store.get(key) ?? null;
@@ -113,18 +117,72 @@ describe("parseInboxMessageId", () => {
     assert.equal(result.ok, true);
   });
 
-  it("rejects ids longer than INBOX_MESSAGE_ID_MAX_CHARS", () => {
-    const saved = process.env.INBOX_MESSAGE_ID_MAX_CHARS;
-    process.env.INBOX_MESSAGE_ID_MAX_CHARS = "8";
-    const tooLong = parseInboxMessageId("123456789");
-    if (saved === undefined) delete process.env.INBOX_MESSAGE_ID_MAX_CHARS;
-    else process.env.INBOX_MESSAGE_ID_MAX_CHARS = saved;
-    assert.equal(tooLong.ok, false);
-    if (!tooLong.ok) {
-      assert.match(tooLong.error, /max length/i);
+  it("rejects ids longer than the configured max length", () => {
+    withMessageIdMaxChars(8, () => {
+      assert.equal(parseInboxMessageId("1".repeat(8)).ok, true);
+      const result = parseInboxMessageId("1".repeat(9));
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.match(result.error, /max length/);
+      }
+    });
+  });
+
+  it("applies an explicit maxChars argument at the boundary", () => {
+    assert.equal(parseInboxMessageId("12345", 5).ok, true);
+    const result = parseInboxMessageId("123456", 5);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /max length/);
     }
   });
+
+  it("caps an explicit maxChars at the configured limit", () => {
+    withMessageIdMaxChars(8, () => {
+      assert.equal(parseInboxMessageId("1".repeat(8), 10_000).ok, true);
+      const result = parseInboxMessageId("1".repeat(9), 10_000);
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.match(result.error, /max length/);
+      }
+    });
+  });
+
+  it("falls back to the configured max when maxChars is not a positive integer", () => {
+    withMessageIdMaxChars(8, () => {
+      const within = "1".repeat(8);
+      const over = "1".repeat(9);
+      const invalid = [
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+        Number.NEGATIVE_INFINITY,
+        -1,
+        0,
+        1.5,
+      ];
+      for (const maxChars of invalid) {
+        assert.equal(parseInboxMessageId(within, maxChars).ok, true, String(maxChars));
+        const result = parseInboxMessageId(over, maxChars);
+        assert.equal(result.ok, false, String(maxChars));
+        if (!result.ok) {
+          assert.match(result.error, /max length/);
+        }
+      }
+    });
+  });
 });
+
+function withMessageIdMaxChars(maxChars: number, run: () => void): void {
+  const key = "INBOX_MESSAGE_ID_MAX_CHARS";
+  const previous = process.env[key];
+  process.env[key] = String(maxChars);
+  try {
+    run();
+  } finally {
+    if (previous === undefined) delete process.env[key];
+    else process.env[key] = previous;
+  }
+}
 
 describe("inbox processed store", () => {
   let memory: ReturnType<typeof createMemoryKv>;
@@ -545,6 +603,79 @@ describe("inbox processed store", () => {
       error: INBOX_CLAIM_TOKEN_REQUIRED_ERROR,
     });
     assert.equal(memory.store.size, 0);
+  });
+
+  it("extends claim expiry only for the owning token", async () => {
+    const previous = process.env.INBOX_CLAIM_TTL_SECONDS;
+    process.env.INBOX_CLAIM_TTL_SECONDS = "30";
+    try {
+      const claimed = await claimInboxMessage(ID);
+      assert.equal(claimed.ok, true);
+      if (!claimed.ok || claimed.outcome !== "won") {
+        throw new Error("expected a won claim");
+      }
+      const key = inboxClaimKey(ID);
+      const before = memory.expiresAt.get(key);
+      assert.equal(typeof before, "number");
+
+      const stolen = await renewInboxClaim(ID, "other-worker-token");
+      assert.deepEqual(stolen, { ok: true, renewed: false });
+      assert.equal(memory.expiresAt.get(key), before);
+      assert.equal(memory.store.get(key), claimed.token);
+
+      process.env.INBOX_CLAIM_TTL_SECONDS = "120";
+      const started = Date.now();
+      const renewed = await renewInboxClaim(ID, claimed.token);
+      const finished = Date.now();
+      assert.deepEqual(renewed, { ok: true, renewed: true });
+      const after = memory.expiresAt.get(key);
+      assert.equal(typeof after, "number");
+      if (typeof after === "number") {
+        assert.ok(after >= started + 120_000);
+        assert.ok(after <= finished + 120_000);
+      }
+      assert.equal(memory.store.get(key), claimed.token);
+    } finally {
+      if (previous === undefined) delete process.env.INBOX_CLAIM_TTL_SECONDS;
+      else process.env.INBOX_CLAIM_TTL_SECONDS = previous;
+    }
+  });
+
+  it("does not release or renew an id past the configured max length", async () => {
+    const saved = process.env.INBOX_MESSAGE_ID_MAX_CHARS;
+    const deleteIfValue = memory.deleteIfValue;
+    const expireIfOwned = memory.expireIfOwned;
+    let deletes = 0;
+    let expires = 0;
+    try {
+      process.env.INBOX_MESSAGE_ID_MAX_CHARS = "8";
+      memory.deleteIfValue = async () => {
+        deletes += 1;
+        return true;
+      };
+      memory.expireIfOwned = async () => {
+        expires += 1;
+        return true;
+      };
+      const released = await releaseInboxClaim("123456789", "token");
+      const renewed = await renewInboxClaim("123456789", "token");
+      assert.equal(released.ok, false);
+      assert.equal(renewed.ok, false);
+      if (!released.ok) {
+        assert.match(released.error, /max length/i);
+      }
+      if (!renewed.ok) {
+        assert.match(renewed.error, /max length/i);
+      }
+      assert.equal(deletes, 0);
+      assert.equal(expires, 0);
+      assert.equal(memory.store.size, 0);
+    } finally {
+      memory.deleteIfValue = deleteIfValue;
+      memory.expireIfOwned = expireIfOwned;
+      if (saved === undefined) delete process.env.INBOX_MESSAGE_ID_MAX_CHARS;
+      else process.env.INBOX_MESSAGE_ID_MAX_CHARS = saved;
+    }
   });
 
   it("lets only one concurrent thread claim win", async () => {

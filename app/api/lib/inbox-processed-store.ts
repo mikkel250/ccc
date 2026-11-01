@@ -200,16 +200,27 @@ export function inboxProcessedKey(messageId: string): string {
   return `${getInboxRedisPrefix()}:processed:${messageId}`;
 }
 
+/** Positive integers may tighten the cap; anything else uses the configured max. */
+function resolveInboxIdMaxChars(maxChars: number): number {
+  const configured = getInboxMessageIdMaxChars();
+  if (!Number.isInteger(maxChars) || maxChars < 1) {
+    return configured;
+  }
+  return Math.min(maxChars, configured);
+}
+
 function parseInboxKeyId(
   value: unknown,
-  noun: "messageId" | "threadId"
+  noun: "messageId" | "threadId",
+  maxChars: number = getInboxMessageIdMaxChars()
 ): { ok: true; id: string } | { ok: false; error: string } {
   const label = noun === "messageId" ? "Gmail messageId" : "Gmail threadId";
+  const limit = resolveInboxIdMaxChars(maxChars);
   if (typeof value !== "string" || value.trim() === "") {
     return { ok: false, error: `${label} is required` };
   }
   const id = value.trim();
-  if (id.length > getInboxMessageIdMaxChars()) {
+  if (id.length > limit) {
     return { ok: false, error: `${label} exceeds configured max length` };
   }
   if (!MESSAGE_ID_RE.test(id)) {
@@ -219,9 +230,10 @@ function parseInboxKeyId(
 }
 
 export function parseInboxMessageId(
-  value: unknown
+  value: unknown,
+  maxChars: number = getInboxMessageIdMaxChars()
 ): { ok: true; messageId: string } | { ok: false; error: string } {
-  const parsed = parseInboxKeyId(value, "messageId");
+  const parsed = parseInboxKeyId(value, "messageId", maxChars);
   if (!parsed.ok) {
     return parsed;
   }

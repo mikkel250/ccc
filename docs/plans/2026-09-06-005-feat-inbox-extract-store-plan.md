@@ -38,7 +38,7 @@ Overlapping local and Railway scans must not double-extract; the JD must come fr
 
 - R7. JD = message body, `text/plain` else html-to-text. No JD-isolation model.
 - R10. Atomic claim of `messageId` before later tailor/draft. Claim ≠ processed.
-- R12. Processed ids persist in Upstash Redis. This row implements key layout + TTL via env.
+- R12. Processed ids persist in Upstash Redis. This row implements key layout; processed keys are non-expiring (terminal).
 
 ### Scope Boundaries
 
@@ -55,7 +55,7 @@ Overlapping local and Railway scans must not double-extract; the JD must come fr
 
 ### Key Technical Decisions
 
-- KTD1. **Keys `{INBOX_REDIS_PREFIX}:claim:{id}` and `{INBOX_REDIS_PREFIX}:processed:{id}`.** Prefix default `inbox`. Claim SET NX + EX `INBOX_CLAIM_TTL_SECONDS` (default 900). Processed SET; `INBOX_PROCESSED_TTL_SECONDS` 0 = no expiry.
+- KTD1. **Keys `{INBOX_REDIS_PREFIX}:claim:{id}` and `{INBOX_REDIS_PREFIX}:processed:{id}`.** Prefix default `inbox`. Claim SET NX + EX `INBOX_CLAIM_TTL_SECONDS` (default 900). Processed SET with no EX (terminal; do not apply a positive TTL).
 - KTD2. **Walk Gmail `payload` / `parts`; prefer `text/plain`; else strip HTML.** Instantiates R7. No new npm dependency.
 - KTD3. **Inject an `InboxKv` in tests; production uses `getRedisClient()`.** Matches rate-limit injection.
 

@@ -15,8 +15,10 @@ import {
 } from "../../../lib/env";
 import { RateLimitError, ServiceError } from "./errors";
 import {
+  bearerTokenEquals,
   getConfiguredTailorApiKey,
   isTailorAuthBypassRequested,
+  parseBearerToken,
   type TailorAuthResult,
 } from "./tailor-auth";
 import { hashTailorApiKeyForRateLimit, getRateLimitConfig } from "./rate-limit";
@@ -239,15 +241,28 @@ export interface TailorPipelineDeps {
   sanitizeForResponse: (data: unknown) => unknown;
 }
 
-function resolveSecretBucketKey(): string {
+/**
+ * Secret-bucket key material. When a key is configured, hash the configured
+ * secret only for a matching Bearer. Missing and wrong tokens use shared
+ * sentinels so unauthenticated traffic cannot drain the legitimate key's
+ * quota and rotating wrong tokens cannot bypass the secret window.
+ */
+function resolveSecretBucketKey(authorizationHeader: string | null): string {
   const configuredKey = getConfiguredTailorApiKey();
-  if (configuredKey) {
+  if (!configuredKey) {
+    if (isTailorAuthBypassRequested()) {
+      return hashTailorApiKeyForRateLimit("bypass:bypass");
+    }
+    return hashTailorApiKeyForRateLimit("bypass:unconfigured");
+  }
+  const presented = parseBearerToken(authorizationHeader);
+  if (!presented) {
+    return hashTailorApiKeyForRateLimit("unauth:missing");
+  }
+  if (bearerTokenEquals(presented, configuredKey)) {
     return hashTailorApiKeyForRateLimit(configuredKey);
   }
-  if (isTailorAuthBypassRequested()) {
-    return hashTailorApiKeyForRateLimit("bypass:bypass");
-  }
-  return hashTailorApiKeyForRateLimit("bypass:unconfigured");
+  return hashTailorApiKeyForRateLimit("unauth:invalid");
 }
 
 // ---------------------------------------------------------------------------
@@ -269,8 +284,11 @@ export async function buildTailorResponse(
     return { ok: false, error: "Cannot determine client IP", status: 400 };
   }
 
-  // 2. Rate limit (before auth so failed credential guesses consume quota)
-  const secretBucketKey = resolveSecretBucketKey();
+  // 2. Rate limit (before auth so failed credential guesses consume IP +
+  // invalid/missing-auth sentinel quota, not the configured key's secret bucket)
+  const secretBucketKey = resolveSecretBucketKey(
+    request.headers.get("authorization")
+  );
 
   let rateLimit: Awaited<ReturnType<typeof deps.checkRateLimit>>;
   try {
