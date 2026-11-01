@@ -231,6 +231,18 @@ describe("parseParityStatusJson", () => {
     assert.deepEqual(status.pending, ["deepseek/deepseek-v4-pro"]);
   });
 
+  it("accepts cells when pending is omitted", () => {
+    const status = parseParityStatusJson({
+      cells: {
+        "anthropic/sonnet": { ok: true },
+        "deepseek/deepseek-v4-pro": { ok: false },
+      },
+    });
+    assert.equal(status.cells["anthropic/sonnet"]?.ok, true);
+    assert.equal(status.cells["deepseek/deepseek-v4-pro"]?.ok, false);
+    assert.equal(status.pending, undefined);
+  });
+
   it("rejects non-object roots", () => {
     for (const raw of [null, [], "bad"]) {
       assert.throws(() => parseParityStatusJson(raw), throwsInvalidParityStatus);

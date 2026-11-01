@@ -596,6 +596,15 @@ describe("inbox processed store", () => {
     assert.equal(memory.store.get(inboxClaimKey(ID)), claimed.token);
   });
 
+  it("rejects a processed mark with a missing token", async () => {
+    const missing = await markInboxProcessed(ID, "");
+    assert.deepEqual(missing, {
+      ok: false,
+      error: INBOX_CLAIM_TOKEN_REQUIRED_ERROR,
+    });
+    assert.equal(memory.store.size, 0);
+  });
+
   it("extends claim expiry only for the owning token", async () => {
     const previous = process.env.INBOX_CLAIM_TTL_SECONDS;
     process.env.INBOX_CLAIM_TTL_SECONDS = "30";
