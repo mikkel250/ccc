@@ -419,6 +419,31 @@ describe("buildTailorResponse — pipeline orchestration", () => {
     assert.equal(checkRateLimitSpy.mock.callCount(), 0);
   });
 
+  it("ignores valid IPs outside the rightmost XFF entry window", async () => {
+    mockPipelineSuccess();
+    const checkRateLimitSpy = mock.method(tailorCvDeps, "checkRateLimit");
+    const outsideWindow = "198.51.100.42";
+    const inWindow = "203.0.113.5";
+    const beyondWindow = [
+      outsideWindow,
+      "203.0.113.1",
+      "203.0.113.2",
+      "203.0.113.3",
+      "203.0.113.4",
+      inWindow,
+    ].join(", ");
+    const result = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(
+        VALID_BODY,
+        authHeaders({ "x-forwarded-for": beyondWindow })
+      )
+    );
+    assert.equal(result.ok, true);
+    assert.equal(checkRateLimitSpy.mock.callCount(), 1);
+    assert.equal(checkRateLimitSpy.mock.calls[0]?.arguments[1], inWindow);
+  });
+
   // --- Rate limiting ---
 
   it("returns rate limit error when RateLimitError is thrown", async () => {
@@ -921,6 +946,66 @@ describe("runTailorCore — in-process curator path", () => {
     }
   });
 
+  it("returns generic 503 when chat throws after the abort signal fired", async () => {
+    const abortController = new AbortController();
+    const chatSpy = mock.method(tailorCvDeps, "chat", async () => {
+      abortController.abort();
+      throw new Error("curator worker LEASE_LOST_TOKEN");
+    });
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+      signal: abortController.signal,
+    });
+
+    assert.equal(chatSpy.mock.callCount(), 1);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "AI service error. Please try again.");
+      assert.doesNotMatch(result.error, /LEASE_LOST_TOKEN/);
+    }
+  });
+
+  it("returns generic 503 when chat fails after the abort signal fires", async () => {
+    const abortController = new AbortController();
+    mock.method(tailorCvDeps, "chat", async () => {
+      abortController.abort();
+      throw new Error("The operation was aborted");
+    });
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+      signal: abortController.signal,
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "AI service error. Please try again.");
+      assert.doesNotMatch(result.error, /aborted/i);
+    }
+  });
+
+  it("passes ServiceError messages from chat through verbatim as 503", async () => {
+    mock.method(tailorCvDeps, "chat", async () => {
+      throw new ServiceError("Master CV is not loaded.");
+    });
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "Master CV is not loaded.");
+    }
+  });
+
   it("echoes namespaced TAILOR_MODEL instead of the provider model id", async () => {
     const previous = process.env.TAILOR_MODEL;
     process.env.TAILOR_MODEL = "anthropic/sonnet";
@@ -1067,6 +1152,63 @@ describe("runTailorCore — in-process curator path", () => {
       assert.equal(compileSpy.mock.callCount(), 0);
     } finally {
       release();
+    }
+  });
+
+  it("returns 422 when strict curator output is missing curated_cv", async () => {
+    mock.method(tailorCvDeps, "chat", async () => ({
+      content: JSON.stringify({ reply_text: DEFAULT_STRICT_REPLY }),
+      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+      model: "anthropic/sonnet",
+      finishReason: "stop",
+    }));
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 422);
+      assert.match(result.error, /curated_cv/);
+    }
+  });
+
+  it("returns 503 when chat aborts via the forwarded signal without leaking AbortError", async () => {
+    const controller = new AbortController();
+    let chatSignal: AbortSignal | undefined;
+    const chatSpy = mock.method(
+      tailorCvDeps,
+      "chat",
+      async (
+        _messages: unknown,
+        _systemPrompt: string,
+        options: { signal?: AbortSignal }
+      ) => {
+        chatSignal = options.signal;
+        if (chatSignal !== controller.signal) {
+          throw new Error("chat did not receive the request abort signal");
+        }
+        controller.abort();
+        throw new DOMException("The operation was aborted", "AbortError");
+      }
+    );
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+      signal: controller.signal,
+    });
+
+    assert.equal(chatSpy.mock.callCount(), 1);
+    assert.equal(chatSignal, controller.signal);
+    assert.equal(controller.signal.aborted, true);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "AI service error. Please try again.");
+      assert.doesNotMatch(result.error, /abort/i);
     }
   });
 });
