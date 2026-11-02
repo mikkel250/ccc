@@ -2,8 +2,10 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import {
   authenticateTailorRequest,
+  bearerTokenEquals,
   ensureSecureStartup,
   isProductionLikeDeploy,
+  parseBearerToken,
 } from "../app/api/lib/tailor-auth";
 
 const ORIGINAL_ENV = { ...process.env };
@@ -102,5 +104,44 @@ describe("tailor-auth", () => {
     process.env.TAILOR_AUTH_INSECURE_BYPASS = "1";
     process.env.RAILWAY_ENVIRONMENT = "production";
     assert.doesNotThrow(() => ensureSecureStartup());
+  });
+
+  it("treats VERCEL_ENV=production as a production-like deploy", () => {
+    process.env.VERCEL_ENV = "production";
+    process.env.TAILOR_AUTH_INSECURE_BYPASS = "1";
+    process.env.TAILOR_API_KEY = "secret-key";
+    assert.equal(isProductionLikeDeploy(), true);
+    const result = authenticateTailorRequest("Bearer secret-key");
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.status, 503);
+  });
+});
+
+describe("parseBearerToken", () => {
+  it("returns null for a missing header", () => {
+    assert.equal(parseBearerToken(null), null);
+  });
+
+  it("extracts the token from a Bearer header", () => {
+    assert.equal(parseBearerToken("Bearer my-api-key"), "my-api-key");
+    assert.equal(parseBearerToken("bearer my-api-key"), "my-api-key");
+    assert.equal(parseBearerToken("  Bearer   my-api-key  "), "my-api-key");
+  });
+
+  it("rejects non-Bearer schemes and malformed Bearer headers", () => {
+    assert.equal(parseBearerToken("Basic dXNlcjpwYXNz"), null);
+    assert.equal(parseBearerToken("Bearer"), null);
+    assert.equal(parseBearerToken("Bearer token extra"), null);
+  });
+});
+
+describe("bearerTokenEquals", () => {
+  it("accepts equal tokens and rejects different values", () => {
+    assert.equal(bearerTokenEquals("same", "same"), true);
+    assert.equal(bearerTokenEquals("same", "diff"), false);
+  });
+
+  it("rejects tokens with different lengths without leaking via timing", () => {
+    assert.equal(bearerTokenEquals("short", "much-longer-token"), false);
   });
 });
