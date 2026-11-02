@@ -68,6 +68,70 @@ describe("createGmailFetchFixture", () => {
       else process.env.GMAIL_RECRUITER_LABEL = previous;
     }
   });
+
+  it("serves a customized message, thread draft state, and draft creation", async () => {
+    let drafts = 0;
+    const fetchImpl = createGmailFetchFixture({
+      messageId: "msg-custom",
+      threadId: "thread-custom",
+      jobDescription: "Custom JD for the local scan",
+      onDraftCreate: () => {
+        drafts += 1;
+      },
+    });
+
+    const listed = await fetchImpl(
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages"
+    );
+    const listedBody = (await listed.json()) as {
+      messages: Array<{ id: string; threadId: string }>;
+    };
+    assert.deepEqual(listedBody.messages, [
+      { id: "msg-custom", threadId: "thread-custom" },
+    ]);
+
+    const message = await fetchImpl(
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages/msg-custom"
+    );
+    const messageBody = (await message.json()) as {
+      id: string;
+      threadId: string;
+      payload: { body: { data: string } };
+    };
+    assert.equal(messageBody.id, "msg-custom");
+    assert.equal(messageBody.threadId, "thread-custom");
+    assert.equal(
+      Buffer.from(messageBody.payload.body.data, "base64url").toString("utf8"),
+      "Custom JD for the local scan"
+    );
+
+    const openThread = await fetchImpl(
+      "https://gmail.googleapis.com/gmail/v1/users/me/threads/thread-custom"
+    );
+    const openThreadBody = (await openThread.json()) as {
+      messages: Array<{ id: string; labelIds: string[] }>;
+    };
+    assert.deepEqual(openThreadBody.messages, [
+      { id: "msg-custom", labelIds: ["INBOX"] },
+    ]);
+
+    const created = await fetchImpl(
+      "https://gmail.googleapis.com/gmail/v1/users/me/drafts",
+      { method: "POST" }
+    );
+    assert.equal(created.status, 200);
+    assert.deepEqual(await created.json(), { id: "local-mock-draft" });
+    assert.equal(drafts, 1);
+
+    const withDraft = createGmailFetchFixture({ threadDraft: true });
+    const existing = await withDraft(
+      "https://gmail.googleapis.com/gmail/v1/users/me/threads/thread-custom"
+    );
+    const existingBody = (await existing.json()) as {
+      messages: Array<{ id: string; labelIds: string[] }>;
+    };
+    assert.deepEqual(existingBody.messages, [{ id: "d1", labelIds: ["DRAFT"] }]);
+  });
 });
 
 describe("applyLocalInboxGmailEnv", () => {
