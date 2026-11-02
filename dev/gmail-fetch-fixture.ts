@@ -61,8 +61,9 @@ export function createGmailFetchFixture(
       return jsonResponse({ access_token: "local-mock-access", expires_in: 3600 });
     }
     if (parsed.pathname.endsWith("/users/me/labels")) {
+      const configured = process.env.GMAIL_RECRUITER_LABEL?.trim();
       return jsonResponse({
-        labels: [{ id: "Label_recruiter", name: "Recruiter" }],
+        labels: [{ id: "Label_recruiter", name: configured ? configured : "Recruiter" }],
       });
     }
     if (parsed.pathname.endsWith("/users/me/drafts") && init?.method === "POST") {

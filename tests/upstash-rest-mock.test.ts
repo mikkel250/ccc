@@ -1,6 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { __inboxRedisScriptsForTest } from "../app/api/lib/inbox-processed-store";
+
+// `npm test` sets this via tests/set-node-env-test.mjs. Plain `node --test` does not.
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = "test";
+}
 import {
   createMemoryStore,
   createUpstashRestMock,
@@ -10,12 +16,21 @@ import {
   slidingWindowEval,
 } from "../dev/upstash-rest-mock.mjs";
 
-const LIMIT_SCRIPT = `
+const SLIDING_LIMIT_SCRIPT = `
+  local current = redis.call("GET", currentKey)
+  local previous = redis.call("GET", previousKey)
+  local percentageInCurrent = ( now % window ) / window
+  redis.call("INCRBY", currentKey, incrementBy)
+  redis.call("PEXPIRE", currentKey, window)
+`;
+const SLIDING_REMAINING_SCRIPT = `
+  local current = redis.call("GET", currentKey)
+  local previous = redis.call("GET", previousKey)
+  local percentageInCurrent = ( now % window ) / window
+`;
+const NAME_ONLY_SCRIPT = `
   local requestsInCurrentWindow = redis.call("GET", currentKey)
   redis.call("INCRBY", currentKey, incrementBy)
-`;
-const REMAINING_SCRIPT = `
-  local requestsInCurrentWindow = redis.call("GET", currentKey)
 `;
 
 describe("upstash-rest-mock sliding window", () => {
@@ -55,18 +70,64 @@ describe("upstash-rest-mock sliding window", () => {
     const now = Date.now();
     const allowed = evalLua(
       memory,
-      LIMIT_SCRIPT,
+      SLIDING_LIMIT_SCRIPT,
       ["cur", "prev", ""],
       ["1", String(now), "60000", "1"]
     );
     assert.deepEqual(allowed, [0, 1]);
     const remaining = evalLua(
       memory,
-      REMAINING_SCRIPT,
+      SLIDING_REMAINING_SCRIPT,
       ["cur", "prev", ""],
       ["1", String(now), "60000"]
     );
     assert.deepEqual(remaining, [0, 1]);
+  });
+
+  it("does not treat a requestsInCurrentWindow mention as the sliding-window script", () => {
+    const memory = createMemoryStore();
+    assert.throws(
+      () =>
+        evalLua(
+          memory,
+          NAME_ONLY_SCRIPT,
+          ["cur", "prev", ""],
+          ["1", String(Date.now()), "60000", "1"]
+        ),
+      /unknown lua script/
+    );
+  });
+
+  it("accepts the installed @upstash/ratelimit sliding-window scripts", () => {
+    const source = readFileSync(
+      "node_modules/@upstash/ratelimit/dist/index.mjs",
+      "utf8"
+    );
+    const extract = (varName: string) => {
+      const marker = `var ${varName} = \``;
+      const start = source.indexOf(marker);
+      assert.ok(start >= 0, varName);
+      const bodyStart = start + marker.length;
+      const end = source.indexOf("`;", bodyStart);
+      assert.ok(end > bodyStart, varName);
+      return source.slice(bodyStart, end);
+    };
+    const memory = createMemoryStore();
+    const now = Date.now();
+    const limit = evalLua(
+      memory,
+      extract("slidingWindowLimitScript"),
+      ["cur", "prev", ""],
+      ["2", String(now), "60000", "1"]
+    );
+    const remaining = evalLua(
+      memory,
+      extract("slidingWindowRemainingTokensScript"),
+      ["cur", "prev", ""],
+      ["2", String(now), "60000"]
+    );
+    assert.deepEqual(limit, [1, 2]);
+    assert.deepEqual(remaining, [1, 2]);
   });
 });
 
@@ -110,6 +171,50 @@ describe("upstash-rest-mock inbox scripts", () => {
     assert.equal(evalLua(memory, scripts.deleteIfValue, ["renew"], ["token-a"]), 1);
     assert.equal(runCommand(memory, ["GET", "renew"]), null);
   });
+
+  it("does not route near-miss ownership text to the production scripts", () => {
+    const memory = createMemoryStore();
+    runCommand(memory, ["SET", "claim", "token-a"]);
+    assert.throws(
+      () =>
+        evalLua(
+          memory,
+          'redis.call("set", KEYS[2], "1")',
+          ["claim", "processed"],
+          ["token-a", "0"]
+        ),
+      /unknown lua script/
+    );
+    assert.equal(runCommand(memory, ["GET", "claim"]), "token-a");
+    assert.throws(
+      () => evalLua(memory, 'redis.call("expire", KEYS[1], ARGV[2])', ["claim"], ["token-a", "30"]),
+      /unknown lua script/
+    );
+    assert.throws(
+      () => evalLua(memory, 'redis.call("del", KEYS[1])', ["claim"], ["token-a"]),
+      /unknown lua script/
+    );
+    assert.equal(runCommand(memory, ["GET", "claim"]), "token-a");
+  });
+});
+
+describe("upstash-rest-mock SET expiry", () => {
+  it("clears an existing TTL when SET has no EX or PX", () => {
+    const memory = createMemoryStore();
+    assert.equal(runCommand(memory, ["SET", "k", "v", "EX", "60"]), "OK");
+    assert.ok(Number(runCommand(memory, ["TTL", "k"])) > 0);
+    assert.equal(runCommand(memory, ["SET", "k", "v2"]), "OK");
+    assert.equal(runCommand(memory, ["GET", "k"]), "v2");
+    assert.equal(runCommand(memory, ["TTL", "k"]), -1);
+  });
+
+  it("keeps the existing TTL on INCRBY", () => {
+    const memory = createMemoryStore();
+    runCommand(memory, ["SET", "k", "1", "PX", "60000"]);
+    assert.equal(runCommand(memory, ["INCRBY", "k", "2"]), 3);
+    assert.ok(Number(runCommand(memory, ["TTL", "k"])) > 0);
+    assert.equal(runCommand(memory, ["GET", "k"]), "3");
+  });
 });
 
 type MockHandle = ReturnType<typeof createUpstashRestMock>["handle"];
@@ -120,10 +225,12 @@ async function callHandle(
     url?: string;
     authorization?: string;
     body?: unknown;
+    raw?: string;
     headers?: Record<string, string>;
   }
 ): Promise<{ status: number; body: unknown }> {
-  const raw = init.body === undefined ? "" : JSON.stringify(init.body);
+  const raw =
+    init.raw ?? (init.body === undefined ? "" : JSON.stringify(init.body));
   const req = Object.assign(
     (async function* () {
       if (raw) yield Buffer.from(raw);
@@ -187,6 +294,23 @@ describe("createUpstashRestMock handle", () => {
     assert.deepEqual(encoded.body, {
       result: Buffer.from("1", "utf8").toString("base64"),
     });
+  });
+
+  it("reports invalid JSON from the request handler and keeps an empty body as no command", async () => {
+    const mock = createUpstashRestMock({ token: "tok" });
+    const invalid = await callHandle(mock.handle, {
+      authorization: "Bearer tok",
+      raw: "{",
+    });
+    assert.equal(invalid.status, 200);
+    assert.equal(typeof (invalid.body as { error?: unknown }).error, "string");
+
+    const empty = await callHandle(mock.handle, {
+      authorization: "Bearer tok",
+      raw: "",
+    });
+    assert.equal(empty.status, 200);
+    assert.match(String((empty.body as { error?: unknown }).error), /empty command/);
   });
 
   it("returns HTTP 401 when authorization is missing or invalid", async () => {

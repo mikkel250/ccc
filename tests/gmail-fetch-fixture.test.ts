@@ -32,6 +32,42 @@ describe("createGmailFetchFixture", () => {
     };
     assert.equal(listedBody.messages[0]?.id, "local-mock-msg-1");
   });
+
+  it("names the recruiter label from GMAIL_RECRUITER_LABEL and defaults to Recruiter", async () => {
+    const previous = process.env.GMAIL_RECRUITER_LABEL;
+    const fetchImpl = createGmailFetchFixture();
+    try {
+      delete process.env.GMAIL_RECRUITER_LABEL;
+      const fallback = await fetchImpl(
+        "https://gmail.googleapis.com/gmail/v1/users/me/labels"
+      );
+      const fallbackBody = (await fallback.json()) as {
+        labels: Array<{ name: string }>;
+      };
+      assert.equal(fallbackBody.labels[0]?.name, "Recruiter");
+
+      process.env.GMAIL_RECRUITER_LABEL = "   ";
+      const blank = await fetchImpl(
+        "https://gmail.googleapis.com/gmail/v1/users/me/labels"
+      );
+      const blankBody = (await blank.json()) as {
+        labels: Array<{ name: string }>;
+      };
+      assert.equal(blankBody.labels[0]?.name, "Recruiter");
+
+      process.env.GMAIL_RECRUITER_LABEL = "Hiring";
+      const named = await fetchImpl(
+        "https://gmail.googleapis.com/gmail/v1/users/me/labels"
+      );
+      const namedBody = (await named.json()) as {
+        labels: Array<{ name: string }>;
+      };
+      assert.equal(namedBody.labels[0]?.name, "Hiring");
+    } finally {
+      if (previous === undefined) delete process.env.GMAIL_RECRUITER_LABEL;
+      else process.env.GMAIL_RECRUITER_LABEL = previous;
+    }
+  });
 });
 
 describe("applyLocalInboxGmailEnv", () => {

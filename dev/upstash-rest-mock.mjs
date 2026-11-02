@@ -12,6 +12,11 @@
  */
 import http from "node:http";
 import { pathToFileURL } from "node:url";
+import {
+  DELETE_IF_VALUE_SCRIPT,
+  EXPIRE_IF_OWNED_SCRIPT,
+  MARK_PROCESSED_IF_OWNED_SCRIPT,
+} from "../app/api/lib/inbox-redis-scripts.mjs";
 
 export const DEFAULT_UPSTASH_REST_PORT = 8079;
 export const DEFAULT_UPSTASH_REST_TOKEN = "local-dev-upstash-token";
@@ -122,6 +127,83 @@ function getString(memory, key) {
   return memory.getEntry(key)?.value ?? null;
 }
 
+/** @param {string} script */
+function redisCallNames(script) {
+  return [...script.matchAll(/redis\.call\(\s*["']([A-Za-z]+)["']/gi)].map((match) =>
+    match[1].toUpperCase()
+  );
+}
+
+/**
+ * Sliding-window scripts from @upstash/ratelimit: overlap math plus two bucket GETs.
+ * A variable name alone is not enough.
+ * @param {string} script
+ */
+export function isSlidingWindowScript(script) {
+  if (!/\bnow\s*%\s*window\b/.test(script)) return false;
+  const calls = redisCallNames(script);
+  if (calls.filter((name) => name === "GET").length < 2) return false;
+  if (calls.includes("HMGET") || calls.includes("HSET")) return false;
+  if (calls.includes("INCRBY") && !calls.includes("PEXPIRE") && !calls.includes("EXPIRE")) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * @param {ReturnType<typeof createMemoryStore>} memory
+ * @param {string[]} keys
+ * @param {string[]} args
+ */
+function markProcessedIfOwned(memory, keys, args) {
+  const claimKey = keys[0];
+  const processedKey = keys[1];
+  const token = args[0];
+  const ttlSeconds = numeric(args[1], 0);
+  if (getString(memory, claimKey) !== token) {
+    return 0;
+  }
+  if (ttlSeconds > 0) {
+    memory.setValue(processedKey, "1", nowMs() + ttlSeconds * 1000);
+  } else {
+    memory.setValue(processedKey, "1", null);
+  }
+  memory.del(claimKey);
+  return 1;
+}
+
+/**
+ * @param {ReturnType<typeof createMemoryStore>} memory
+ * @param {string[]} keys
+ * @param {string[]} args
+ */
+function expireIfOwned(memory, keys, args) {
+  const key = keys[0];
+  const token = args[0];
+  const ttlSeconds = numeric(args[1], 0);
+  if (getString(memory, key) !== token) {
+    return 0;
+  }
+  const entry = memory.getEntry(key);
+  if (!entry) return 0;
+  memory.setValue(key, entry.value, nowMs() + ttlSeconds * 1000);
+  return 1;
+}
+
+/**
+ * @param {ReturnType<typeof createMemoryStore>} memory
+ * @param {string[]} keys
+ * @param {string[]} args
+ */
+function deleteIfValue(memory, keys, args) {
+  const key = keys[0];
+  const token = args[0];
+  if (getString(memory, key) !== token) {
+    return 0;
+  }
+  return memory.del(key);
+}
+
 /**
  * @param {ReturnType<typeof createMemoryStore>} memory
  * @param {string} script
@@ -129,51 +211,25 @@ function getString(memory, key) {
  * @param {string[]} args
  */
 export function evalLua(memory, script, keys, args) {
-  if (script.includes("requestsInCurrentWindow")) {
+  if (script === MARK_PROCESSED_IF_OWNED_SCRIPT) {
+    return markProcessedIfOwned(memory, keys, args);
+  }
+  if (script === EXPIRE_IF_OWNED_SCRIPT) {
+    return expireIfOwned(memory, keys, args);
+  }
+  if (script === DELETE_IF_VALUE_SCRIPT) {
+    return deleteIfValue(memory, keys, args);
+  }
+  if (isSlidingWindowScript(script)) {
     return slidingWindowEval(
       memory,
       keys,
       args,
-      script.includes("INCRBY")
+      redisCallNames(script).includes("INCRBY")
     );
   }
-  if (script.includes('redis.call("set", KEYS[2], "1"') || script.includes("KEYS[2], \"1\"")) {
-    const claimKey = keys[0];
-    const processedKey = keys[1];
-    const token = args[0];
-    const ttlSeconds = numeric(args[1], 0);
-    if (getString(memory, claimKey) !== token) {
-      return 0;
-    }
-    if (ttlSeconds > 0) {
-      memory.setValue(processedKey, "1", nowMs() + ttlSeconds * 1000);
-    } else {
-      memory.setValue(processedKey, "1", null);
-    }
-    memory.del(claimKey);
-    return 1;
-  }
-  if (script.includes('redis.call("expire"')) {
-    const key = keys[0];
-    const token = args[0];
-    const ttlSeconds = numeric(args[1], 0);
-    if (getString(memory, key) !== token) {
-      return 0;
-    }
-    const entry = memory.getEntry(key);
-    if (!entry) return 0;
-    memory.setValue(key, entry.value, nowMs() + ttlSeconds * 1000);
-    return 1;
-  }
-  if (script.includes('redis.call("del"')) {
-    const key = keys[0];
-    const token = args[0];
-    if (getString(memory, key) !== token) {
-      return 0;
-    }
-    return memory.del(key);
-  }
-  if (/redis\.call\(\s*["']GET["']/i.test(script)) {
+  const calls = redisCallNames(script);
+  if (calls.length === 1 && calls[0] === "GET") {
     return getString(memory, keys[0] ?? "");
   }
   throw new Error("ERR unknown lua script");
@@ -240,7 +296,7 @@ export function runCommand(memory, command) {
       const existing = memory.getEntry(key);
       if (nx && existing) return null;
       if (xx && !existing) return null;
-      memory.setValue(key, value, expiresAt ?? existing?.expiresAt ?? null);
+      memory.setValue(key, value, expiresAt);
       return "OK";
     }
     case "INCR":
@@ -316,9 +372,9 @@ export function createUpstashRestMock(options = {}) {
       chunks.push(chunk);
     }
     const raw = Buffer.concat(chunks).toString("utf8");
-    const parsed = raw ? JSON.parse(raw) : [];
     const path = req.url || "/";
     try {
+      const parsed = raw ? JSON.parse(raw) : [];
       if (path.startsWith("/pipeline") || (Array.isArray(parsed) && Array.isArray(parsed[0]))) {
         const results = parsed.map((cmd) => {
           try {

@@ -9,7 +9,7 @@ Stand-ins under `dev/` so tailor, rate-limit, and inbox scan can run without liv
 npm run dev:local
 ```
 
-Loads `.env.local` when that file exists, otherwise `.env`, into the mock process. Variables already set in the shell take precedence. Then it starts the Upstash REST mock (`:8079`), the DeepSeek mock (`:4010`), and `next dev` on `PORT` (default **3001**). Frontend stays on **3000**.
+Loads `.env.local` when that file exists, otherwise `.env`, into the shell before the mocks and `next dev` start. Variables already set in the shell take precedence. Then it starts the Upstash REST mock (`:8079`), the DeepSeek mock (`:4010`), and `next dev` on `PORT` (default **3001**). If either mock or Next.js exits, the rest of the stack is stopped. Frontend stays on **3000**.
 
 Inbox without live Gmail (injected `fetchImpl`; `GMAIL_*_URL` remain HTTPS):
 
