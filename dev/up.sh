@@ -37,10 +37,13 @@ trap cleanup EXIT
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
 
+# Same defaults as dev/upstash-rest-mock.mjs and dev/deepseek-mock.mjs.
+upstash_port="${UPSTASH_REST_PORT:-8079}"
+deepseek_port="${DEEPSEEK_MOCK_PORT:-4010}"
 ready=0
 for _ in $(seq 1 25); do
-  if curl -sf http://127.0.0.1:8079/health >/dev/null 2>&1 \
-    && curl -sf http://127.0.0.1:4010/health >/dev/null 2>&1; then
+  if curl -sf "http://127.0.0.1:${upstash_port}/health" >/dev/null 2>&1 \
+    && curl -sf "http://127.0.0.1:${deepseek_port}/health" >/dev/null 2>&1; then
     ready=1
     break
   fi
@@ -52,7 +55,7 @@ for _ in $(seq 1 25); do
   sleep 0.2
 done
 if [[ "$ready" -ne 1 ]]; then
-  echo "Local mocks did not become healthy on :8079 and :4010." >&2
+  echo "Local mocks did not become healthy on :${upstash_port} and :${deepseek_port}." >&2
   exit 1
 fi
 
