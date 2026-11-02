@@ -7,6 +7,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { guardMockRequest } from "./mock-request.mjs";
 
 export const DEFAULT_DEEPSEEK_MOCK_PORT = 4010;
 
@@ -73,7 +74,7 @@ export function listenDeepseekMock(options = {}) {
   );
   const handle = createDeepseekMockHandler(options);
   const server = http.createServer((req, res) => {
-    void handle(req, res);
+    guardMockRequest(handle, req, res);
   });
   server.listen(port, "127.0.0.1", () => {
     console.log(`deepseek-mock listening on http://127.0.0.1:${port}`);

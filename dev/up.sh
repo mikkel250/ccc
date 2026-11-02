@@ -22,6 +22,22 @@ import { formatUnsetExports } from "./dev/load-env-file.mjs";
 process.stdout.write(formatUnsetExports(fs.readFileSync(process.argv[1], "utf8"), process.env));
 ' "$ENV_FILE")"
 
+# Same defaults as dev/upstash-rest-mock.mjs and dev/deepseek-mock.mjs.
+upstash_port="${UPSTASH_REST_PORT:-8079}"
+deepseek_port="${DEEPSEEK_MOCK_PORT:-4010}"
+node --input-type=module --eval '
+import { assertLocalMockClientUrls } from "./dev/local-service-urls.mjs";
+try {
+  assertLocalMockClientUrls(process.env, {
+    upstash: Number(process.argv[1]),
+    deepseek: Number(process.argv[2]),
+  });
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
+' "$upstash_port" "$deepseek_port"
+
 node dev/start-mocks.mjs &
 MOCKS_PID=$!
 NEXT_PID=""
@@ -37,9 +53,6 @@ trap cleanup EXIT
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
 
-# Same defaults as dev/upstash-rest-mock.mjs and dev/deepseek-mock.mjs.
-upstash_port="${UPSTASH_REST_PORT:-8079}"
-deepseek_port="${DEEPSEEK_MOCK_PORT:-4010}"
 ready=0
 for _ in $(seq 1 25); do
   if curl -sf "http://127.0.0.1:${upstash_port}/health" >/dev/null 2>&1 \

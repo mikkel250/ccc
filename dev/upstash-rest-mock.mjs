@@ -11,6 +11,7 @@
  * (the header @upstash/redis sets by default). `OK`, null, and numbers stay raw.
  */
 import http from "node:http";
+import { guardMockRequest } from "./mock-request.mjs";
 import { pathToFileURL } from "node:url";
 import {
   DELETE_IF_VALUE_SCRIPT,
@@ -348,23 +349,25 @@ export function createUpstashRestMock(options = {}) {
     process.env.UPSTASH_REDIS_REST_TOKEN ??
     DEFAULT_UPSTASH_REST_TOKEN;
 
+  const send = (res, status, body) => {
+    if (res.destroyed || res.writableEnded) return;
+    res.writeHead(status, { "content-type": "application/json" });
+    res.end(JSON.stringify(body));
+  };
+
   function wrap(result, req) {
     if (options.encode === false || !requestsBase64Encoding(req)) return result;
     return encodeUpstashResult(result);
   }
 
   async function handle(req, res) {
-    const send = (status, body) => {
-      res.writeHead(status, { "content-type": "application/json" });
-      res.end(JSON.stringify(body));
-    };
     if (req.method === "GET" && (req.url === "/health" || req.url?.startsWith("/health?"))) {
-      send(200, { status: "ok" });
+      send(res, 200, { status: "ok" });
       return;
     }
     const header = req.headers.authorization || "";
     if (header !== `Bearer ${token}`) {
-      send(401, { error: "Unauthorized" });
+      send(res, 401, { error: "Unauthorized" });
       return;
     }
     const chunks = [];
@@ -383,12 +386,12 @@ export function createUpstashRestMock(options = {}) {
             return { error: error instanceof Error ? error.message : String(error) };
           }
         });
-        send(200, results);
+        send(res, 200, results);
         return;
       }
-      send(200, { result: wrap(runCommand(memory, parsed), req) });
+      send(res, 200, { result: wrap(runCommand(memory, parsed), req) });
     } catch (error) {
-      send(200, { error: error instanceof Error ? error.message : String(error) });
+      send(res, 200, { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -399,7 +402,7 @@ export function listenUpstashRestMock(options = {}) {
   const port = Number(options.port ?? process.env.UPSTASH_REST_PORT ?? DEFAULT_UPSTASH_REST_PORT);
   const mock = createUpstashRestMock(options);
   const server = http.createServer((req, res) => {
-    void mock.handle(req, res);
+    guardMockRequest(mock.handle, req, res);
   });
   server.listen(port, "127.0.0.1", () => {
     console.log(`upstash-rest-mock listening on http://127.0.0.1:${port}`);

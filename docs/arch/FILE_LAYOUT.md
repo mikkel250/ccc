@@ -78,6 +78,8 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 ├── dev/                          # Local Upstash/DeepSeek mocks + inbox Gmail fixtures
 │   ├── up.sh / start-mocks.mjs   # npm run dev:local (mocks + API :3001)
 │   ├── load-env-file.mjs         # Selected env file for mocks and Next, shell wins
+│   ├── local-service-urls.mjs    # Loopback guard for Upstash and DeepSeek client URLs
+│   ├── mock-request.mjs          # Mock HTTP handlers survive a disconnected client
 │   ├── upstash-rest-mock.mjs     # REST + pipeline + sliding-window EVAL
 │   ├── deepseek-mock.mjs         # OpenAI-compatible curator JSON
 │   ├── gmail-fetch-fixture.ts    # Injected HTTPS Gmail fetch (no live Gmail)

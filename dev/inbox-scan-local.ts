@@ -12,12 +12,14 @@ import { pathToFileURL } from "node:url";
 import { inboxProcessedKey } from "../app/api/lib/inbox-processed-store";
 import { scanInbox, type InboxScanResult } from "../app/api/lib/inbox-scan";
 import { preloadMasterCv } from "../app/api/lib/master-cv";
+import { inboxScanCliExitCode } from "../scripts/inbox-scan";
 import {
   applyLocalInboxGmailEnv,
   assertLocalInboxGmailUrlsAreHttps,
   createGmailFetchFixture,
   LOCAL_INBOX_MESSAGE_ID,
 } from "./gmail-fetch-fixture";
+import { assertLocalMockClientUrls } from "./local-service-urls.mjs";
 
 export type RedisClientLike = {
   get: (key: string) => Promise<unknown>;
@@ -115,6 +117,7 @@ export async function runLocalInboxScan(options?: {
   processed: unknown;
   redisProbe: { usedHelpers: boolean; get: unknown; eval: unknown };
 }> {
+  assertLocalMockClientUrls(process.env);
   applyLocalInboxGmailEnv();
   assertLocalInboxGmailUrlsAreHttps();
   const loaded = await preloadMasterCv();
@@ -137,13 +140,22 @@ export async function runLocalInboxScan(options?: {
   return { ok: result.ok, scan: result, processed, redisProbe };
 }
 
+export async function runLocalInboxCli(options?: {
+  scan?: () => Promise<InboxScanResult>;
+  redisMod?: RedisHelperModule;
+  messageId?: string;
+}): Promise<{ exitCode: 0 | 1 }> {
+  const result = await runLocalInboxScan(options);
+  console.log(JSON.stringify(result, null, 2));
+  return { exitCode: inboxScanCliExitCode(result.scan) };
+}
+
 export async function main(): Promise<void> {
   loadDotenv({ path: ".env.local" });
   loadDotenv();
   try {
-    const result = await runLocalInboxScan();
-    console.log(JSON.stringify(result, null, 2));
-    process.exitCode = result.ok && result.scan.ok ? 0 : 1;
+    const outcome = await runLocalInboxCli();
+    process.exitCode = outcome.exitCode;
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

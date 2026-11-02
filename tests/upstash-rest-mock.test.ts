@@ -1,3 +1,4 @@
+import http from "node:http";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -12,6 +13,7 @@ import {
   createUpstashRestMock,
   DEFAULT_UPSTASH_REST_TOKEN,
   evalLua,
+  listenUpstashRestMock,
   runCommand,
   slidingWindowEval,
 } from "../dev/upstash-rest-mock.mjs";
@@ -377,6 +379,53 @@ describe("createUpstashRestMock handle", () => {
     } finally {
       restoreEnv("UPSTASH_REST_TOKEN", savedRest);
       restoreEnv("UPSTASH_REDIS_REST_TOKEN", savedRedis);
+    }
+  });
+
+  it("keeps serving after a client aborts a POST", async () => {
+    const { server } = listenUpstashRestMock({ port: 0, token: "tok" });
+    const port = await new Promise<number>((resolve) => {
+      server.once("listening", () => {
+        const address = server.address();
+        if (address && typeof address === "object") resolve(address.port);
+      });
+    });
+    const rejections: unknown[] = [];
+    const onRejection = (error: unknown) => {
+      rejections.push(error);
+    };
+    process.on("unhandledRejection", onRejection);
+    try {
+      await new Promise<void>((resolve) => {
+        const req = http.request({
+          hostname: "127.0.0.1",
+          port,
+          method: "POST",
+          path: "/",
+          headers: { authorization: "Bearer tok", "content-length": "100000" },
+        });
+        req.on("error", () => resolve());
+        req.write("partial");
+        setTimeout(() => {
+          req.destroy();
+          resolve();
+        }, 30);
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const status = await new Promise<number | string>((resolve) => {
+        const req = http.get({ hostname: "127.0.0.1", port, path: "/health" }, (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        });
+        req.on("error", (error) =>
+          resolve("code" in error && typeof error.code === "string" ? error.code : "down")
+        );
+      });
+      assert.deepEqual(rejections, []);
+      assert.equal(status, 200);
+    } finally {
+      process.off("unhandledRejection", onRejection);
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
 });

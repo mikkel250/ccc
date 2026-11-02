@@ -12,6 +12,7 @@ chmod 600 secrets/master_cv.json
 
 npm install
 npm run dev:local          # mocks on :8079/:4010, API on :3001
+# exits if UPSTASH_REDIS_REST_URL or DEEPSEEK_BASE_URL is not that loopback port
 ```
 
 Inbox worker without live Gmail (HTTPS Gmail URLs stay; fetch is injected):

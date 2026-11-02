@@ -1,10 +1,19 @@
-import { describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { __resetMasterCvCacheForTest } from "../app/api/lib/master-cv";
 import {
   probeRedisHelpers,
   readProcessedMark,
+  runLocalInboxCli,
+  runLocalInboxScan,
   type RedisHelperModule,
 } from "../dev/inbox-scan-local";
+
+const validCv = JSON.parse(
+  readFileSync(join(process.cwd(), "tests/fixtures/curated-cv-valid.json"), "utf8")
+) as unknown;
 
 function createFakeRedis(store: Map<string, string>): RedisHelperModule {
   const client = {
@@ -22,6 +31,58 @@ function createFakeRedis(store: Map<string, string>): RedisHelperModule {
     evalRedisScript: async (c, _script, key) => c.eval("", [key], []),
   };
 }
+
+describe("runLocalInboxScan service URLs", () => {
+  const saved: Record<string, string | undefined> = {};
+  const keys = ["UPSTASH_REDIS_REST_URL", "DEEPSEEK_BASE_URL", "MASTER_CV_JSON"] as const;
+
+  beforeEach(() => {
+    __resetMasterCvCacheForTest();
+    for (const key of keys) {
+      saved[key] = process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    __resetMasterCvCacheForTest();
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  });
+
+  it("throws before scan when Redis or DeepSeek is not loopback", async () => {
+    process.env.UPSTASH_REDIS_REST_URL = "https://example.upstash.io";
+    process.env.DEEPSEEK_BASE_URL = "http://127.0.0.1:4010";
+    let scanned = false;
+    await assert.rejects(
+      () =>
+        runLocalInboxScan({
+          scan: async () => {
+            scanned = true;
+            return { ok: true, items: [] };
+          },
+          redisMod: createFakeRedis(new Map()),
+        }),
+      /UPSTASH_REDIS_REST_URL/
+    );
+    assert.equal(scanned, false);
+  });
+
+  it("exits 1 when the scan is ok but an item failed", async () => {
+    process.env.UPSTASH_REDIS_REST_URL = "http://127.0.0.1:8079";
+    process.env.DEEPSEEK_BASE_URL = "http://127.0.0.1:4010";
+    process.env.MASTER_CV_JSON = JSON.stringify(validCv);
+    const outcome = await runLocalInboxCli({
+      scan: async () => ({
+        ok: true,
+        items: [{ messageId: "m1", status: "tailor-failed" }],
+      }),
+      redisMod: createFakeRedis(new Map()),
+    });
+    assert.equal(outcome.exitCode, 1);
+  });
+});
 
 describe("probeRedisHelpers", () => {
   it("uses get/set/eval helpers when they exist", async () => {
