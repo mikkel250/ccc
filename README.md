@@ -30,7 +30,7 @@ npm run dev
 curl http://localhost:3000/api/hello
 ```
 
-Without live LLM/Upstash/Gmail: overlay `dev/env.backend.example` and run `npm run dev:local` (API on **3001**). Inbox fixtures: `npm run inbox:scan:local`. Details: [`dev/README.md`](dev/README.md), [`docs/test/local-dev.md`](docs/test/local-dev.md).
+Without live LLM/Upstash/Gmail: append the variables from `dev/env.backend.example` to `.env.local`, then run `npm run dev:local` (API on **3001**). Inbox fixtures: `npm run inbox:scan:local`. Details: [`dev/README.md`](dev/README.md), [`docs/test/local-dev.md`](docs/test/local-dev.md).
 
 Smoke reads dotenv (prefer `.env` / env already loaded): `npm run smoke -- http://localhost:3000`
 

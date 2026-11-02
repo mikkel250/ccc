@@ -6,6 +6,9 @@
  * Sliding-window EVAL matches @upstash/ratelimit: return [remaining, limit],
  * with remaining = -1 when the request is denied. EVALSHA answers NOSCRIPT
  * so the SDK falls back to EVAL (same as a cold Upstash instance).
+ *
+ * String results are raw JSON unless the request sends `Upstash-Encoding: base64`
+ * (the header @upstash/redis sets by default). `OK`, null, and numbers stay raw.
  */
 import http from "node:http";
 import { pathToFileURL } from "node:url";
@@ -176,6 +179,16 @@ export function evalLua(memory, script, keys, args) {
   throw new Error("ERR unknown lua script");
 }
 
+function requestsBase64Encoding(req) {
+  const headers = req?.headers ?? {};
+  for (const [key, raw] of Object.entries(headers)) {
+    if (key.toLowerCase() !== "upstash-encoding") continue;
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    return String(value ?? "").toLowerCase() === "base64";
+  }
+  return false;
+}
+
 export function encodeUpstashResult(result) {
   if (result === "OK" || result === null || typeof result === "number") {
     return result;
@@ -273,11 +286,15 @@ export function runCommand(memory, command) {
 
 export function createUpstashRestMock(options = {}) {
   const memory = options.memory ?? createMemoryStore();
-  const token = options.token ?? process.env.UPSTASH_REST_TOKEN ?? DEFAULT_UPSTASH_REST_TOKEN;
-  const encode = options.encode !== false;
+  const token =
+    options.token ??
+    process.env.UPSTASH_REST_TOKEN ??
+    process.env.UPSTASH_REDIS_REST_TOKEN ??
+    DEFAULT_UPSTASH_REST_TOKEN;
 
-  function wrap(result) {
-    return encode ? encodeUpstashResult(result) : result;
+  function wrap(result, req) {
+    if (options.encode === false || !requestsBase64Encoding(req)) return result;
+    return encodeUpstashResult(result);
   }
 
   async function handle(req, res) {
@@ -305,7 +322,7 @@ export function createUpstashRestMock(options = {}) {
       if (path.startsWith("/pipeline") || (Array.isArray(parsed) && Array.isArray(parsed[0]))) {
         const results = parsed.map((cmd) => {
           try {
-            return { result: wrap(runCommand(memory, cmd)) };
+            return { result: wrap(runCommand(memory, cmd), req) };
           } catch (error) {
             return { error: error instanceof Error ? error.message : String(error) };
           }
@@ -313,7 +330,7 @@ export function createUpstashRestMock(options = {}) {
         send(200, results);
         return;
       }
-      send(200, { result: wrap(runCommand(memory, parsed)) });
+      send(200, { result: wrap(runCommand(memory, parsed), req) });
     } catch (error) {
       send(200, { error: error instanceof Error ? error.message : String(error) });
     }

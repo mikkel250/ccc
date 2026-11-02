@@ -2,6 +2,7 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import {
   __injectInboxKvForTest,
+  __inboxRedisScriptsForTest,
   claimInboxMessage,
   extractUnprocessedInboxMessage,
   claimInboxThread,
@@ -100,6 +101,22 @@ function createMemoryKv(): InboxKv & { store: Map<string, string> } {
 }
 
 const ID = "msg123abc";
+
+describe("__inboxRedisScriptsForTest", () => {
+  it("throws outside the test environment", () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      assert.throws(
+        () => __inboxRedisScriptsForTest(),
+        /only available in the test environment/i
+      );
+    } finally {
+      if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = originalNodeEnv;
+    }
+  });
+});
 
 describe("parseInboxMessageId", () => {
   it("rejects empty, whitespace, and delimiter characters", () => {

@@ -66,6 +66,27 @@ describe("probeRedisHelpers", () => {
     assert.equal(result.get, "ok");
     assert.equal(result.eval, "ok");
   });
+
+  it("rethrows helper errors other than a missing Command constructor", async () => {
+    const store = new Map<string, string>();
+    const full = createFakeRedis(store);
+    await assert.rejects(
+      () =>
+        probeRedisHelpers(
+          {
+            getRedisClient: full.getRedisClient,
+            getRedisKey: full.getRedisKey,
+            setRedisKey: async () => {
+              throw new Error("redis down");
+            },
+            evalRedisScript: full.evalRedisScript,
+          },
+          "inbox:local-dev-probe"
+        ),
+      /redis down/
+    );
+    assert.equal(store.has("inbox:local-dev-probe"), false);
+  });
 });
 
 describe("readProcessedMark", () => {
@@ -88,5 +109,23 @@ describe("readProcessedMark", () => {
       "m1"
     );
     assert.equal(value, "1");
+  });
+
+  it("rethrows getRedisKey errors other than a missing Command constructor", async () => {
+    const store = new Map<string, string>([["inbox:processed:m1", "1"]]);
+    const full = createFakeRedis(store);
+    await assert.rejects(
+      () =>
+        readProcessedMark(
+          {
+            getRedisClient: full.getRedisClient,
+            getRedisKey: async () => {
+              throw new Error("redis down");
+            },
+          },
+          "m1"
+        ),
+      /redis down/
+    );
   });
 });

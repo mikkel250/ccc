@@ -19,9 +19,6 @@ import {
   LOCAL_INBOX_MESSAGE_ID,
 } from "./gmail-fetch-fixture";
 
-loadDotenv({ path: ".env.local" });
-loadDotenv();
-
 export type RedisClientLike = {
   get: (key: string) => Promise<unknown>;
   set: (key: string, value: string, opts?: { ex?: number }) => Promise<unknown>;
@@ -53,6 +50,13 @@ export type RedisHelperModule = {
 
 const GET_SCRIPT = 'return redis.call("GET", KEYS[1])';
 
+function isMissingCommandConstructor(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /(?:Get|Set|Eval)Command is not a constructor/.test(error.message)
+  );
+}
+
 export async function probeRedisHelpers(
   redisMod: RedisHelperModule,
   probeKey: string
@@ -69,7 +73,10 @@ export async function probeRedisHelpers(
         []
       );
       return { usedHelpers: true, get: got, eval: evaluated };
-    } catch {
+    } catch (error) {
+      if (!isMissingCommandConstructor(error)) {
+        throw error;
+      }
       // Pre-#66 helpers construct Command classes that are not runtime exports.
     }
   }
@@ -88,7 +95,10 @@ export async function readProcessedMark(
   if (redisMod.getRedisKey) {
     try {
       return await redisMod.getRedisKey(client, key);
-    } catch {
+    } catch (error) {
+      if (!isMissingCommandConstructor(error)) {
+        throw error;
+      }
       // Pre-#66 helpers construct Command classes that are not runtime exports.
     }
   }
@@ -128,6 +138,8 @@ export async function runLocalInboxScan(options?: {
 }
 
 export async function main(): Promise<void> {
+  loadDotenv({ path: ".env.local" });
+  loadDotenv();
   try {
     const result = await runLocalInboxScan();
     console.log(JSON.stringify(result, null, 2));

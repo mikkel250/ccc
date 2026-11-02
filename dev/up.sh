@@ -4,12 +4,18 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-if [[ ! -f .env.local && ! -f .env ]]; then
+if [[ -f .env.local ]]; then
+  ENV_FILE=".env.local"
+elif [[ -f .env ]]; then
+  ENV_FILE=".env"
+else
   echo "Create .env.local from .env.example plus dev/env.backend.example first." >&2
   exit 1
 fi
 
-node dev/start-mocks.mjs &
+# Load the selected file into the mock process before the servers bind.
+# Variables already set in the shell take precedence.
+node --env-file="$ENV_FILE" dev/start-mocks.mjs &
 MOCKS_PID=$!
 cleanup() {
   kill "$MOCKS_PID" 2>/dev/null || true

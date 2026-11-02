@@ -64,4 +64,23 @@ describe("applyLocalInboxGmailEnv", () => {
     assert.ok(process.env.GMAIL_API_BASE_URL?.startsWith("https://"));
     assert.doesNotThrow(() => assertLocalInboxGmailUrlsAreHttps());
   });
+
+  it("rejects an http GMAIL_API_BASE_URL and an http GMAIL_OAUTH_TOKEN_URL", () => {
+    for (const key of GMAIL_ENV) {
+      saved[key] = process.env[key];
+    }
+    process.env.GMAIL_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
+    process.env.GMAIL_API_BASE_URL = "http://gmail.googleapis.com/gmail/v1";
+    assert.throws(
+      () => assertLocalInboxGmailUrlsAreHttps(),
+      /GMAIL_OAUTH_TOKEN_URL and GMAIL_API_BASE_URL must be HTTPS/
+    );
+
+    process.env.GMAIL_API_BASE_URL = "https://gmail.googleapis.com/gmail/v1";
+    process.env.GMAIL_OAUTH_TOKEN_URL = "http://oauth2.googleapis.com/token";
+    assert.throws(
+      () => assertLocalInboxGmailUrlsAreHttps(),
+      /GMAIL_OAUTH_TOKEN_URL and GMAIL_API_BASE_URL must be HTTPS/
+    );
+  });
 });

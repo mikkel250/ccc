@@ -73,6 +73,23 @@ redis.call("del", KEYS[1])
 return 1
 `;
 
+export function __inboxRedisScriptsForTest(): {
+  deleteIfValue: string;
+  expireIfOwned: string;
+  markProcessedIfOwned: string;
+} {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error(
+      "__inboxRedisScriptsForTest is only available in the test environment"
+    );
+  }
+  return {
+    deleteIfValue: DELETE_IF_VALUE_SCRIPT,
+    expireIfOwned: EXPIRE_IF_OWNED_SCRIPT,
+    markProcessedIfOwned: MARK_PROCESSED_IF_OWNED_SCRIPT,
+  };
+}
+
 let injectedKv: InboxKv | null = null;
 
 export function __injectInboxKvForTest(kv: InboxKv | null): void {
