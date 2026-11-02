@@ -34,7 +34,12 @@ function createFakeRedis(store: Map<string, string>): RedisHelperModule {
 
 describe("runLocalInboxScan service URLs", () => {
   const saved: Record<string, string | undefined> = {};
-  const keys = ["UPSTASH_REDIS_REST_URL", "DEEPSEEK_BASE_URL", "MASTER_CV_JSON"] as const;
+  const keys = [
+    "UPSTASH_REDIS_REST_URL",
+    "DEEPSEEK_BASE_URL",
+    "MASTER_CV_JSON",
+    "TAILOR_MODEL",
+  ] as const;
 
   beforeEach(() => {
     __resetMasterCvCacheForTest();
@@ -54,6 +59,7 @@ describe("runLocalInboxScan service URLs", () => {
   it("throws before scan when Redis or DeepSeek is not loopback", async () => {
     process.env.UPSTASH_REDIS_REST_URL = "https://example.upstash.io";
     process.env.DEEPSEEK_BASE_URL = "http://127.0.0.1:4010";
+    process.env.TAILOR_MODEL = "deepseek/deepseek-chat";
     let scanned = false;
     await assert.rejects(
       () =>
@@ -72,6 +78,7 @@ describe("runLocalInboxScan service URLs", () => {
   it("exits 1 when the scan is ok but an item failed", async () => {
     process.env.UPSTASH_REDIS_REST_URL = "http://127.0.0.1:8079";
     process.env.DEEPSEEK_BASE_URL = "http://127.0.0.1:4010";
+    process.env.TAILOR_MODEL = "deepseek/deepseek-chat";
     process.env.MASTER_CV_JSON = JSON.stringify(validCv);
     const outcome = await runLocalInboxCli({
       scan: async () => ({

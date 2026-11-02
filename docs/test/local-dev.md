@@ -9,7 +9,7 @@ Stand-ins under `dev/` so tailor, rate-limit, and inbox scan can run without liv
 npm run dev:local
 ```
 
-Loads `.env.local` when that file exists, otherwise `.env`, into the shell before the mocks and `next dev` start. Variables already set in the shell take precedence. `UPSTASH_REDIS_REST_URL` and `DEEPSEEK_BASE_URL` must be `http://127.0.0.1` or `http://localhost` on the mock ports (`8079` and `4010` unless `UPSTASH_REST_PORT` / `DEEPSEEK_MOCK_PORT` say otherwise). A live URL, including one already exported in the shell, makes `dev:local` exit before the mocks start. Then it starts the Upstash REST mock, the DeepSeek mock, and `next dev` on `PORT` (default **3001**). If either mock or Next.js exits, the rest of the stack is stopped. Frontend stays on **3000**.
+Loads `.env.local` when that file exists, otherwise `.env`, into the shell before the mocks and `next dev` start. Variables already set in the shell take precedence. `UPSTASH_REDIS_REST_URL` and `DEEPSEEK_BASE_URL` must be `http://127.0.0.1` or `http://localhost` on the mock ports (`8079` and `4010` unless `UPSTASH_REST_PORT` / `DEEPSEEK_MOCK_PORT` say otherwise). `TAILOR_MODEL` must use the `deepseek` provider. An unset or empty value uses the same fallback as `getTailorModel()` (`anthropic/sonnet`) and is refused. A live URL, or a non-deepseek tailor model, makes `dev:local` exit before the mocks start. Then it starts the Upstash REST mock, the DeepSeek mock, and `next dev` on `PORT` (default **3001**). If either mock or Next.js exits, the rest of the stack is stopped. Frontend stays on **3000**.
 
 Inbox without live Gmail (injected `fetchImpl`; `GMAIL_*_URL` remain HTTPS):
 
@@ -17,7 +17,7 @@ Inbox without live Gmail (injected `fetchImpl`; `GMAIL_*_URL` remain HTTPS):
 npm run inbox:scan:local
 ```
 
-That scan refuses a non-loopback `UPSTASH_REDIS_REST_URL` or `DEEPSEEK_BASE_URL` before it reads mail. It talks to the Upstash mock and, when CCC PR #66 is present, exercises `getRedisKey` / `setRedisKey` / `evalRedisScript`. The process exits 1 when any item is `fetch-failed`, `tailor-failed`, or `draft-failed`.
+That scan refuses a non-loopback `UPSTASH_REDIS_REST_URL` or `DEEPSEEK_BASE_URL`, and a `TAILOR_MODEL` that does not use the deepseek provider, before it reads mail. It talks to the Upstash mock and, when CCC PR #66 is present, exercises `getRedisKey` / `setRedisKey` / `evalRedisScript`. The process exits 1 when any item is `fetch-failed`, `tailor-failed`, or `draft-failed`.
 
 ## Frontend
 

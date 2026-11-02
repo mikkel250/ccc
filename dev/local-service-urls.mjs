@@ -1,5 +1,9 @@
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost"]);
 
+// Same falsy fallback as getTailorModel() in lib/env.ts:
+// `process.env.TAILOR_MODEL || DEFAULT_TAILOR_MODEL`.
+const DEFAULT_TAILOR_MODEL = "anthropic/sonnet";
+
 /**
  * @param {string} name
  * @param {string | undefined} value
@@ -27,7 +31,24 @@ function assertLoopbackServiceUrl(name, value, expectedPort) {
 }
 
 /**
- * Refuse live Upstash and DeepSeek URLs for local mock commands.
+ * @param {NodeJS.ProcessEnv | Record<string, string | undefined>} env
+ */
+function resolvedTailorModel(env) {
+  return env.TAILOR_MODEL || DEFAULT_TAILOR_MODEL;
+}
+
+/**
+ * Provider is the first `/` segment, matching parseNamespacedProvider.
+ * @param {string} model
+ */
+function usesDeepseekProvider(model) {
+  const slash = model.indexOf("/");
+  return slash > 0 && model.slice(0, slash) === "deepseek";
+}
+
+/**
+ * Refuse live Upstash and DeepSeek URLs, and a tailor model that would not
+ * stay on the local DeepSeek mock, for local mock commands.
  * When `ports` is set, the URL port must be the mock port `dev/up.sh` health-checks.
  * @param {NodeJS.ProcessEnv | Record<string, string | undefined>} env
  * @param {{ upstash: number, deepseek: number } | undefined} [ports]
@@ -43,4 +64,10 @@ export function assertLocalMockClientUrls(env, ports) {
     env.DEEPSEEK_BASE_URL,
     ports?.deepseek
   );
+  const model = resolvedTailorModel(env);
+  if (!usesDeepseekProvider(model)) {
+    throw new Error(
+      `TAILOR_MODEL must use the deepseek provider for local mocks (resolved ${JSON.stringify(model)})`
+    );
+  }
 }

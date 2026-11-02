@@ -30,10 +30,11 @@ export function guardMockRequest(handle, req, res) {
     .then(() => handle(req, res))
     .catch((error) => {
       if (isClientDisconnect(error, res)) return;
+      console.error("mock request failed", error);
       try {
         if (!res.headersSent && !res.destroyed) {
           res.writeHead(500, { "content-type": "application/json" });
-          res.end();
+          res.end(JSON.stringify({ error: "internal error" }));
         }
       } catch {
         // The socket closed between the check and the write.
