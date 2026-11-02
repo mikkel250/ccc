@@ -70,9 +70,37 @@ function requireLaneToken(line: string, label: string): string {
   return match[1];
 }
 
-function allMilestoneRows(
-  markdown: string
-): { id: string; status: string; plan: string; unblocks: string; lane: string }[] {
+type MilestoneRow = { id: string; status: string; plan: string; unblocks: string; lane: string };
+
+const NEEDS_PLAN_POINTER = /STRATEGY\.md|docs\/plans\/README/i;
+
+function milestoneTable(bodyRows: string[]): string {
+  return [
+    "| # | Milestone | Status | Plan | Unblocks | Lane |",
+    "|---|-----------|--------|------|----------|------|",
+    ...bodyRows,
+    "",
+  ].join("\n");
+}
+
+function lfgNeedsPlanRows(markdown: string): MilestoneRow[] {
+  return allMilestoneRows(markdown).filter(
+    (row) => row.status !== "done" && row.lane === "lfg" && /needs plan/i.test(row.plan)
+  );
+}
+
+/** Non-empty lfg needs-plan set; each row points at STRATEGY.md or this README. */
+function requireLfgNeedsPlanContract(rows: MilestoneRow[]): void {
+  assert.ok(rows.length > 0, "expected at least one lfg needs-plan milestone");
+  for (const row of rows) {
+    assert.ok(
+      NEEDS_PLAN_POINTER.test(`${row.plan} ${row.unblocks}`),
+      `lfg needs-plan row ${row.id} must point at STRATEGY.md or docs/plans/README`
+    );
+  }
+}
+
+function allMilestoneRows(markdown: string): MilestoneRow[] {
   const lines = markdown.split("\n");
   const headerIdx = lines.findIndex((line) => line.includes("| # |") && line.includes("Lane"));
   if (headerIdx === -1) {
@@ -177,16 +205,35 @@ describe("docs/plans/README.md — cross-file contracts", () => {
   });
 
   it("gives lfg needs-plan milestone rows a STRATEGY or README pointer", () => {
-    const content = fs.readFileSync(README_PATH, "utf-8");
-    const needsPlanLfg = allMilestoneRows(content).filter(
-      (row) => row.status !== "done" && row.lane === "lfg" && /needs plan/i.test(row.plan)
-    );
-    for (const row of needsPlanLfg) {
-      const blob = `${row.plan} ${row.unblocks}`;
-      assert.ok(
-        /STRATEGY\.md|docs\/plans\/README/i.test(blob),
-        `lfg needs-plan row ${row.id} must point at STRATEGY.md or docs/plans/README`
-      );
-    }
+    const pointed = milestoneTable([
+      "| M9 | Scan | not started | needs plan — [STRATEGY.md](../../STRATEGY.md) | Deploy scans | lfg |",
+      "| M10 | Board | not started | needs plan — see docs/plans/README | Operator can drain | lfg |",
+    ]);
+    const fixtureRows = lfgNeedsPlanRows(pointed);
+    assert.ok(fixtureRows.length > 0, "expected at least one lfg needs-plan milestone");
+    const live = lfgNeedsPlanRows(fs.readFileSync(README_PATH, "utf-8"));
+    requireLfgNeedsPlanContract([...fixtureRows, ...live]);
   });
+
+  it("rejects an empty lfg needs-plan set instead of passing vacuously", () => {
+    const plannedOnly = milestoneTable([
+      "| M8.6 | Railway | in progress | [railway inbox cron](./railway-plan.md) | Deploy scans | lfg |",
+    ]);
+    assert.equal(lfgNeedsPlanRows(plannedOnly).length, 0);
+    assert.throws(
+      () => requireLfgNeedsPlanContract(lfgNeedsPlanRows(plannedOnly)),
+      /expected at least one lfg needs-plan milestone/
+    );
+  });
+
+  it("rejects an lfg needs-plan row with no STRATEGY or README pointer", () => {
+    const missingPointer = milestoneTable([
+      "| M9 | Scan | not started | needs plan | Deploy scans | lfg |",
+    ]);
+    assert.throws(
+      () => requireLfgNeedsPlanContract(lfgNeedsPlanRows(missingPointer)),
+      /must point at STRATEGY\.md or docs\/plans\/README/
+    );
+  });
+
 });

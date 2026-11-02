@@ -8,6 +8,9 @@
   "description": "API-only backend: POST /api/tailor-cv returns a tailored CV as base64 .docx",
   "scripts": {
     "dev": "next dev",
+    "dev:mocks": "node dev/start-mocks.mjs",
+    "dev:local": "bash dev/up.sh",
+    "inbox:scan:local": "tsx dev/inbox-scan-local.ts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",

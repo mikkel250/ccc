@@ -30,6 +30,8 @@ npm run dev
 curl http://localhost:3000/api/hello
 ```
 
+Without live LLM/Upstash/Gmail: append the variables from `dev/env.backend.example` to `.env.local`, then run `npm run dev:local` (API on **3001**). Inbox fixtures: `npm run inbox:scan:local`. Details: [`dev/README.md`](dev/README.md), [`docs/test/local-dev.md`](docs/test/local-dev.md).
+
 Smoke reads dotenv (prefer `.env` / env already loaded): `npm run smoke -- http://localhost:3000`
 
 ---
@@ -95,7 +97,10 @@ See [`docs/test/TESTING.md`](docs/test/TESTING.md).
 
 ## Deployment (Railway)
 
+Default v1 host for **sync** tailor and the serial inbox scan (`npm run inbox:scan`). Vercel Hobby fluid functions cap at 300s, so a multi-minute call or a multi-message scan can still time out there. Deferred batch polling is cron-friendly and could use Vercel later without moving sync off Railway. Local `npm run inbox:scan` / `npm run dev` need no hosting. Unattended runs use `railway.inbox-scan.toml`.
+
 - Config: [`railway.toml`](railway.toml), [`.env.example`](.env.example).
+- Rationale: [`docs/arch/README.md#deployment-hosting-railway-vs-vercel`](docs/arch/README.md#deployment-hosting-railway-vs-vercel)
 - Set `TAILOR_API_KEY`, master CV secret, Redis, LLM keys; rotate the shared secret if leaked (coordinate with CCC).
 - When leaving local-only: CCC must send `Authorization: Bearer` in the same window as this cutover.
 

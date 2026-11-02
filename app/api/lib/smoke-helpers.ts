@@ -45,6 +45,8 @@ export type ParityCellStatus = { ok: boolean };
 
 export type ParityStatus = {
   cells: Record<string, ParityCellStatus>;
+  /** Catalog snapshot written beside `cells`. Absent on in-memory merges. */
+  pending?: string[];
 };
 
 /** Last-write-wins per model key. Callers compute pending from catalog + cells. */
@@ -79,8 +81,12 @@ export function parseParityStatusJson(raw: unknown): ParityStatus {
   if (cellsRaw === null || typeof cellsRaw !== "object" || Array.isArray(cellsRaw)) {
     throw new Error("Invalid parity-status.json");
   }
+  const cellsInput = recordFromObject(cellsRaw);
+  if (Object.keys(cellsInput).length === 0) {
+    throw new Error("Invalid parity-status.json");
+  }
   const cells: Record<string, ParityCellStatus> = {};
-  for (const [key, cell] of Object.entries(recordFromObject(cellsRaw))) {
+  for (const [key, cell] of Object.entries(cellsInput)) {
     if (cell === null || typeof cell !== "object" || Array.isArray(cell)) {
       throw new Error("Invalid parity-status.json");
     }
@@ -90,7 +96,24 @@ export function parseParityStatusJson(raw: unknown): ParityStatus {
     }
     cells[key] = { ok };
   }
-  return { cells };
+  if (!Object.hasOwn(root, "pending")) {
+    return { cells };
+  }
+  return { cells, pending: parsePendingModels(root.pending) };
+}
+
+function parsePendingModels(raw: unknown): string[] {
+  if (!Array.isArray(raw)) {
+    throw new Error("Invalid parity-status.json");
+  }
+  const pending: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "string") {
+      throw new Error("Invalid parity-status.json");
+    }
+    pending.push(entry);
+  }
+  return pending;
 }
 
 /** Catalog models that do not yet have an ok cell. */

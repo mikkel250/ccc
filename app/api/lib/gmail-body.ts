@@ -19,6 +19,27 @@ function decodeGmailBodyData(data: unknown): string | undefined {
 }
 
 const WHOLE_TAG_SKIP = new Set(["head", "script", "style"]);
+/** Visible blocks that can end a broken hidden preheader. Div is not one: a descendant div stays inside the hidden wrapper. */
+const RECOVERY_BLOCK_TAGS = new Set([
+  "p",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "li",
+  "td",
+  "th",
+  "blockquote",
+  "section",
+  "article",
+  "main",
+]);
+
+function htmlTokenRe(): RegExp {
+  return /<!--[\s\S]*?-->|<\/?([a-zA-Z][\w:-]*)\b[^>]*>/gi;
+}
 const RAW_TEXT_ELEMENTS = new Set(["script", "style"]);
 /** Tags that end an unclosed head in HTML and start message content. */
 const HEAD_CONTENT_START = new Set([
@@ -125,21 +146,234 @@ function isHiddenOpeningTag(raw: string): boolean {
   );
 }
 
+type OpenTag = { name: string; index: number };
+type NamedTag = { name: string };
+
+/** Openers plus the index of each name, newest last, so a close finds its match in O(1). */
+type TagStack<T extends NamedTag> = {
+  items: T[];
+  positions: Map<string, number[]>;
+};
+
+function createTagStack<T extends NamedTag>(): TagStack<T> {
+  return { items: [], positions: new Map() };
+}
+
+function pushTag<T extends NamedTag>(stack: TagStack<T>, tag: T): void {
+  const at = stack.items.length;
+  stack.items.push(tag);
+  const open = stack.positions.get(tag.name);
+  if (open === undefined) {
+    stack.positions.set(tag.name, [at]);
+    return;
+  }
+  open.push(at);
+}
+
+function clearTagStack<T extends NamedTag>(stack: TagStack<T>): void {
+  stack.items.length = 0;
+  stack.positions.clear();
+}
+
+function dropOpenerPosition<T extends NamedTag>(
+  stack: TagStack<T>,
+  name: string,
+): void {
+  const open = stack.positions.get(name);
+  if (open === undefined) {
+    return;
+  }
+  open.pop();
+  if (open.length === 0) {
+    stack.positions.delete(name);
+  }
+}
+
+/**
+ * Pop the nearest `name` opener and every unclosed tag after it.
+ * The match is first. Later entries are intervening tags, not separate closes.
+ * An unmatched close leaves the stack unchanged.
+ * Each tag is pushed and dropped once, so a parse stays linear.
+ */
+function popThroughMatch<T extends NamedTag>(
+  stack: TagStack<T>,
+  name: string,
+): T[] {
+  const open = stack.positions.get(name);
+  const matchAt = open?.at(-1);
+  if (open === undefined || matchAt === undefined) {
+    return [];
+  }
+  open.pop();
+  if (open.length === 0) {
+    stack.positions.delete(name);
+  }
+  const removed = stack.items.slice(matchAt);
+  stack.items.length = matchAt;
+  for (let i = removed.length - 1; i >= 1; i -= 1) {
+    dropOpenerPosition(stack, removed[i]!.name);
+  }
+  return removed;
+}
+
+function markClosed(
+  stack: TagStack<OpenTag>,
+  closed: Set<number>,
+  name: string,
+): void {
+  const matched = popThroughMatch(stack, name)[0];
+  if (matched !== undefined) {
+    closed.add(matched.index);
+  }
+}
+
+/** Opener indexes that have a matching close tag. Unclosed hidden wrappers are absent. */
+function closedOpenerIndices(html: string): Set<number> {
+  const closed = new Set<number>();
+  const stack = createTagStack<OpenTag>();
+  let rawTextName: string | null = null;
+  for (const match of html.matchAll(htmlTokenRe())) {
+    const raw = match[0];
+    const index = match.index ?? 0;
+    if (raw.startsWith("<!--")) {
+      continue;
+    }
+    const name = match[1]!.toLowerCase();
+    const isClose = raw.startsWith("</");
+    const selfClosing = /\/\s*>$/.test(raw);
+    if (rawTextName !== null) {
+      if (isClose && name === rawTextName) {
+        markClosed(stack, closed, name);
+        rawTextName = null;
+      }
+      continue;
+    }
+    if (selfClosing || VOID_HTML_ELEMENTS.has(name)) {
+      continue;
+    }
+    if (!isClose && RAW_TEXT_ELEMENTS.has(name)) {
+      rawTextName = name;
+      pushTag(stack, { name, index });
+      continue;
+    }
+    if (!isClose) {
+      pushTag(stack, { name, index });
+      continue;
+    }
+    markClosed(stack, closed, name);
+  }
+  return closed;
+}
+
+/**
+ * A depth-0 content block ends the broken preheader.
+ * Depth counts every non-void element opened during recovery, not only div.
+ * A plain div does not: its text stays with the hidden ancestor.
+ * Positive font-size still reveals a div inside a font-size:0 frame.
+ */
+function isRecoveryBoundary(
+  raw: string,
+  name: string,
+  recoveryDepth: number,
+  frames: readonly TextFrame[],
+): boolean {
+  if (recoveryDepth !== 0 || isHiddenOpeningTag(raw)) {
+    return false;
+  }
+  if (RECOVERY_BLOCK_TAGS.has(name)) {
+    return true;
+  }
+  if (name !== "div" || frames.at(-1)?.hide !== true) {
+    return false;
+  }
+  const style = tagStyle(raw);
+  return style !== undefined && styleDeclaresPositiveFontSize(style);
+}
+
 /** Depth-aware omit of comments, head/script/style, and hidden containers. */
 function omitHiddenHtml(html: string): string {
-  const tokenRe = /<!--[\s\S]*?-->|<\/?([a-zA-Z][\w:-]*)\b[^>]*>/gi;
+  const closedOpeners = closedOpenerIndices(html);
+  const tokenRe = htmlTokenRe();
   let out = "";
   let last = 0;
   let skipName: string | null = null;
   let skipDepth = 0;
+  /** Openers inside the current skip, including the skipped root. */
+  const skipStack = createTagStack<NamedTag>();
+  let recoveryMode = false;
+  let resumeRecovery = false;
+  /** Non-void elements opened during recovery, relative to the hidden opener. */
+  const recoveryStack = createTagStack<NamedTag>();
   let rawTextName: string | null = null;
   let headInnerDepth = 0;
   const textFrames: TextFrame[] = [];
   const textHidden = (): boolean => textFrames.at(-1)?.hide === true;
-  for (const match of html.matchAll(tokenRe)) {
+
+  let match: RegExpExecArray | null;
+  while ((match = tokenRe.exec(html)) !== null) {
     const index = match.index ?? 0;
     const raw = match[0];
-    if (skipDepth === 0 && !textHidden()) {
+    if (recoveryMode) {
+      if (!raw.startsWith("<!--")) {
+        const recoveryName = match[1]!.toLowerCase();
+        const recoveryClose = raw.startsWith("</");
+        const recoverySelfClosing = /\/\s*>$/.test(raw);
+        if (rawTextName !== null) {
+          if (recoveryClose && recoveryName === rawTextName) {
+            rawTextName = null;
+          }
+          continue;
+        }
+        if (
+          !recoveryClose &&
+          !recoverySelfClosing &&
+          RAW_TEXT_ELEMENTS.has(recoveryName)
+        ) {
+          rawTextName = recoveryName;
+          continue;
+        }
+        const recoveryVoid =
+          recoverySelfClosing || VOID_HTML_ELEMENTS.has(recoveryName);
+        const hiddenOpener =
+          !recoveryClose &&
+          !recoveryVoid &&
+          isHiddenOpeningTag(raw) &&
+          !WHOLE_TAG_SKIP.has(recoveryName);
+        const headOpener =
+          !recoveryClose && !recoveryVoid && recoveryName === "head";
+        if (hiddenOpener && !closedOpeners.has(index)) {
+          continue;
+        }
+        if (!hiddenOpener && !headOpener) {
+          if (recoveryVoid || recoveryClose) {
+            if (recoveryClose && !recoveryVoid) {
+              // Unmatched closes leave the stack unchanged. A match drops
+              // every unclosed tag opened after it, not just one level.
+              popThroughMatch(recoveryStack, recoveryName);
+            }
+            continue;
+          }
+          if (
+            isRecoveryBoundary(
+              raw,
+              recoveryName,
+              recoveryStack.items.length,
+              textFrames,
+            )
+          ) {
+            recoveryMode = false;
+            clearTagStack(recoveryStack);
+            last = index;
+          } else {
+            pushTag(recoveryStack, { name: recoveryName });
+            continue;
+          }
+        }
+      } else {
+        continue;
+      }
+    }
+    if (skipDepth === 0 && !recoveryMode && !textHidden()) {
       out += html.slice(last, index);
     }
     last = index + raw.length;
@@ -169,7 +403,9 @@ function omitHiddenHtml(html: string): string {
         ) {
           skipDepth = 0;
           skipName = null;
+          clearTagStack(skipStack);
           headInnerDepth = 0;
+          resumeRecovery = false;
           out += raw;
           continue;
         }
@@ -182,13 +418,29 @@ function omitHiddenHtml(html: string): string {
           continue;
         }
       }
-      if (!isClose && !selfClosing && name === skipName) {
-        skipDepth += 1;
-      } else if (isClose && name === skipName) {
-        skipDepth -= 1;
-        if (skipDepth === 0) {
+      const skipVoid = selfClosing || VOID_HTML_ELEMENTS.has(name);
+      if (!isClose && !skipVoid) {
+        pushTag(skipStack, { name });
+        if (name === skipName) {
+          skipDepth += 1;
+        }
+      } else if (isClose && !skipVoid && skipName !== null) {
+        // Same pop as closedOpenerIndices: a </p> drops unclosed inner divs,
+        // so this skip must stop expecting those divs to close themselves.
+        const removed = popThroughMatch(skipStack, name);
+        for (const frame of removed) {
+          if (frame.name === skipName) {
+            skipDepth -= 1;
+          }
+        }
+        if (removed.length > 0 && skipDepth === 0) {
           skipName = null;
+          clearTagStack(skipStack);
           headInnerDepth = 0;
+          if (resumeRecovery) {
+            recoveryMode = true;
+            resumeRecovery = false;
+          }
         }
       }
       continue;
@@ -196,8 +448,21 @@ function omitHiddenHtml(html: string): string {
     const voidElement = selfClosing || VOID_HTML_ELEMENTS.has(name);
     if (!isClose && (WHOLE_TAG_SKIP.has(name) || isHiddenOpeningTag(raw))) {
       if (!voidElement) {
+        const recoverable =
+          isHiddenOpeningTag(raw) && !WHOLE_TAG_SKIP.has(name);
+        if (recoverable && !closedOpeners.has(index)) {
+          recoveryMode = true;
+          clearTagStack(recoveryStack);
+          continue;
+        }
+        if (recoveryMode) {
+          resumeRecovery = true;
+          recoveryMode = false;
+        }
         skipName = name;
         skipDepth = 1;
+        clearTagStack(skipStack);
+        pushTag(skipStack, { name });
         if (name === "head") {
           headInnerDepth = 0;
         }
@@ -226,7 +491,7 @@ function omitHiddenHtml(html: string): string {
     }
     out += raw;
   }
-  if (skipDepth === 0 && !textHidden()) {
+  if (skipDepth === 0 && !recoveryMode && !textHidden()) {
     out += html.slice(last);
   }
   return out;
