@@ -112,6 +112,7 @@ RUN_INBOX_REDIS_TESTS=1 UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... 
 | `tests/env.test.ts` | Env var parsing, provider/model validation |
 | `tests/errors.test.ts` | Typed error classes (`RateLimitError`, `ServiceError`) |
 | `tests/eval-architecture-docs.test.ts` | Eval architecture doc cross-references |
+| `tests/eval-tailor-model-default.test.ts` | `TAILOR_MODEL` env contract; gitignored `eval-results/` checks skip when that directory is absent |
 | `tests/e2e-tailor-cv.test.ts` | Smoke CLI: artifacts, redaction, curation mode, exit codes |
 | `tests/smoke-helpers.test.ts` | Smoke artifact redaction + parity catalog/paths |
 | `tests/smoke-runner.test.ts` | `verifySmokePipeline` library with mocked fetch |
