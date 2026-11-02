@@ -44,6 +44,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── gmail-body.ts     # Gmail payload → JD (text/plain else html-to-text)
 │           ├── inbox-config.ts   # Inbox Redis prefix / claim+processed TTLs / scan backoff
 │           ├── inbox-processed-store.ts # SET NX message claim, thread claim, token-owned processed mark
+│           ├── inbox-redis-scripts.mjs  # Lua scripts shared with the local Upstash mock
 │           ├── inbox-tailor.ts   # tailorLabeledMessage — claim+extract then runTailorCore
 │           ├── inbox-scan.ts     # list → tailor → one thread draft → processed (inbox:scan job)
 │           ├── tailor-pipeline.ts # HTTP adapter (Bearer + rate-limit) + runTailorCore (no Bearer/rate-limit)
@@ -74,6 +75,15 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── regen-docx.ts              # npm run regen-docx — mechanical rebuild
 │   ├── seed-eval-results.ts       # Seed historical eval-results artifacts
 │   └── verify-rate-limit.ts       # Live Upstash rate-limit check
+├── dev/                          # Local Upstash/DeepSeek mocks + inbox Gmail fixtures
+│   ├── up.sh / start-mocks.mjs   # npm run dev:local (mocks + API :3001)
+│   ├── load-env-file.mjs         # Selected env file for mocks and Next, shell wins
+│   ├── local-service-urls.mjs    # Loopback guard for Upstash and DeepSeek client URLs
+│   ├── mock-request.mjs          # Mock HTTP handlers survive a disconnected client
+│   ├── upstash-rest-mock.mjs     # REST + pipeline + sliding-window EVAL
+│   ├── deepseek-mock.mjs         # OpenAI-compatible curator JSON
+│   ├── gmail-fetch-fixture.ts    # Injected HTTPS Gmail fetch (no live Gmail)
+│   └── inbox-scan-local.ts       # npm run inbox:scan:local
 ├── tests/
 │   ├── e2e/api.e2e.ts                     # Playwright API checks (Bearer / bypass)
 │   ├── curator-prompt.test.ts             # Curator prompt contract
