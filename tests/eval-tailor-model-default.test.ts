@@ -10,6 +10,9 @@ const ENV_EXAMPLE_PATH = path.join(process.cwd(), ".env.example");
 const ENV_TS_PATH = path.join(process.cwd(), "lib", "env.ts");
 const TEST_JDS_DIR = path.join(process.cwd(), "knowledge-base", "test-jds");
 
+const EVAL_RESULTS_ABSENT_SKIP =
+  "eval-results/ is gitignored and absent — historical markdown eval artifacts; use npm run smoke for live quality";
+
 /** provider/model — first segment must not contain `/` */
 const NAMESPACED_MODEL_RE = /^[^/\s]+\/.+/;
 
@@ -90,7 +93,11 @@ describe("eval-results — post-evaluation artifacts", () => {
     }
   });
 
-  it("each eval pair directory includes raw-cv.md and usage.json", () => {
+  it("each eval pair directory includes raw-cv.md and usage.json", (t) => {
+    if (!evalResultsArtifactsPresent(EVAL_RESULTS_DIR)) {
+      t.skip(EVAL_RESULTS_ABSENT_SKIP);
+      return;
+    }
     const slugs = listTestJdSlugs();
     const models = parseEvalModels();
     for (const slug of slugs) {
@@ -105,9 +112,7 @@ describe("eval-results — post-evaluation artifacts", () => {
 
   it("each JD has JD-level extraction.json from stage 1 pipeline", (t) => {
     if (!evalResultsArtifactsPresent(EVAL_RESULTS_DIR)) {
-      t.skip(
-        "eval-results/ is gitignored and absent — historical markdown eval artifacts; use npm run smoke for live quality"
-      );
+      t.skip(EVAL_RESULTS_ABSENT_SKIP);
       return;
     }
     const slugs = listTestJdSlugs();
@@ -125,11 +130,16 @@ describe("eval-results — post-evaluation artifacts", () => {
     }
   });
 
-  it("composite scores are computable from four-dimension eval results", () => {
+  it("composite scores are computable from four-dimension eval results", (t) => {
+    if (!evalResultsArtifactsPresent(EVAL_RESULTS_DIR)) {
+      t.skip(EVAL_RESULTS_ABSENT_SKIP);
+      return;
+    }
     const slugs = listTestJdSlugs();
     const models = parseEvalModels();
     assert.ok(slugs.length >= 1 && models.length >= 1);
 
+    let checked = 0;
     for (const slug of slugs) {
       for (const model of models) {
         const scoresPath = path.join(
@@ -143,7 +153,13 @@ describe("eval-results — post-evaluation artifacts", () => {
         const composite = computeCompositeScore(scores);
         assert.ok(Number.isFinite(composite));
         assert.ok(composite >= 0 && composite <= 1);
+        checked++;
       }
+    }
+    if (checked === 0) {
+      t.skip(
+        "eval-results/ is empty or stale — historical markdown eval artifacts; use npm run smoke for live quality"
+      );
     }
   });
 });
@@ -177,9 +193,7 @@ describe("TAILOR_MODEL default — .env.example and lib/env.ts consistency", () 
 
   it("winning TAILOR_MODEL appears in eval-results for all JDs", (t) => {
     if (!evalResultsArtifactsPresent(EVAL_RESULTS_DIR)) {
-      t.skip(
-        "eval-results/ is gitignored and absent — historical markdown eval artifacts; use npm run smoke for live quality"
-      );
+      t.skip(EVAL_RESULTS_ABSENT_SKIP);
       return;
     }
     const winningModel = readDefaultTailorModelFromEnvTs();
