@@ -55,8 +55,10 @@ export async function runInboxScanCli(options?: {
   return { ok: true, lines: result.items.map(formatScanItemLine), items: result.items };
 }
 
-export async function main(): Promise<void> {
-  const result = await runInboxScanCli();
+export async function main(options?: {
+  scan?: () => Promise<InboxScanResult>;
+}): Promise<void> {
+  const result = await runInboxScanCli(options);
   if (!result.ok) {
     console.error(result.error);
   } else {

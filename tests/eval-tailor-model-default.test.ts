@@ -1,4 +1,4 @@
-import { describe, it, skip } from "node:test";
+import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -57,7 +57,7 @@ function computeCompositeScore(scores: {
 }
 
 describe("eval-results — post-evaluation artifacts", () => {
-  it("eval-results/ contains scores.json for every JD×model pair that has results", () => {
+  it("eval-results/ contains scores.json for every JD×model pair that has results", (t) => {
     const slugs = listTestJdSlugs();
     const models = parseEvalModels();
     assert.ok(slugs.length >= 2, "test JDs must exist before evaluating results");
@@ -86,7 +86,7 @@ describe("eval-results — post-evaluation artifacts", () => {
       }
     }
     if (checked === 0) {
-      skip("eval-results/ is empty or stale — historical markdown eval artifacts; use npm run smoke for live quality");
+      t.skip("eval-results/ is empty or stale — historical markdown eval artifacts; use npm run smoke for live quality");
     }
   });
 
@@ -103,9 +103,9 @@ describe("eval-results — post-evaluation artifacts", () => {
     }
   });
 
-  it("each JD has JD-level extraction.json from stage 1 pipeline", () => {
+  it("each JD has JD-level extraction.json from stage 1 pipeline", (t) => {
     if (!evalResultsArtifactsPresent(EVAL_RESULTS_DIR)) {
-      skip(
+      t.skip(
         "eval-results/ is gitignored and absent — historical markdown eval artifacts; use npm run smoke for live quality"
       );
       return;
@@ -175,9 +175,9 @@ describe("TAILOR_MODEL default — .env.example and lib/env.ts consistency", () 
     );
   });
 
-  it("winning TAILOR_MODEL appears in eval-results for all JDs", () => {
+  it("winning TAILOR_MODEL appears in eval-results for all JDs", (t) => {
     if (!evalResultsArtifactsPresent(EVAL_RESULTS_DIR)) {
-      skip(
+      t.skip(
         "eval-results/ is gitignored and absent — historical markdown eval artifacts; use npm run smoke for live quality"
       );
       return;
