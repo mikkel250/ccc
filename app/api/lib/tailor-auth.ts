@@ -83,8 +83,8 @@ export function parseBearerToken(authorizationHeader: string | null): string | n
 /**
  * Authenticate a tailor request. Call before master load / LLM work that should
  * not run for anonymous callers. Rate limiting runs before this check; the
- * secret bucket uses the configured key only for a matching Bearer, and shared
- * sentinels for missing or wrong tokens.
+ * secret bucket uses the configured key only for a matching Bearer, and a
+ * shared unauthenticated sentinel for missing or wrong tokens.
  */
 export function authenticateTailorRequest(
   authorizationHeader: string | null
