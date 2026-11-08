@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  getGmailMessage,
   parseGmailReplyHeaders,
 } from "../app/api/lib/gmail-message";
 
@@ -147,6 +148,23 @@ describe("parseGmailReplyHeaders", () => {
     if (result.ok) {
       assert.equal(result.headers.to, "recruiter@example.com");
     }
+  });
+
+  it("rejects invalid message ids before Gmail fetch", async () => {
+    let fetched = false;
+    const result = await getGmailMessage({
+      messageId: "bad:id",
+      accessToken: "token",
+      fetchImpl: async () => {
+        fetched = true;
+        return new Response("{}");
+      },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /unsupported characters/);
+    }
+    assert.equal(fetched, false);
   });
 
   it("strips CR/LF from header values used as MIME fields", () => {
