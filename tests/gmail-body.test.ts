@@ -214,6 +214,15 @@ describe("htmlToText", () => {
     assert.doesNotMatch(text, /utm_pixel/);
   });
 
+  it("keeps a closed hidden tracking table hidden", () => {
+    assert.equal(
+      htmlToText(
+        '<div hidden>TRACK<table><tr><td>pixel data</td></tr></table></div><p>Need a GM</p>',
+      ),
+      "Need a GM",
+    );
+  });
+
   it("keeps descendant blocks inside an unclosed hidden wrapper hidden", () => {
     assert.equal(
       htmlToText('<div hidden>TRACK<div>pixel data</div><p>Need a GM</p>'),
