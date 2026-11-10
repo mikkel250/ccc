@@ -36,9 +36,17 @@ describe("runLocalInboxScan service URLs", () => {
   const saved: Record<string, string | undefined> = {};
   const keys = [
     "UPSTASH_REDIS_REST_URL",
+    "UPSTASH_REDIS_REST_TOKEN",
     "DEEPSEEK_BASE_URL",
+    "DEEPSEEK_API_KEY",
     "MASTER_CV_JSON",
     "TAILOR_MODEL",
+    "UPSTASH_REST_PORT",
+    "DEEPSEEK_MOCK_PORT",
+    "INBOX_SCAN_LOCAL_REDIS_PROBE",
+    "LOCAL_MOCK_TAILOR_MODEL",
+    "LOCAL_MOCK_DEEPSEEK_API_KEY",
+    "LOCAL_REDIS_PROBE_KEY",
   ] as const;
 
   beforeEach(() => {
@@ -46,6 +54,7 @@ describe("runLocalInboxScan service URLs", () => {
     for (const key of keys) {
       saved[key] = process.env[key];
     }
+    delete process.env.INBOX_SCAN_LOCAL_REDIS_PROBE;
   });
 
   afterEach(() => {
@@ -73,6 +82,150 @@ describe("runLocalInboxScan service URLs", () => {
       /UPSTASH_REDIS_REST_URL/
     );
     assert.equal(scanned, false);
+    assert.equal(process.env.UPSTASH_REDIS_REST_URL, "https://example.upstash.io");
+  });
+
+  it("fills blank Redis and model settings before the loopback check", async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    delete process.env.DEEPSEEK_BASE_URL;
+    delete process.env.DEEPSEEK_API_KEY;
+    delete process.env.TAILOR_MODEL;
+    delete process.env.UPSTASH_REST_PORT;
+    delete process.env.DEEPSEEK_MOCK_PORT;
+    delete process.env.INBOX_SCAN_LOCAL_REDIS_PROBE;
+    process.env.MASTER_CV_JSON = JSON.stringify(validCv);
+    const store = new Map<string, string>();
+    let scanned = false;
+    const outcome = await runLocalInboxScan({
+      scan: async () => {
+        scanned = true;
+        return { ok: true, items: [] };
+      },
+      redisMod: createFakeRedis(store),
+    });
+    assert.equal(scanned, true);
+    assert.equal(outcome.ok, true);
+    assert.equal(process.env.UPSTASH_REDIS_REST_URL, "http://127.0.0.1:8079");
+    assert.equal(process.env.UPSTASH_REDIS_REST_TOKEN, "local-dev-upstash-token");
+    assert.equal(process.env.DEEPSEEK_BASE_URL, "http://127.0.0.1:4010");
+    assert.equal(process.env.DEEPSEEK_API_KEY, "local-dev-deepseek-key");
+    assert.equal(process.env.TAILOR_MODEL, "deepseek/deepseek-chat");
+    assert.equal(store.has("inbox:local-dev-probe"), false);
+    assert.equal(outcome.redisProbe, null);
+  });
+
+  it("uses the configured mock ports when filling blank client URLs", async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.DEEPSEEK_BASE_URL;
+    delete process.env.TAILOR_MODEL;
+    process.env.UPSTASH_REST_PORT = "18079";
+    process.env.DEEPSEEK_MOCK_PORT = "14010";
+    process.env.MASTER_CV_JSON = JSON.stringify(validCv);
+    await runLocalInboxScan({
+      scan: async () => ({ ok: true, items: [] }),
+      redisMod: createFakeRedis(new Map()),
+    });
+    assert.equal(process.env.UPSTASH_REDIS_REST_URL, "http://127.0.0.1:18079");
+    assert.equal(process.env.DEEPSEEK_BASE_URL, "http://127.0.0.1:14010");
+  });
+
+  it("keeps an explicit non-deepseek model after filling blank URLs", async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.DEEPSEEK_BASE_URL;
+    process.env.TAILOR_MODEL = "anthropic/sonnet";
+    process.env.MASTER_CV_JSON = JSON.stringify(validCv);
+    await assert.rejects(
+      () =>
+        runLocalInboxScan({
+          scan: async () => ({ ok: true, items: [] }),
+          redisMod: createFakeRedis(new Map()),
+        }),
+      /TAILOR_MODEL/
+    );
+    assert.equal(process.env.TAILOR_MODEL, "anthropic/sonnet");
+  });
+
+  for (const probeValue of ["0", "false"] as const) {
+    it(`does not run the Redis probe when INBOX_SCAN_LOCAL_REDIS_PROBE is ${probeValue}`, async () => {
+      process.env.UPSTASH_REDIS_REST_URL = "http://127.0.0.1:8079";
+      process.env.DEEPSEEK_BASE_URL = "http://127.0.0.1:4010";
+      process.env.TAILOR_MODEL = "deepseek/deepseek-chat";
+      process.env.MASTER_CV_JSON = JSON.stringify(validCv);
+      process.env.INBOX_SCAN_LOCAL_REDIS_PROBE = probeValue;
+      const store = new Map<string, string>();
+      const outcome = await runLocalInboxScan({
+        scan: async () => ({ ok: true, items: [] }),
+        redisMod: createFakeRedis(store),
+      });
+      assert.equal(outcome.ok, true);
+      assert.equal(store.has("inbox:local-dev-probe"), false);
+      assert.equal(outcome.redisProbe, null);
+    });
+  }
+
+  it("writes the Redis probe only when INBOX_SCAN_LOCAL_REDIS_PROBE is set", async () => {
+    process.env.UPSTASH_REDIS_REST_URL = "http://127.0.0.1:8079";
+    process.env.DEEPSEEK_BASE_URL = "http://127.0.0.1:4010";
+    process.env.TAILOR_MODEL = "deepseek/deepseek-chat";
+    process.env.MASTER_CV_JSON = JSON.stringify(validCv);
+    process.env.INBOX_SCAN_LOCAL_REDIS_PROBE = "1";
+    const store = new Map<string, string>();
+    const outcome = await runLocalInboxScan({
+      scan: async () => ({ ok: false, error: "scan broke" }),
+      redisMod: createFakeRedis(store),
+    });
+    assert.deepEqual(outcome.scan, { ok: false, error: "scan broke" });
+    assert.equal(store.get("inbox:local-dev-probe"), "ok");
+    assert.equal(outcome.redisProbe?.usedHelpers, true);
+    assert.equal(outcome.redisProbe?.get, "ok");
+    assert.equal(outcome.redisProbe?.eval, "ok");
+  });
+
+  it("honors local mock setting overrides", async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.DEEPSEEK_API_KEY;
+    delete process.env.TAILOR_MODEL;
+    process.env.DEEPSEEK_BASE_URL = "http://127.0.0.1:4010";
+    process.env.LOCAL_MOCK_TAILOR_MODEL = "deepseek/deepseek-reasoner";
+    process.env.LOCAL_MOCK_DEEPSEEK_API_KEY = "override-key";
+    process.env.LOCAL_REDIS_PROBE_KEY = "inbox:custom-probe";
+    process.env.INBOX_SCAN_LOCAL_REDIS_PROBE = "1";
+    process.env.MASTER_CV_JSON = JSON.stringify(validCv);
+    const store = new Map<string, string>();
+    const outcome = await runLocalInboxScan({
+      scan: async () => ({ ok: true, items: [] }),
+      redisMod: createFakeRedis(store),
+    });
+    assert.equal(process.env.TAILOR_MODEL, "deepseek/deepseek-reasoner");
+    assert.equal(process.env.DEEPSEEK_API_KEY, "override-key");
+    assert.equal(store.get("inbox:custom-probe"), "ok");
+    assert.equal(store.has("inbox:local-dev-probe"), false);
+    assert.equal(outcome.redisProbe?.usedHelpers, true);
+    assert.equal(outcome.redisProbe?.eval, "ok");
+  });
+
+  it("returns the scan result when the opted-in probe throws", async () => {
+    process.env.UPSTASH_REDIS_REST_URL = "http://127.0.0.1:8079";
+    process.env.DEEPSEEK_BASE_URL = "http://127.0.0.1:4010";
+    process.env.TAILOR_MODEL = "deepseek/deepseek-chat";
+    process.env.MASTER_CV_JSON = JSON.stringify(validCv);
+    process.env.INBOX_SCAN_LOCAL_REDIS_PROBE = "1";
+    const full = createFakeRedis(new Map());
+    const outcome = await runLocalInboxScan({
+      scan: async () => ({ ok: false, error: "scan broke" }),
+      redisMod: {
+        getRedisClient: full.getRedisClient,
+        getRedisKey: full.getRedisKey,
+        setRedisKey: async () => {
+          throw new Error("redis down");
+        },
+        evalRedisScript: full.evalRedisScript,
+      },
+    });
+    assert.equal(outcome.ok, false);
+    assert.deepEqual(outcome.scan, { ok: false, error: "scan broke" });
+    assert.equal(outcome.redisProbe?.error, "redis down");
   });
 
   it("exits 1 when the scan is ok but an item failed", async () => {

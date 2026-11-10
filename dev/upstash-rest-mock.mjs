@@ -13,11 +13,6 @@
 import http from "node:http";
 import { guardMockRequest } from "./mock-request.mjs";
 import { pathToFileURL } from "node:url";
-import {
-  DELETE_IF_VALUE_SCRIPT,
-  EXPIRE_IF_OWNED_SCRIPT,
-  MARK_PROCESSED_IF_OWNED_SCRIPT,
-} from "../app/api/lib/inbox-redis-scripts.mjs";
 
 export const DEFAULT_UPSTASH_REST_PORT = 8079;
 export const DEFAULT_UPSTASH_REST_TOKEN = "local-dev-upstash-token";
@@ -206,19 +201,179 @@ function deleteIfValue(memory, keys, args) {
 }
 
 /**
+ * Opening of a Lua long bracket at `i` (`[[`, `[=[`, ...), or null.
+ * @param {string} script
+ * @param {number} i
+ * @returns {{ close: string, end: number } | null}
+ */
+function readLongBracketOpen(script, i) {
+  if (script[i] !== "[") return null;
+  let j = i + 1;
+  while (script[j] === "=") j += 1;
+  if (script[j] !== "[") return null;
+  return { close: `]${"=".repeat(j - (i + 1))}]`, end: j + 1 };
+}
+
+/**
+ * Drop comments outside short and long Lua string literals.
+ * @param {string} script
+ */
+function stripLuaComments(script) {
+  let out = "";
+  let i = 0;
+  while (i < script.length) {
+    const ch = script[i];
+    if (ch === '"' || ch === "'") {
+      const quote = ch;
+      out += ch;
+      i += 1;
+      while (i < script.length) {
+        const c = script[i];
+        if (c === "\\" && i + 1 < script.length) {
+          out += c + script[i + 1];
+          i += 2;
+          continue;
+        }
+        out += c;
+        i += 1;
+        if (c === quote) break;
+      }
+      continue;
+    }
+    const longString = ch === "[" ? readLongBracketOpen(script, i) : null;
+    if (longString) {
+      const closeAt = script.indexOf(longString.close, longString.end);
+      const end = closeAt === -1 ? script.length : closeAt + longString.close.length;
+      out += script.slice(i, end);
+      i = end;
+      continue;
+    }
+    if (ch === "-" && script[i + 1] === "-") {
+      const longComment = readLongBracketOpen(script, i + 2);
+      if (longComment) {
+        const closeAt = script.indexOf(longComment.close, longComment.end);
+        i = closeAt === -1 ? script.length : closeAt + longComment.close.length;
+      } else {
+        i += 2;
+        while (i < script.length && script[i] !== "\n" && script[i] !== "\r") i += 1;
+      }
+      out += " ";
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
+/** Collapse comments and whitespace so quote and layout changes still match. */
+function normalizeLua(script) {
+  return stripLuaComments(script).replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/**
+ * @param {string} script
+ * @param {string} command
+ * @param {string} argsPattern
+ * @param {{ closed?: boolean }} [options]
+ */
+function hasRedisCall(script, command, argsPattern, options = {}) {
+  const end = options.closed ? "\\s*\\)" : "";
+  return new RegExp(
+    `redis\\.call\\(\\s*["']${command}["']\\s*,\\s*${argsPattern}${end}`,
+    "i"
+  ).test(script);
+}
+
+/**
+ * True when the script compares a value to ARGV[1] with this operator.
+ * @param {string} script
+ * @param {"~=" | "=="} operator
+ */
+function comparesToArgv1(script, operator) {
+  if (operator !== "~=" && operator !== "==") return false;
+  return (
+    new RegExp(`${operator}\\s*argv\\[1\\]`).test(script) ||
+    new RegExp(`argv\\[1\\]\\s*${operator}`).test(script)
+  );
+}
+
+/**
+ * Claim check, conditional SET of the processed key, then DEL of the claim.
+ * @param {string} script
+ */
+function isMarkProcessedIfOwnedScript(script) {
+  const normalized = normalizeLua(script);
+  return (
+    /local\s+\w+\s*=\s*redis\.call\(\s*["']get["']\s*,\s*keys\[1\]\s*\)/.test(normalized) &&
+    /if\s+\w+\s*~=\s*argv\[1\]\s*then\s+return\s+0/.test(normalized) &&
+    hasRedisCall(normalized, "get", "keys\\[1\\]", { closed: true }) &&
+    comparesToArgv1(normalized, "~=") &&
+    hasRedisCall(
+      normalized,
+      "set",
+      "keys\\[2\\]\\s*,\\s*[\"']1[\"'](?:\\s*,\\s*[\"']ex[\"']\\s*,\\s*argv\\[2\\])?",
+      { closed: true }
+    ) &&
+    /tonumber\(\s*argv\[2\]\s*\)\s*>\s*0/.test(normalized) &&
+    /["']ex["']/.test(normalized) &&
+    hasRedisCall(normalized, "del", "keys\\[1\\]", { closed: true }) &&
+    /return\s+1/.test(normalized) &&
+    !hasRedisCall(normalized, "expire", "keys\\[")
+  );
+}
+
+/**
+ * Claim check, then EXPIRE of that key.
+ * @param {string} script
+ */
+function isExpireIfOwnedScript(script) {
+  const normalized = normalizeLua(script);
+  return (
+    /if\s+redis\.call\(\s*["']get["']\s*,\s*keys\[1\]\s*\)\s*==\s*argv\[1\]\s*then\s+return\s+redis\.call\(\s*["']expire["']\s*,\s*keys\[1\]\s*,\s*tonumber\(\s*argv\[2\]\s*\)\)/.test(
+      normalized
+    ) &&
+    hasRedisCall(normalized, "get", "keys\\[1\\]", { closed: true }) &&
+    comparesToArgv1(normalized, "==") &&
+    !hasRedisCall(normalized, "set", "keys\\[") &&
+    !hasRedisCall(normalized, "del", "keys\\[") &&
+    !/keys\[2\]/.test(normalized)
+  );
+}
+
+/**
+ * Value check, then DEL of that key.
+ * @param {string} script
+ */
+function isDeleteIfValueScript(script) {
+  const normalized = normalizeLua(script);
+  return (
+    /if\s+redis\.call\(\s*["']get["']\s*,\s*keys\[1\]\s*\)\s*==\s*argv\[1\]\s*then\s+return\s+redis\.call\(\s*["']del["']\s*,\s*keys\[1\]\s*\)/.test(
+      normalized
+    ) &&
+    hasRedisCall(normalized, "get", "keys\\[1\\]", { closed: true }) &&
+    comparesToArgv1(normalized, "==") &&
+    hasRedisCall(normalized, "del", "keys\\[1\\]", { closed: true }) &&
+    !/keys\[2\]/.test(normalized) &&
+    !hasRedisCall(normalized, "set", "keys\\[") &&
+    !hasRedisCall(normalized, "expire", "keys\\[")
+  );
+}
+
+/**
  * @param {ReturnType<typeof createMemoryStore>} memory
  * @param {string} script
  * @param {string[]} keys
  * @param {string[]} args
  */
 export function evalLua(memory, script, keys, args) {
-  if (script === MARK_PROCESSED_IF_OWNED_SCRIPT) {
+  if (isMarkProcessedIfOwnedScript(script)) {
     return markProcessedIfOwned(memory, keys, args);
   }
-  if (script === EXPIRE_IF_OWNED_SCRIPT) {
+  if (isExpireIfOwnedScript(script)) {
     return expireIfOwned(memory, keys, args);
   }
-  if (script === DELETE_IF_VALUE_SCRIPT) {
+  if (isDeleteIfValueScript(script)) {
     return deleteIfValue(memory, keys, args);
   }
   if (isSlidingWindowScript(script)) {
