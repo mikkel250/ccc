@@ -398,6 +398,27 @@ describe("buildTailorResponse — pipeline orchestration", () => {
     assert.equal(checkRateLimitSpy.mock.callCount(), 0);
   });
 
+  it("ignores valid IPs beyond TAILOR_MAX_XFF_ENTRIES rightmost hops", async () => {
+    const checkRateLimitSpy = mock.method(tailorCvDeps, "checkRateLimit");
+    const trailingInvalid = Array.from({ length: 5 }, () => "not-an-ip").join(
+      ", "
+    );
+    const forwarded = `203.0.113.77, ${trailingInvalid}`;
+    const result = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(
+        VALID_BODY,
+        authHeaders({ "x-forwarded-for": forwarded })
+      )
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 400);
+      assert.equal(result.error, "Cannot determine client IP");
+    }
+    assert.equal(checkRateLimitSpy.mock.callCount(), 0);
+  });
+
   it("ignores valid IPs outside the rightmost XFF entry window", async () => {
     mockPipelineSuccess();
     const checkRateLimitSpy = mock.method(tailorCvDeps, "checkRateLimit");
@@ -922,6 +943,66 @@ describe("runTailorCore — in-process curator path", () => {
     if (!result.ok) {
       assert.equal(result.status, 503);
       assert.doesNotMatch(result.error, /OPENROUTER_API_KEY/);
+    }
+  });
+
+  it("returns generic 503 when chat throws after the abort signal fired", async () => {
+    const abortController = new AbortController();
+    const chatSpy = mock.method(tailorCvDeps, "chat", async () => {
+      abortController.abort();
+      throw new Error("curator worker LEASE_LOST_TOKEN");
+    });
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+      signal: abortController.signal,
+    });
+
+    assert.equal(chatSpy.mock.callCount(), 1);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "AI service error. Please try again.");
+      assert.doesNotMatch(result.error, /LEASE_LOST_TOKEN/);
+    }
+  });
+
+  it("returns generic 503 when chat fails after the abort signal fires", async () => {
+    const abortController = new AbortController();
+    mock.method(tailorCvDeps, "chat", async () => {
+      abortController.abort();
+      throw new Error("The operation was aborted");
+    });
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+      signal: abortController.signal,
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "AI service error. Please try again.");
+      assert.doesNotMatch(result.error, /aborted/i);
+    }
+  });
+
+  it("passes ServiceError messages from chat through verbatim as 503", async () => {
+    mock.method(tailorCvDeps, "chat", async () => {
+      throw new ServiceError("Master CV is not loaded.");
+    });
+
+    const result = await runTailorCore(tailorCvDeps, {
+      jobDescription: "React role",
+      curationMode: "strict",
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "Master CV is not loaded.");
     }
   });
 

@@ -1,26 +1,16 @@
 /**
- * Shared Upstash Redis client — lazy singleton for rate limiting and future Redis features.
+ * Shared Upstash Redis client — lazy singleton for rate limiting and inbox KV.
  *
  * Credentials from UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN (Upstash console → REST API).
  * Client is created on first use, not at module import time (same pattern as llm.ts provider clients).
+ *
+ * Import only the runtime public surface (`Redis` plus type-only `SetCommandOptions`).
+ * `@upstash/redis` 1.38 types re-export `GetCommand` / `SetCommand` / `EvalCommand`,
+ * but the ESM/CJS entry exports only `Redis`, `SearchIndex`, and `errors`. Named
+ * Command imports compile in TypeScript and then fail in Next.js webpack
+ * ("is not exported") and at runtime (`XCommand is not a constructor`).
  */
-import {
-  EvalCommand,
-  GetCommand,
-  Redis,
-  SetCommand,
-  type SetCommandOptions,
-} from "@upstash/redis";
-
-type UpstashRequester = {
-  request: <TResult = unknown>(
-    req: unknown
-  ) => Promise<{ result?: TResult; error?: string }>;
-};
-
-function requester(client: Redis): UpstashRequester {
-  return (client as Redis & { client: UpstashRequester }).client;
-}
+import { Redis, type SetCommandOptions } from "@upstash/redis";
 
 let redisClient: Redis | null = null;
 
@@ -40,38 +30,50 @@ export function getRedisClient(): Redis {
   return redisClient;
 }
 
+/** Command subset used by helpers — structural so tests can pass fakes without asserting `Redis`. */
+type RedisGetClient = {
+  get: (key: string) => Promise<unknown>;
+};
+
+type RedisSetClient = {
+  set: (
+    key: string,
+    value: string,
+    opts?: SetCommandOptions
+  ) => Promise<unknown>;
+};
+
+type RedisEvalClient = {
+  eval: (
+    script: string,
+    keys: string[],
+    args: string[]
+  ) => Promise<unknown>;
+};
+
 export async function getRedisKey(
-  client: Redis,
-  key: string,
-  signal?: AbortSignal
+  client: RedisGetClient,
+  key: string
 ): Promise<unknown> {
-  const cmdOpts = signal ? { streamOptions: { signal } } : undefined;
-  return new GetCommand([key], cmdOpts).exec(requester(client));
+  return client.get(key);
 }
 
 export async function setRedisKey(
-  client: Redis,
+  client: RedisSetClient,
   key: string,
   value: string,
-  opts: SetCommandOptions | undefined,
-  signal?: AbortSignal
+  opts?: SetCommandOptions
 ): Promise<unknown> {
-  const cmdOpts = signal ? { streamOptions: { signal } } : undefined;
-  return new SetCommand([key, value, opts], cmdOpts).exec(requester(client));
+  return client.set(key, value, opts);
 }
 
 export async function evalRedisScript(
-  client: Redis,
+  client: RedisEvalClient,
   script: string,
   key: string,
-  args: string[],
-  signal?: AbortSignal
+  args: string[]
 ): Promise<unknown> {
-  const cmdOpts = signal ? { streamOptions: { signal } } : undefined;
-  return new EvalCommand<[string], number>(
-    [script, [key], args as [string]],
-    cmdOpts
-  ).exec(requester(client));
+  return client.eval(script, [key], args);
 }
 
 /** For tests only — clears the cached client so env changes take effect. */

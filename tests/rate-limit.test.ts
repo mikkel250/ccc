@@ -340,6 +340,23 @@ describe("getRateLimitConfig", () => {
   });
 });
 
+describe("hashTailorApiKeyForRateLimit", () => {
+  it("returns a stable 32-char hex digest that omits the raw secret", () => {
+    const secret = "super-secret-tailor-key";
+    const first = hashTailorApiKeyForRateLimit(secret);
+    const second = hashTailorApiKeyForRateLimit(secret);
+    assert.equal(first, second);
+    assert.match(first, /^[0-9a-f]{32}$/);
+    assert.equal(first.includes(secret), false);
+  });
+
+  it("maps distinct secrets to distinct bucket keys", () => {
+    const a = hashTailorApiKeyForRateLimit("unauth:invalid");
+    const b = hashTailorApiKeyForRateLimit("unauth:missing");
+    assert.notEqual(a, b);
+  });
+});
+
 describe("test-only exports", () => {
   const originalNodeEnv = process.env.NODE_ENV;
 
@@ -355,6 +372,14 @@ describe("test-only exports", () => {
     process.env.NODE_ENV = "production";
     assert.throws(
       () => __injectRatelimitForTest(null),
+      /only available in the test environment/i
+    );
+  });
+
+  it("__injectSecretRatelimitForTest throws outside test environment", () => {
+    process.env.NODE_ENV = "production";
+    assert.throws(
+      () => __injectSecretRatelimitForTest(null),
       /only available in the test environment/i
     );
   });

@@ -209,6 +209,14 @@ describe("mergeParityStatus", () => {
   });
 });
 
+function throwsInvalidParityStatus(err: unknown): boolean {
+  return (
+    err instanceof Error &&
+    err.name === "Error" &&
+    err.message === "Invalid parity-status.json"
+  );
+}
+
 describe("parseParityStatusJson", () => {
   it("accepts a well-formed on-disk parity status object", () => {
     const status = parseParityStatusJson({
@@ -223,32 +231,38 @@ describe("parseParityStatusJson", () => {
     assert.deepEqual(status.pending, ["deepseek/deepseek-v4-pro"]);
   });
 
+  it("accepts cells when pending is omitted", () => {
+    const status = parseParityStatusJson({
+      cells: {
+        "anthropic/sonnet": { ok: true },
+        "deepseek/deepseek-v4-pro": { ok: false },
+      },
+    });
+    assert.equal(status.cells["anthropic/sonnet"]?.ok, true);
+    assert.equal(status.cells["deepseek/deepseek-v4-pro"]?.ok, false);
+    assert.equal(status.pending, undefined);
+  });
+
   it("rejects non-object roots", () => {
-    assert.throws(() => parseParityStatusJson(null), /Invalid parity-status/);
-    assert.throws(() => parseParityStatusJson([]), /Invalid parity-status/);
-    assert.throws(() => parseParityStatusJson("bad"), /Invalid parity-status/);
+    for (const raw of [null, [], "bad"]) {
+      assert.throws(() => parseParityStatusJson(raw), throwsInvalidParityStatus);
+    }
   });
 
   it("rejects malformed cells containers and cell shapes", () => {
-    assert.throws(
-      () => parseParityStatusJson({ cells: "bad" }),
-      /Invalid parity-status/
-    );
-    assert.throws(
-      () => parseParityStatusJson({ cells: [] }),
-      /Invalid parity-status/
-    );
-    assert.throws(
-      () => parseParityStatusJson({ cells: { "anthropic/sonnet": null } }),
-      /Invalid parity-status/
-    );
-    assert.throws(
-      () =>
-        parseParityStatusJson({
-          cells: { "anthropic/sonnet": { ok: "yes" } },
-        }),
-      /Invalid parity-status/
-    );
+    for (const raw of [
+      {},
+      { cells: "bad" },
+      { cells: null },
+      { cells: [] },
+      { cells: {} },
+      { cells: { "anthropic/sonnet": null } },
+      { cells: { "anthropic/sonnet": [] } },
+      { cells: { "anthropic/sonnet": {} } },
+      { cells: { "anthropic/sonnet": { ok: "yes" } } },
+    ]) {
+      assert.throws(() => parseParityStatusJson(raw), throwsInvalidParityStatus);
+    }
   });
 
   it("rejects a non-array pending field", () => {
@@ -258,7 +272,7 @@ describe("parseParityStatusJson", () => {
           cells: { "anthropic/sonnet": { ok: true } },
           pending: "deepseek/deepseek-v4-pro",
         }),
-      /Invalid parity-status/
+      throwsInvalidParityStatus
     );
   });
 
@@ -269,7 +283,7 @@ describe("parseParityStatusJson", () => {
           cells: { "anthropic/sonnet": { ok: true } },
           pending: ["deepseek/deepseek-v4-pro", 1],
         }),
-      /Invalid parity-status/
+      throwsInvalidParityStatus
     );
   });
 });
