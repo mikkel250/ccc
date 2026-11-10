@@ -150,23 +150,6 @@ describe("parseGmailReplyHeaders", () => {
     }
   });
 
-  it("rejects invalid message ids before Gmail fetch", async () => {
-    let fetched = false;
-    const result = await getGmailMessage({
-      messageId: "bad:id",
-      accessToken: "token",
-      fetchImpl: async () => {
-        fetched = true;
-        return new Response("{}");
-      },
-    });
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.match(result.error, /unsupported characters/);
-    }
-    assert.equal(fetched, false);
-  });
-
   it("strips CR/LF from header values used as MIME fields", () => {
     const result = parseGmailReplyHeaders({
       threadId: "t1",
@@ -186,5 +169,40 @@ describe("parseGmailReplyHeaders", () => {
       assert.equal(result.headers.inReplyTo?.includes("\r"), false);
       assert.equal(result.headers.inReplyTo?.includes("\n"), false);
     }
+  });
+});
+
+describe("getGmailMessage", () => {
+  it("rejects an invalid messageId before calling Gmail", async () => {
+    let fetchCalls = 0;
+    const result = await getGmailMessage({
+      messageId: "bad:id",
+      accessToken: "token",
+      fetchImpl: async () => {
+        fetchCalls += 1;
+        return new Response("{}");
+      },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /unsupported characters/);
+    }
+    assert.equal(fetchCalls, 0);
+  });
+
+  it("rejects an empty messageId before token refresh", async () => {
+    let fetchCalls = 0;
+    const result = await getGmailMessage({
+      messageId: "  ",
+      fetchImpl: async () => {
+        fetchCalls += 1;
+        return new Response("{}");
+      },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /required/);
+    }
+    assert.equal(fetchCalls, 0);
   });
 });
