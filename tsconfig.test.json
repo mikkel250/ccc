@@ -8,7 +8,9 @@
     "tests/**/*.ts",
     "app/**/*.ts",
     "lib/**/*.ts",
-    "scripts/**/*.ts"
+    "scripts/**/*.ts",
+    "dev/**/*.ts",
+    "dev/**/*.mjs"
   ],
   "exclude": ["node_modules"]
 }

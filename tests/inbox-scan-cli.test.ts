@@ -116,6 +116,14 @@ describe("runInboxScanCli master CV preload", () => {
     });
   });
 
+  it("returns the scan error and skips item formatting when the scan fails", async () => {
+    process.env.MASTER_CV_JSON = JSON.stringify(validCv);
+    const result = await runInboxScanCli({
+      scan: async () => ({ ok: false, error: "gmail down" }),
+    });
+    assert.deepEqual(result, { ok: false, error: "gmail down" });
+  });
+
   it("sets process exit code 1 when master CV preload fails", async () => {
     const previousExitCode = process.exitCode;
     const logged: unknown[][] = [];
@@ -134,21 +142,14 @@ describe("runInboxScanCli master CV preload", () => {
   });
 
   it("returns the master CV error and does not scan when preload fails", async () => {
-    let fetchCalls = 0;
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () => {
-      fetchCalls += 1;
-      throw new Error("inbox scan test must not call fetch");
-    };
-    try {
-      const result = await runInboxScanCli();
-      assert.deepEqual(result, {
-        ok: false,
-        error: "Master CV configuration is unavailable",
-      });
-      assert.equal(fetchCalls, 0);
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
+    const result = await runInboxScanCli({
+      scan: async () => {
+        throw new Error("scan should not be called");
+      },
+    });
+    assert.deepEqual(result, {
+      ok: false,
+      error: "Master CV configuration is unavailable",
+    });
   });
 });
