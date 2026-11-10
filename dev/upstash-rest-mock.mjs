@@ -200,9 +200,47 @@ function deleteIfValue(memory, keys, args) {
   return memory.del(key);
 }
 
+/**
+ * Drop line comments only outside Lua string literals.
+ * @param {string} script
+ */
+function stripLuaComments(script) {
+  let out = "";
+  let i = 0;
+  while (i < script.length) {
+    const ch = script[i];
+    if (ch === '"' || ch === "'") {
+      const quote = ch;
+      out += ch;
+      i += 1;
+      while (i < script.length) {
+        const c = script[i];
+        if (c === "\\" && i + 1 < script.length) {
+          out += c + script[i + 1];
+          i += 2;
+          continue;
+        }
+        out += c;
+        i += 1;
+        if (c === quote) break;
+      }
+      continue;
+    }
+    if (ch === "-" && script[i + 1] === "-") {
+      i += 2;
+      while (i < script.length && script[i] !== "\n" && script[i] !== "\r") i += 1;
+      out += " ";
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
 /** Collapse comments and whitespace so quote and layout changes still match. */
 function normalizeLua(script) {
-  return script.replace(/--[^\n]*/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+  return stripLuaComments(script).replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 /**
@@ -237,12 +275,16 @@ function comparesToArgv1(script, operator) {
 function isMarkProcessedIfOwnedScript(script) {
   const normalized = normalizeLua(script);
   return (
+    /local\s+\w+\s*=\s*redis\.call\(\s*["']get["']\s*,\s*keys\[1\]\s*\)/.test(normalized) &&
+    /if\s+\w+\s*~=\s*argv\[1\]\s*then\s+return\s+0/.test(normalized) &&
     hasRedisCall(normalized, "get", "keys\\[1\\]") &&
     comparesToArgv1(normalized, "~=") &&
     hasRedisCall(normalized, "set", "keys\\[2\\]\\s*,\\s*[\"']1[\"']") &&
-    /tonumber\(\s*argv\[2\]\s*\)/.test(normalized) &&
+    /tonumber\(\s*argv\[2\]\s*\)\s*>\s*0/.test(normalized) &&
     /["']ex["']/.test(normalized) &&
-    hasRedisCall(normalized, "del", "keys\\[1\\]")
+    hasRedisCall(normalized, "del", "keys\\[1\\]") &&
+    /return\s+1/.test(normalized) &&
+    !hasRedisCall(normalized, "expire", "keys\\[")
   );
 }
 
@@ -253,15 +295,14 @@ function isMarkProcessedIfOwnedScript(script) {
 function isExpireIfOwnedScript(script) {
   const normalized = normalizeLua(script);
   return (
+    /if\s+redis\.call\(\s*["']get["']\s*,\s*keys\[1\]\s*\)\s*==\s*argv\[1\]\s*then\s+return\s+redis\.call\(\s*["']expire["']\s*,\s*keys\[1\]\s*,\s*tonumber\(\s*argv\[2\]\s*\)\)/.test(
+      normalized
+    ) &&
     hasRedisCall(normalized, "get", "keys\\[1\\]") &&
     comparesToArgv1(normalized, "==") &&
-    hasRedisCall(
-      normalized,
-      "expire",
-      "keys\\[1\\]\\s*,\\s*tonumber\\(\\s*argv\\[2\\]\\s*\\)"
-    ) &&
     !hasRedisCall(normalized, "set", "keys\\[") &&
-    !hasRedisCall(normalized, "del", "keys\\[")
+    !hasRedisCall(normalized, "del", "keys\\[") &&
+    !/keys\[2\]/.test(normalized)
   );
 }
 
@@ -272,6 +313,9 @@ function isExpireIfOwnedScript(script) {
 function isDeleteIfValueScript(script) {
   const normalized = normalizeLua(script);
   return (
+    /if\s+redis\.call\(\s*["']get["']\s*,\s*keys\[1\]\s*\)\s*==\s*argv\[1\]\s*then\s+return\s+redis\.call\(\s*["']del["']\s*,\s*keys\[1\]\s*\)/.test(
+      normalized
+    ) &&
     hasRedisCall(normalized, "get", "keys\\[1\\]") &&
     comparesToArgv1(normalized, "==") &&
     hasRedisCall(normalized, "del", "keys\\[1\\]") &&

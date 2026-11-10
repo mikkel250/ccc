@@ -143,6 +143,24 @@ describe("runLocalInboxScan service URLs", () => {
     assert.equal(process.env.TAILOR_MODEL, "anthropic/sonnet");
   });
 
+  for (const probeValue of ["0", "false"] as const) {
+    it(`does not run the Redis probe when INBOX_SCAN_LOCAL_REDIS_PROBE is ${probeValue}`, async () => {
+      process.env.UPSTASH_REDIS_REST_URL = "http://127.0.0.1:8079";
+      process.env.DEEPSEEK_BASE_URL = "http://127.0.0.1:4010";
+      process.env.TAILOR_MODEL = "deepseek/deepseek-chat";
+      process.env.MASTER_CV_JSON = JSON.stringify(validCv);
+      process.env.INBOX_SCAN_LOCAL_REDIS_PROBE = probeValue;
+      const store = new Map<string, string>();
+      const outcome = await runLocalInboxScan({
+        scan: async () => ({ ok: true, items: [] }),
+        redisMod: createFakeRedis(store),
+      });
+      assert.equal(outcome.ok, true);
+      assert.equal(store.has("inbox:local-dev-probe"), false);
+      assert.equal(outcome.redisProbe, null);
+    });
+  }
+
   it("writes the Redis probe only when INBOX_SCAN_LOCAL_REDIS_PROBE is set", async () => {
     process.env.UPSTASH_REDIS_REST_URL = "http://127.0.0.1:8079";
     process.env.DEEPSEEK_BASE_URL = "http://127.0.0.1:4010";
