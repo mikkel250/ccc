@@ -510,7 +510,9 @@ export function htmlToText(html: string): string {
       .replace(/<br\s*\/?>/gi, "\n")
       .replace(/<\/p>/gi, "\n")
       .replace(/<\/div>/gi, "\n")
-      .replace(/<[^>]+>/g, " ")
+      .replace(/<!DOCTYPE\b[^>]*>/gi, " ")
+      // Same tag shape as htmlTokenRe — `<5 years` / `<100k` are text, not tags.
+      .replace(/<\/?[a-zA-Z][\w:-]*\b[^>]*>/g, " ")
   );
   return withoutBlocks.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/[ \t]{2,}/g, " ").trim();
 }

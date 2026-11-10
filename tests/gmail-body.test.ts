@@ -449,6 +449,42 @@ describe("htmlToText", () => {
       assert.doesNotMatch(text, /SECRET/);
     }
   });
+
+  it("strips HTML declarations without touching comparison text", () => {
+    assert.equal(
+      htmlToText(
+        '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"><p>Need a GM</p>'
+      ),
+      "Need a GM"
+    );
+    const withComparison = htmlToText(
+      "<!DOCTYPE html><p>Must have <5 years of FOH experience.</p>"
+    );
+    assert.doesNotMatch(withComparison, /DOCTYPE/i);
+    assert.match(withComparison, /<5 years of FOH experience/);
+  });
+
+  it("keeps comparison text that is not an HTML tag", () => {
+    const years = htmlToText(
+      "<p>Must have <5 years of FOH experience.</p><p>Labor cost and scheduling required.</p>"
+    );
+    assert.match(years, /<5 years of FOH experience/);
+    assert.match(years, /Labor cost and scheduling required/);
+
+    const salary = htmlToText(
+      "<p>Salary <100k plus bonus.</p><p>Apply today.</p>"
+    );
+    assert.match(salary, /Salary <100k plus bonus/);
+    assert.match(salary, /Apply today/);
+
+    const kitchen = htmlToText(
+      "<div>Need a GM with <3 years kitchen leadership.</div><div>Benefits listed below.</div>"
+    );
+    assert.match(kitchen, /<3 years kitchen leadership/);
+    assert.match(kitchen, /Benefits listed below/);
+
+    assert.equal(htmlToText('<span class="x">text</span>'), "text");
+  });
 });
 
 describe("extractGmailJobDescription", () => {
@@ -517,6 +553,25 @@ describe("extractGmailJobDescription", () => {
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.match(result.error, /no usable text/);
+    }
+  });
+
+  it("extracts html-only JD that contains less-than comparisons", () => {
+    const html =
+      "<p>Must have <5 years of FOH experience.</p><p>Labor cost and scheduling required.</p>";
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "text/html",
+        body: { data: b64(html) },
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.match(result.jobDescription, /<5 years of FOH experience/);
+      assert.match(
+        result.jobDescription,
+        /Labor cost and scheduling required/
+      );
     }
   });
 
