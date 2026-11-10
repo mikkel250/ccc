@@ -206,10 +206,18 @@ describe("htmlToText", () => {
     assert.doesNotMatch(text, /TRACK/);
   });
 
-  it("keeps table content inside an unclosed hidden wrapper hidden", () => {
+  it("recovers a table-based HTML email after an unclosed hidden preheader", () => {
+    const text = htmlToText(
+      '<div style="display:none">utm_pixel<table role="presentation"><tr><td><p>General Manager role — requirements</p></td></tr></table>',
+    );
+    assert.match(text, /General Manager role/);
+    assert.doesNotMatch(text, /utm_pixel/);
+  });
+
+  it("keeps a closed hidden tracking table hidden", () => {
     assert.equal(
       htmlToText(
-        '<div hidden>TRACK<table><tr><td>pixel data</td></tr></table><p>Need a GM</p>',
+        '<div hidden>TRACK<table><tr><td>pixel data</td></tr></table></div><p>Need a GM</p>',
       ),
       "Need a GM",
     );
@@ -269,6 +277,7 @@ describe("htmlToText", () => {
       "section",
       "article",
       "main",
+      "table",
     ]) {
       assert.equal(
         htmlToText(
@@ -514,6 +523,22 @@ describe("extractGmailJobDescription", () => {
   it("extracts JD from html-only mail with unclosed hidden tracking div", () => {
     const html =
       '<div style="display:none">utm_pixel<p>General Manager role — requirements</p>';
+    const result = extractGmailJobDescription({
+      payload: {
+        mimeType: "text/html",
+        body: { data: b64(html) },
+      },
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.match(result.jobDescription, /General Manager role/);
+      assert.doesNotMatch(result.jobDescription, /utm_pixel/);
+    }
+  });
+
+  it("extracts JD from html-only table mail with unclosed hidden tracking div", () => {
+    const html =
+      '<div style="display:none">utm_pixel<table role="presentation"><tr><td><p>General Manager role — requirements</p></td></tr></table>';
     const result = extractGmailJobDescription({
       payload: {
         mimeType: "text/html",
