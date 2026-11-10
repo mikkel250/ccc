@@ -23,4 +23,4 @@ npm run inbox:scan:local
 
 Frontend: see `env.frontend.example` and `docs/test/local-dev.md`.
 
-Redis helpers (`getRedisKey` / `setRedisKey` / `evalRedisScript`) are on CCC PR #66. This runner uses them when present.
+Blank Redis, DeepSeek, and `TAILOR_MODEL` values are filled with the local mock defaults before the loopback check. `INBOX_SCAN_LOCAL_REDIS_PROBE=1` exercises `getRedisKey` / `setRedisKey` / `evalRedisScript` after the scan.

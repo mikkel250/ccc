@@ -13,11 +13,6 @@
 import http from "node:http";
 import { guardMockRequest } from "./mock-request.mjs";
 import { pathToFileURL } from "node:url";
-import {
-  DELETE_IF_VALUE_SCRIPT,
-  EXPIRE_IF_OWNED_SCRIPT,
-  MARK_PROCESSED_IF_OWNED_SCRIPT,
-} from "../app/api/lib/inbox-redis-scripts.mjs";
 
 export const DEFAULT_UPSTASH_REST_PORT = 8079;
 export const DEFAULT_UPSTASH_REST_TOKEN = "local-dev-upstash-token";
@@ -205,6 +200,79 @@ function deleteIfValue(memory, keys, args) {
   return memory.del(key);
 }
 
+/** Collapse comments and whitespace so quote and layout changes still match. */
+function normalizeLua(script) {
+  return script.replace(/--[^\n]*/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/**
+ * @param {string} script
+ * @param {string} command
+ * @param {string} argsPattern
+ */
+function hasRedisCall(script, command, argsPattern) {
+  return new RegExp(
+    `redis\\.call\\(\\s*["']${command}["']\\s*,\\s*${argsPattern}`,
+    "i"
+  ).test(script);
+}
+
+/** @param {string} script */
+function comparesToArgv1(script) {
+  return /(?:~=|==)\s*argv\[1\]/.test(script) || /argv\[1\]\s*(?:~=|==)/.test(script);
+}
+
+/**
+ * Claim check, conditional SET of the processed key, then DEL of the claim.
+ * @param {string} script
+ */
+function isMarkProcessedIfOwnedScript(script) {
+  const normalized = normalizeLua(script);
+  return (
+    hasRedisCall(normalized, "get", "keys\\[1\\]") &&
+    comparesToArgv1(normalized) &&
+    hasRedisCall(normalized, "set", "keys\\[2\\]\\s*,\\s*[\"']1[\"']") &&
+    /tonumber\(\s*argv\[2\]\s*\)/.test(normalized) &&
+    /["']ex["']/.test(normalized) &&
+    hasRedisCall(normalized, "del", "keys\\[1\\]")
+  );
+}
+
+/**
+ * Claim check, then EXPIRE of that key.
+ * @param {string} script
+ */
+function isExpireIfOwnedScript(script) {
+  const normalized = normalizeLua(script);
+  return (
+    hasRedisCall(normalized, "get", "keys\\[1\\]") &&
+    comparesToArgv1(normalized) &&
+    hasRedisCall(
+      normalized,
+      "expire",
+      "keys\\[1\\]\\s*,\\s*tonumber\\(\\s*argv\\[2\\]\\s*\\)"
+    ) &&
+    !hasRedisCall(normalized, "set", "keys\\[") &&
+    !hasRedisCall(normalized, "del", "keys\\[")
+  );
+}
+
+/**
+ * Value check, then DEL of that key.
+ * @param {string} script
+ */
+function isDeleteIfValueScript(script) {
+  const normalized = normalizeLua(script);
+  return (
+    hasRedisCall(normalized, "get", "keys\\[1\\]") &&
+    comparesToArgv1(normalized) &&
+    hasRedisCall(normalized, "del", "keys\\[1\\]") &&
+    !/keys\[2\]/.test(normalized) &&
+    !hasRedisCall(normalized, "set", "keys\\[") &&
+    !hasRedisCall(normalized, "expire", "keys\\[")
+  );
+}
+
 /**
  * @param {ReturnType<typeof createMemoryStore>} memory
  * @param {string} script
@@ -212,13 +280,13 @@ function deleteIfValue(memory, keys, args) {
  * @param {string[]} args
  */
 export function evalLua(memory, script, keys, args) {
-  if (script === MARK_PROCESSED_IF_OWNED_SCRIPT) {
+  if (isMarkProcessedIfOwnedScript(script)) {
     return markProcessedIfOwned(memory, keys, args);
   }
-  if (script === EXPIRE_IF_OWNED_SCRIPT) {
+  if (isExpireIfOwnedScript(script)) {
     return expireIfOwned(memory, keys, args);
   }
-  if (script === DELETE_IF_VALUE_SCRIPT) {
+  if (isDeleteIfValueScript(script)) {
     return deleteIfValue(memory, keys, args);
   }
   if (isSlidingWindowScript(script)) {

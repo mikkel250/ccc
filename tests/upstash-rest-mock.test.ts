@@ -1,8 +1,11 @@
 import http from "node:http";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { Ratelimit } from "@upstash/ratelimit";
 import { __inboxRedisScriptsForTest } from "../app/api/lib/inbox-processed-store";
+
+const require = createRequire(import.meta.url);
 
 // `npm test` sets this via tests/set-node-env-test.mjs. Plain `node --test` does not.
 if (!process.env.NODE_ENV) {
@@ -100,36 +103,11 @@ describe("upstash-rest-mock sliding window", () => {
     );
   });
 
-  it("accepts the installed @upstash/ratelimit sliding-window scripts", () => {
-    const source = readFileSync(
-      "node_modules/@upstash/ratelimit/dist/index.mjs",
-      "utf8"
-    );
-    const extract = (varName: string) => {
-      const marker = `var ${varName} = \``;
-      const start = source.indexOf(marker);
-      assert.ok(start >= 0, varName);
-      const bodyStart = start + marker.length;
-      const end = source.indexOf("`;", bodyStart);
-      assert.ok(end > bodyStart, varName);
-      return source.slice(bodyStart, end);
-    };
-    const memory = createMemoryStore();
-    const now = Date.now();
-    const limit = evalLua(
-      memory,
-      extract("slidingWindowLimitScript"),
-      ["cur", "prev", ""],
-      ["2", String(now), "60000", "1"]
-    );
-    const remaining = evalLua(
-      memory,
-      extract("slidingWindowRemainingTokensScript"),
-      ["cur", "prev", ""],
-      ["2", String(now), "60000"]
-    );
-    assert.deepEqual(limit, [1, 2]);
-    assert.deepEqual(remaining, [1, 2]);
+  it("targets @upstash/ratelimit 2.x slidingWindow without reading its bundle", () => {
+    const pkg = require("@upstash/ratelimit/package.json") as { version?: unknown };
+    const version = typeof pkg.version === "string" ? pkg.version.replace(/^v/, "") : "";
+    assert.match(version, /^2\./);
+    assert.equal(typeof Ratelimit.slidingWindow, "function");
   });
 });
 
@@ -171,6 +149,52 @@ describe("upstash-rest-mock inbox scripts", () => {
     assert.equal(evalLua(memory, scripts.deleteIfValue, ["renew"], ["other"]), 0);
     assert.equal(runCommand(memory, ["GET", "renew"]), "token-a");
     assert.equal(evalLua(memory, scripts.deleteIfValue, ["renew"], ["token-a"]), 1);
+    assert.equal(runCommand(memory, ["GET", "renew"]), null);
+  });
+
+  it("accepts ownership scripts when only quotes or whitespace change", () => {
+    const scripts = __inboxRedisScriptsForTest();
+    const mark = `
+local current = redis.call('GET', KEYS[1])
+if current ~= ARGV[1] then
+  return 0
+end
+if tonumber( ARGV[2] ) > 0 then
+  redis.call('SET', KEYS[2], '1', 'EX', ARGV[2])
+else
+  redis.call('SET', KEYS[2], '1')
+end
+redis.call('DEL', KEYS[1])
+return 1
+`;
+    const expire = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('EXPIRE', KEYS[1], tonumber( ARGV[2] ))
+else
+  return 0
+end
+`;
+    const del = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+else
+  return 0
+end
+`;
+    assert.notEqual(mark, scripts.markProcessedIfOwned);
+    assert.notEqual(expire, scripts.expireIfOwned);
+    assert.notEqual(del, scripts.deleteIfValue);
+    const memory = createMemoryStore();
+    runCommand(memory, ["SET", "claim", "token-a"]);
+    assert.equal(evalLua(memory, mark, ["claim", "processed"], ["token-a", "30"]), 1);
+    assert.equal(runCommand(memory, ["GET", "claim"]), null);
+    assert.equal(runCommand(memory, ["GET", "processed"]), "1");
+    assert.ok(Number(runCommand(memory, ["TTL", "processed"])) > 0);
+
+    runCommand(memory, ["SET", "renew", "token-a"]);
+    assert.equal(evalLua(memory, expire, ["renew"], ["token-a", "30"]), 1);
+    assert.ok(Number(runCommand(memory, ["TTL", "renew"])) > 0);
+    assert.equal(evalLua(memory, del, ["renew"], ["token-a"]), 1);
     assert.equal(runCommand(memory, ["GET", "renew"]), null);
   });
 
