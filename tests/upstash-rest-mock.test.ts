@@ -105,10 +105,15 @@ describe("upstash-rest-mock sliding window", () => {
   });
 
   it("targets @upstash/ratelimit 2.x slidingWindow without reading its bundle", async () => {
-    const pkg = require("@upstash/ratelimit/package.json") as { version?: unknown };
-    const version = typeof pkg.version === "string" ? pkg.version.replace(/^v/, "") : "";
+    const loaded: unknown = require("@upstash/ratelimit/package.json");
+    const version =
+      loaded !== null &&
+      typeof loaded === "object" &&
+      "version" in loaded &&
+      typeof loaded.version === "string"
+        ? loaded.version.replace(/^v/, "")
+        : "";
     assert.match(version, /^2\./);
-    assert.equal(typeof Ratelimit.slidingWindow, "function");
 
     const { server } = listenUpstashRestMock({ port: 0, token: "tok" });
     const port = await new Promise<number>((resolve) => {
@@ -194,6 +199,79 @@ describe("upstash-rest-mock inbox scripts", () => {
     assert.equal(evalLua(memory, script, ["claim", "processed"], ["token-a", "30"]), 1);
     assert.equal(runCommand(memory, ["GET", "claim"]), null);
     assert.equal(runCommand(memory, ["GET", "processed"]), "1");
+  });
+
+  it("recognizes a mark script when -- sits inside a long-bracket string on the same line", () => {
+    const scripts = __inboxRedisScriptsForTest();
+    const memory = createMemoryStore();
+    const body = scripts.markProcessedIfOwned.trim().replace(/\s+/g, " ");
+    const script = `local _ = [[keep -- dashes]] ${body}`;
+    const leveled = `local _ = [=[keep -- dashes]=] ${body}`;
+    runCommand(memory, ["SET", "claim", "token-a"]);
+    assert.equal(evalLua(memory, script, ["claim", "processed"], ["token-a", "30"]), 1);
+    runCommand(memory, ["SET", "claim", "token-a"]);
+    assert.equal(evalLua(memory, leveled, ["claim", "processed"], ["token-a", "30"]), 1);
+    assert.equal(runCommand(memory, ["GET", "claim"]), null);
+    assert.equal(runCommand(memory, ["GET", "processed"]), "1");
+  });
+
+  it("recognizes ownership scripts with line comments outside strings", () => {
+    const memory = createMemoryStore();
+    const script =
+      'local note = "keep -- dashes"\n' +
+      "-- between statements\n" +
+      'local current = redis.call("GET", KEYS[1])\r\n' +
+      "-- crlf comment\r\n" +
+      "if current ~= ARGV[1] then return 0 end\n" +
+      'if tonumber(ARGV[2]) > 0 then redis.call("SET", KEYS[2], "1", "EX", ARGV[2]) ' +
+      'else redis.call("SET", KEYS[2], "1") end\n' +
+      'redis.call("DEL", KEYS[1])\n' +
+      "return 1 -- eof comment";
+    runCommand(memory, ["SET", "claim", "token-a"]);
+    assert.equal(evalLua(memory, script, ["claim", "processed"], ["token-a", "0"]), 1);
+    assert.equal(runCommand(memory, ["GET", "claim"]), null);
+    assert.equal(runCommand(memory, ["GET", "processed"]), "1");
+  });
+
+  it("does not treat a redis.call argument prefix as the ownership command", () => {
+    const memory = createMemoryStore();
+    runCommand(memory, ["SET", "claim", "token-a"]);
+    const markSetConcat = `
+local current = redis.call("GET", KEYS[1])
+if current ~= ARGV[1] then
+  return 0
+end
+if tonumber(ARGV[2]) > 0 then
+  redis.call("SET", KEYS[2], "1" .. "x", "EX", ARGV[2])
+else
+  redis.call("SET", KEYS[2], "1" .. "x")
+end
+redis.call("DEL", KEYS[1])
+return 1
+`;
+    const markDelConcat = `
+local current = redis.call("GET", KEYS[1])
+if current ~= ARGV[1] then
+  return 0
+end
+if tonumber(ARGV[2]) > 0 then
+  redis.call("SET", KEYS[2], "1", "EX", ARGV[2])
+else
+  redis.call("SET", KEYS[2], "1")
+end
+redis.call("DEL", KEYS[1] .. "")
+return 1
+`;
+    assert.throws(
+      () => evalLua(memory, markSetConcat, ["claim", "processed"], ["token-a", "0"]),
+      /unknown lua script/
+    );
+    assert.throws(
+      () => evalLua(memory, markDelConcat, ["claim", "processed"], ["token-a", "0"]),
+      /unknown lua script/
+    );
+    assert.equal(runCommand(memory, ["GET", "claim"]), "token-a");
+    assert.equal(runCommand(memory, ["GET", "processed"]), null);
   });
 
   it("accepts ownership scripts when only quotes or whitespace change", () => {

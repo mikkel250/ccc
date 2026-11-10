@@ -44,6 +44,9 @@ describe("runLocalInboxScan service URLs", () => {
     "UPSTASH_REST_PORT",
     "DEEPSEEK_MOCK_PORT",
     "INBOX_SCAN_LOCAL_REDIS_PROBE",
+    "LOCAL_MOCK_TAILOR_MODEL",
+    "LOCAL_MOCK_DEEPSEEK_API_KEY",
+    "LOCAL_REDIS_PROBE_KEY",
   ] as const;
 
   beforeEach(() => {
@@ -174,7 +177,32 @@ describe("runLocalInboxScan service URLs", () => {
     });
     assert.deepEqual(outcome.scan, { ok: false, error: "scan broke" });
     assert.equal(store.get("inbox:local-dev-probe"), "ok");
+    assert.equal(outcome.redisProbe?.usedHelpers, true);
     assert.equal(outcome.redisProbe?.get, "ok");
+    assert.equal(outcome.redisProbe?.eval, "ok");
+  });
+
+  it("honors local mock setting overrides", async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.DEEPSEEK_API_KEY;
+    delete process.env.TAILOR_MODEL;
+    process.env.DEEPSEEK_BASE_URL = "http://127.0.0.1:4010";
+    process.env.LOCAL_MOCK_TAILOR_MODEL = "deepseek/deepseek-reasoner";
+    process.env.LOCAL_MOCK_DEEPSEEK_API_KEY = "override-key";
+    process.env.LOCAL_REDIS_PROBE_KEY = "inbox:custom-probe";
+    process.env.INBOX_SCAN_LOCAL_REDIS_PROBE = "1";
+    process.env.MASTER_CV_JSON = JSON.stringify(validCv);
+    const store = new Map<string, string>();
+    const outcome = await runLocalInboxScan({
+      scan: async () => ({ ok: true, items: [] }),
+      redisMod: createFakeRedis(store),
+    });
+    assert.equal(process.env.TAILOR_MODEL, "deepseek/deepseek-reasoner");
+    assert.equal(process.env.DEEPSEEK_API_KEY, "override-key");
+    assert.equal(store.get("inbox:custom-probe"), "ok");
+    assert.equal(store.has("inbox:local-dev-probe"), false);
+    assert.equal(outcome.redisProbe?.usedHelpers, true);
+    assert.equal(outcome.redisProbe?.eval, "ok");
   });
 
   it("returns the scan result when the opted-in probe throws", async () => {

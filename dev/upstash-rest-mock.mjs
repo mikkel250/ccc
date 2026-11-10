@@ -201,7 +201,21 @@ function deleteIfValue(memory, keys, args) {
 }
 
 /**
- * Drop line comments only outside Lua string literals.
+ * Opening of a Lua long bracket at `i` (`[[`, `[=[`, ...), or null.
+ * @param {string} script
+ * @param {number} i
+ * @returns {{ close: string, end: number } | null}
+ */
+function readLongBracketOpen(script, i) {
+  if (script[i] !== "[") return null;
+  let j = i + 1;
+  while (script[j] === "=") j += 1;
+  if (script[j] !== "[") return null;
+  return { close: `]${"=".repeat(j - (i + 1))}]`, end: j + 1 };
+}
+
+/**
+ * Drop comments outside short and long Lua string literals.
  * @param {string} script
  */
 function stripLuaComments(script) {
@@ -226,9 +240,23 @@ function stripLuaComments(script) {
       }
       continue;
     }
+    const longString = ch === "[" ? readLongBracketOpen(script, i) : null;
+    if (longString) {
+      const closeAt = script.indexOf(longString.close, longString.end);
+      const end = closeAt === -1 ? script.length : closeAt + longString.close.length;
+      out += script.slice(i, end);
+      i = end;
+      continue;
+    }
     if (ch === "-" && script[i + 1] === "-") {
-      i += 2;
-      while (i < script.length && script[i] !== "\n" && script[i] !== "\r") i += 1;
+      const longComment = readLongBracketOpen(script, i + 2);
+      if (longComment) {
+        const closeAt = script.indexOf(longComment.close, longComment.end);
+        i = closeAt === -1 ? script.length : closeAt + longComment.close.length;
+      } else {
+        i += 2;
+        while (i < script.length && script[i] !== "\n" && script[i] !== "\r") i += 1;
+      }
       out += " ";
       continue;
     }
@@ -247,10 +275,12 @@ function normalizeLua(script) {
  * @param {string} script
  * @param {string} command
  * @param {string} argsPattern
+ * @param {{ closed?: boolean }} [options]
  */
-function hasRedisCall(script, command, argsPattern) {
+function hasRedisCall(script, command, argsPattern, options = {}) {
+  const end = options.closed ? "\\s*\\)" : "";
   return new RegExp(
-    `redis\\.call\\(\\s*["']${command}["']\\s*,\\s*${argsPattern}`,
+    `redis\\.call\\(\\s*["']${command}["']\\s*,\\s*${argsPattern}${end}`,
     "i"
   ).test(script);
 }
@@ -277,12 +307,17 @@ function isMarkProcessedIfOwnedScript(script) {
   return (
     /local\s+\w+\s*=\s*redis\.call\(\s*["']get["']\s*,\s*keys\[1\]\s*\)/.test(normalized) &&
     /if\s+\w+\s*~=\s*argv\[1\]\s*then\s+return\s+0/.test(normalized) &&
-    hasRedisCall(normalized, "get", "keys\\[1\\]") &&
+    hasRedisCall(normalized, "get", "keys\\[1\\]", { closed: true }) &&
     comparesToArgv1(normalized, "~=") &&
-    hasRedisCall(normalized, "set", "keys\\[2\\]\\s*,\\s*[\"']1[\"']") &&
+    hasRedisCall(
+      normalized,
+      "set",
+      "keys\\[2\\]\\s*,\\s*[\"']1[\"'](?:\\s*,\\s*[\"']ex[\"']\\s*,\\s*argv\\[2\\])?",
+      { closed: true }
+    ) &&
     /tonumber\(\s*argv\[2\]\s*\)\s*>\s*0/.test(normalized) &&
     /["']ex["']/.test(normalized) &&
-    hasRedisCall(normalized, "del", "keys\\[1\\]") &&
+    hasRedisCall(normalized, "del", "keys\\[1\\]", { closed: true }) &&
     /return\s+1/.test(normalized) &&
     !hasRedisCall(normalized, "expire", "keys\\[")
   );
@@ -298,7 +333,7 @@ function isExpireIfOwnedScript(script) {
     /if\s+redis\.call\(\s*["']get["']\s*,\s*keys\[1\]\s*\)\s*==\s*argv\[1\]\s*then\s+return\s+redis\.call\(\s*["']expire["']\s*,\s*keys\[1\]\s*,\s*tonumber\(\s*argv\[2\]\s*\)\)/.test(
       normalized
     ) &&
-    hasRedisCall(normalized, "get", "keys\\[1\\]") &&
+    hasRedisCall(normalized, "get", "keys\\[1\\]", { closed: true }) &&
     comparesToArgv1(normalized, "==") &&
     !hasRedisCall(normalized, "set", "keys\\[") &&
     !hasRedisCall(normalized, "del", "keys\\[") &&
@@ -316,9 +351,9 @@ function isDeleteIfValueScript(script) {
     /if\s+redis\.call\(\s*["']get["']\s*,\s*keys\[1\]\s*\)\s*==\s*argv\[1\]\s*then\s+return\s+redis\.call\(\s*["']del["']\s*,\s*keys\[1\]\s*\)/.test(
       normalized
     ) &&
-    hasRedisCall(normalized, "get", "keys\\[1\\]") &&
+    hasRedisCall(normalized, "get", "keys\\[1\\]", { closed: true }) &&
     comparesToArgv1(normalized, "==") &&
-    hasRedisCall(normalized, "del", "keys\\[1\\]") &&
+    hasRedisCall(normalized, "del", "keys\\[1\\]", { closed: true }) &&
     !/keys\[2\]/.test(normalized) &&
     !hasRedisCall(normalized, "set", "keys\\[") &&
     !hasRedisCall(normalized, "expire", "keys\\[")
