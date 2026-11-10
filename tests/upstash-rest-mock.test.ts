@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
 import { __inboxRedisScriptsForTest } from "../app/api/lib/inbox-processed-store";
 
 const require = createRequire(import.meta.url);
@@ -103,11 +104,44 @@ describe("upstash-rest-mock sliding window", () => {
     );
   });
 
-  it("targets @upstash/ratelimit 2.x slidingWindow without reading its bundle", () => {
+  it("targets @upstash/ratelimit 2.x slidingWindow without reading its bundle", async () => {
     const pkg = require("@upstash/ratelimit/package.json") as { version?: unknown };
     const version = typeof pkg.version === "string" ? pkg.version.replace(/^v/, "") : "";
     assert.match(version, /^2\./);
     assert.equal(typeof Ratelimit.slidingWindow, "function");
+
+    const { server } = listenUpstashRestMock({ port: 0, token: "tok" });
+    const port = await new Promise<number>((resolve) => {
+      server.once("listening", () => {
+        const address = server.address();
+        if (address && typeof address === "object") resolve(address.port);
+      });
+    });
+    try {
+      const redis = new Redis({ url: `http://127.0.0.1:${port}`, token: "tok" });
+      const ratelimit = new Ratelimit({
+        redis,
+        limiter: Ratelimit.slidingWindow(2, "60 s"),
+        prefix: "rl-test",
+        ephemeralCache: false,
+        analytics: false,
+      });
+      const first = await ratelimit.limit("user");
+      const second = await ratelimit.limit("user");
+      const denied = await ratelimit.limit("user");
+      assert.equal(first.success, true);
+      assert.equal(first.limit, 2);
+      assert.equal(first.remaining, 1);
+      assert.equal(first.reason, undefined);
+      assert.equal(second.success, true);
+      assert.equal(second.remaining, 0);
+      assert.equal(denied.success, false);
+      assert.equal(denied.remaining, 0);
+      assert.equal(denied.limit, 2);
+      assert.equal(denied.reason, undefined);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });
 
@@ -221,6 +255,53 @@ end
       /unknown lua script/
     );
     assert.equal(runCommand(memory, ["GET", "claim"]), "token-a");
+  });
+
+  it("does not route ownership scripts that use the other comparison operator", () => {
+    const memory = createMemoryStore();
+    runCommand(memory, ["SET", "claim", "token-a"]);
+    const markWithEquals = `
+local current = redis.call("GET", KEYS[1])
+if current == ARGV[1] then
+  return 0
+end
+if tonumber(ARGV[2]) > 0 then
+  redis.call("SET", KEYS[2], "1", "EX", ARGV[2])
+else
+  redis.call("SET", KEYS[2], "1")
+end
+redis.call("DEL", KEYS[1])
+return 1
+`;
+    const expireWithNotEquals = `
+if redis.call("GET", KEYS[1]) ~= ARGV[1] then
+  return redis.call("EXPIRE", KEYS[1], tonumber(ARGV[2]))
+else
+  return 0
+end
+`;
+    const deleteWithNotEquals = `
+if redis.call("GET", KEYS[1]) ~= ARGV[1] then
+  return redis.call("DEL", KEYS[1])
+else
+  return 0
+end
+`;
+    assert.throws(
+      () => evalLua(memory, markWithEquals, ["claim", "processed"], ["token-a", "0"]),
+      /unknown lua script/
+    );
+    assert.throws(
+      () => evalLua(memory, expireWithNotEquals, ["claim"], ["token-a", "30"]),
+      /unknown lua script/
+    );
+    assert.throws(
+      () => evalLua(memory, deleteWithNotEquals, ["claim"], ["token-a"]),
+      /unknown lua script/
+    );
+    assert.equal(runCommand(memory, ["GET", "claim"]), "token-a");
+    assert.equal(runCommand(memory, ["GET", "processed"]), null);
+    assert.equal(runCommand(memory, ["TTL", "claim"]), -1);
   });
 });
 

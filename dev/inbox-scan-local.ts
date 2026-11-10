@@ -32,6 +32,7 @@ const LOCAL_MOCK_TAILOR_MODEL = "deepseek/deepseek-chat";
 const LOCAL_MOCK_DEEPSEEK_API_KEY = "local-dev-deepseek-key";
 const LOCAL_REDIS_PROBE_KEY = "inbox:local-dev-probe";
 
+/** Set an env value only when the current one is missing or blank. */
 function fillBlank(env: NodeJS.ProcessEnv, key: string, value: string): void {
   const current = env[key];
   if (current === undefined || current.trim() === "") {
@@ -143,6 +144,10 @@ export type LocalRedisProbe = {
   error?: string;
 };
 
+/**
+ * Scan local Gmail fixtures and read the processed mark.
+ * The Redis probe runs only when INBOX_SCAN_LOCAL_REDIS_PROBE is set.
+ */
 export async function runLocalInboxScan(options?: {
   scan?: () => Promise<InboxScanResult>;
   redisMod?: RedisHelperModule;

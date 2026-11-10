@@ -217,9 +217,17 @@ function hasRedisCall(script, command, argsPattern) {
   ).test(script);
 }
 
-/** @param {string} script */
-function comparesToArgv1(script) {
-  return /(?:~=|==)\s*argv\[1\]/.test(script) || /argv\[1\]\s*(?:~=|==)/.test(script);
+/**
+ * True when the script compares a value to ARGV[1] with this operator.
+ * @param {string} script
+ * @param {"~=" | "=="} operator
+ */
+function comparesToArgv1(script, operator) {
+  if (operator !== "~=" && operator !== "==") return false;
+  return (
+    new RegExp(`${operator}\\s*argv\\[1\\]`).test(script) ||
+    new RegExp(`argv\\[1\\]\\s*${operator}`).test(script)
+  );
 }
 
 /**
@@ -230,7 +238,7 @@ function isMarkProcessedIfOwnedScript(script) {
   const normalized = normalizeLua(script);
   return (
     hasRedisCall(normalized, "get", "keys\\[1\\]") &&
-    comparesToArgv1(normalized) &&
+    comparesToArgv1(normalized, "~=") &&
     hasRedisCall(normalized, "set", "keys\\[2\\]\\s*,\\s*[\"']1[\"']") &&
     /tonumber\(\s*argv\[2\]\s*\)/.test(normalized) &&
     /["']ex["']/.test(normalized) &&
@@ -246,7 +254,7 @@ function isExpireIfOwnedScript(script) {
   const normalized = normalizeLua(script);
   return (
     hasRedisCall(normalized, "get", "keys\\[1\\]") &&
-    comparesToArgv1(normalized) &&
+    comparesToArgv1(normalized, "==") &&
     hasRedisCall(
       normalized,
       "expire",
@@ -265,7 +273,7 @@ function isDeleteIfValueScript(script) {
   const normalized = normalizeLua(script);
   return (
     hasRedisCall(normalized, "get", "keys\\[1\\]") &&
-    comparesToArgv1(normalized) &&
+    comparesToArgv1(normalized, "==") &&
     hasRedisCall(normalized, "del", "keys\\[1\\]") &&
     !/keys\[2\]/.test(normalized) &&
     !hasRedisCall(normalized, "set", "keys\\[") &&
