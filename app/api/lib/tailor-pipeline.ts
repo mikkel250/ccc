@@ -243,10 +243,12 @@ export interface TailorPipelineDeps {
 
 /**
  * Secret-bucket key material. When a key is configured, hash the configured
- * secret only for a matching Bearer. Missing and wrong tokens use shared
- * sentinels so unauthenticated traffic cannot drain the legitimate key's
- * quota and rotating wrong tokens cannot bypass the secret window.
+ * secret only for a matching Bearer. Missing and wrong tokens share one
+ * unauthenticated sentinel so failed auth cannot drain the legitimate key's
+ * quota or obtain separate secret-window budgets by alternating header shapes.
  */
+const UNAUTH_SECRET_BUCKET_SENTINEL = "unauth:failed";
+
 function resolveSecretBucketKey(authorizationHeader: string | null): string {
   const configuredKey = getConfiguredTailorApiKey();
   if (!configuredKey) {
@@ -256,13 +258,10 @@ function resolveSecretBucketKey(authorizationHeader: string | null): string {
     return hashTailorApiKeyForRateLimit("bypass:unconfigured");
   }
   const presented = parseBearerToken(authorizationHeader);
-  if (!presented) {
-    return hashTailorApiKeyForRateLimit("unauth:missing");
+  if (!presented || !bearerTokenEquals(presented, configuredKey)) {
+    return hashTailorApiKeyForRateLimit(UNAUTH_SECRET_BUCKET_SENTINEL);
   }
-  if (bearerTokenEquals(presented, configuredKey)) {
-    return hashTailorApiKeyForRateLimit(configuredKey);
-  }
-  return hashTailorApiKeyForRateLimit("unauth:invalid");
+  return hashTailorApiKeyForRateLimit(configuredKey);
 }
 
 // ---------------------------------------------------------------------------
