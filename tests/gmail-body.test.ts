@@ -441,6 +441,20 @@ describe("htmlToText", () => {
     }
   });
 
+  it("strips HTML declarations without touching comparison text", () => {
+    assert.equal(
+      htmlToText(
+        '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"><p>Need a GM</p>'
+      ),
+      "Need a GM"
+    );
+    const withComparison = htmlToText(
+      "<!DOCTYPE html><p>Must have <5 years of FOH experience.</p>"
+    );
+    assert.doesNotMatch(withComparison, /DOCTYPE/i);
+    assert.match(withComparison, /<5 years of FOH experience/);
+  });
+
   it("keeps comparison text that is not an HTML tag", () => {
     const years = htmlToText(
       "<p>Must have <5 years of FOH experience.</p><p>Labor cost and scheduling required.</p>"

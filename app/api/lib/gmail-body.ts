@@ -504,6 +504,7 @@ export function htmlToText(html: string): string {
       .replace(/<br\s*\/?>/gi, "\n")
       .replace(/<\/p>/gi, "\n")
       .replace(/<\/div>/gi, "\n")
+      .replace(/<!DOCTYPE\b[^>]*>/gi, " ")
       // Same tag shape as htmlTokenRe — `<5 years` / `<100k` are text, not tags.
       .replace(/<\/?[a-zA-Z][\w:-]*\b[^>]*>/g, " ")
   );
