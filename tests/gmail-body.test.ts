@@ -459,6 +459,8 @@ describe("htmlToText", () => {
     );
     assert.match(kitchen, /<3 years kitchen leadership/);
     assert.match(kitchen, /Benefits listed below/);
+
+    assert.equal(htmlToText('<span class="x">text</span>'), "text");
   });
 });
 
