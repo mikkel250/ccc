@@ -81,8 +81,12 @@ export function parseParityStatusJson(raw: unknown): ParityStatus {
   if (cellsRaw === null || typeof cellsRaw !== "object" || Array.isArray(cellsRaw)) {
     throw new Error("Invalid parity-status.json");
   }
+  const cellsInput = recordFromObject(cellsRaw);
+  if (Object.keys(cellsInput).length === 0) {
+    throw new Error("Invalid parity-status.json");
+  }
   const cells: Record<string, ParityCellStatus> = {};
-  for (const [key, cell] of Object.entries(recordFromObject(cellsRaw))) {
+  for (const [key, cell] of Object.entries(cellsInput)) {
     if (cell === null || typeof cell !== "object" || Array.isArray(cell)) {
       throw new Error("Invalid parity-status.json");
     }
