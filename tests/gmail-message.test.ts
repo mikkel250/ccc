@@ -1,9 +1,41 @@
-import { describe, it } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import {
   getGmailMessage,
   parseGmailReplyHeaders,
 } from "../app/api/lib/gmail-message";
+
+const GMAIL_ENV_KEYS = [
+  "GMAIL_CLIENT_ID",
+  "GMAIL_CLIENT_SECRET",
+  "GMAIL_REFRESH_TOKEN",
+  "GMAIL_OAUTH_TOKEN_URL",
+  "GMAIL_API_BASE_URL",
+] as const;
+
+function authorizationHeader(init?: RequestInit): string | undefined {
+  const headers = init?.headers;
+  if (headers === undefined) {
+    return undefined;
+  }
+  if (headers instanceof Headers) {
+    return headers.get("Authorization") ?? undefined;
+  }
+  if (Array.isArray(headers)) {
+    for (const [name, value] of headers) {
+      if (name.toLowerCase() === "authorization") {
+        return value;
+      }
+    }
+    return undefined;
+  }
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() === "authorization") {
+      return value;
+    }
+  }
+  return undefined;
+}
 
 describe("parseGmailReplyHeaders", () => {
   it("maps From to To and prefixes Re: when needed", () => {
@@ -173,6 +205,27 @@ describe("parseGmailReplyHeaders", () => {
 });
 
 describe("getGmailMessage", () => {
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const key of GMAIL_ENV_KEYS) {
+      saved[key] = process.env[key];
+    }
+    process.env.GMAIL_CLIENT_ID = "client-id";
+    process.env.GMAIL_CLIENT_SECRET = "client-secret";
+    process.env.GMAIL_REFRESH_TOKEN = "refresh-token";
+    process.env.GMAIL_OAUTH_TOKEN_URL = "https://oauth.example.test/token";
+    process.env.GMAIL_API_BASE_URL = "https://gmail.example.test/gmail/v1";
+  });
+
+  afterEach(() => {
+    for (const key of GMAIL_ENV_KEYS) {
+      const previous = saved[key];
+      if (previous === undefined) delete process.env[key];
+      else process.env[key] = previous;
+    }
+  });
+
   it("rejects an invalid messageId before calling Gmail", async () => {
     let fetchCalls = 0;
     const result = await getGmailMessage({
@@ -204,5 +257,65 @@ describe("getGmailMessage", () => {
       assert.match(result.error, /required/);
     }
     assert.equal(fetchCalls, 0);
+  });
+
+  it("loads a valid message with bearer auth and format=full", async () => {
+    const message = { id: "msg123abc", threadId: "t1" };
+    let requested = "";
+    const result = await getGmailMessage({
+      messageId: "msg123abc",
+      accessToken: "access-token",
+      fetchImpl: async (input, init) => {
+        requested = String(input);
+        assert.equal(init?.method, "GET");
+        assert.equal(authorizationHeader(init), "Bearer access-token");
+        return new Response(JSON.stringify(message));
+      },
+    });
+    const url = new URL(requested);
+    assert.equal(url.origin, "https://gmail.example.test");
+    assert.equal(url.pathname, "/gmail/v1/users/me/messages/msg123abc");
+    assert.equal(url.searchParams.get("format"), "full");
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.deepEqual(result.message, message);
+    }
+  });
+
+  it("returns the Gmail status when the message request fails", async () => {
+    const result = await getGmailMessage({
+      messageId: "msg123abc",
+      accessToken: "access-token",
+      fetchImpl: async () => new Response("{}", { status: 404 }),
+    });
+    assert.deepEqual(result, { ok: false, error: "Gmail API HTTP 404" });
+  });
+
+  it("returns a request failure when Gmail fetch throws", async () => {
+    const result = await getGmailMessage({
+      messageId: "msg123abc",
+      accessToken: "access-token",
+      fetchImpl: async () => {
+        throw new Error("socket hang up");
+      },
+    });
+    assert.deepEqual(result, { ok: false, error: "Gmail API request failed" });
+  });
+
+  it("returns the token error and does not call Gmail when refresh fails", async () => {
+    let gmailCalls = 0;
+    const result = await getGmailMessage({
+      messageId: "msg123abc",
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url === "https://oauth.example.test/token") {
+          return new Response("{}", { status: 401 });
+        }
+        gmailCalls += 1;
+        return new Response("{}");
+      },
+    });
+    assert.deepEqual(result, { ok: false, error: "Gmail token HTTP 401" });
+    assert.equal(gmailCalls, 0);
   });
 });
