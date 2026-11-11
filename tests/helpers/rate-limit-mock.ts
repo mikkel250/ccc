@@ -12,7 +12,7 @@
 import type { Ratelimit } from "@upstash/ratelimit";
 
 export type RatelimitResponse = Awaited<ReturnType<Ratelimit["limit"]>>;
-export type RatelimitLike = Pick<Ratelimit, "limit">;
+export type RatelimitLike = Pick<Ratelimit, "limit" | "getRemaining">;
 
 export interface SlidingWindowConfig {
   maxRequests: number;
@@ -23,7 +23,24 @@ export interface SlidingWindowConfig {
 export function createSlidingWindowMock(config: SlidingWindowConfig): RatelimitLike {
   const buckets = new Map<string, number[]>();
 
+  function liveTimestamps(identifier: string, now: number): number[] {
+    const windowStart = now - config.windowMs;
+    const timestamps = (buckets.get(identifier) ?? []).filter((t) => t > windowStart);
+    buckets.set(identifier, timestamps);
+    return timestamps;
+  }
+
   return {
+    getRemaining: async (identifier: string) => {
+      const now = Date.now();
+      const timestamps = liveTimestamps(identifier, now);
+      const oldest = timestamps[0] ?? now;
+      return {
+        remaining: Math.max(0, config.maxRequests - timestamps.length),
+        reset: oldest + config.windowMs,
+        limit: config.maxRequests,
+      };
+    },
     limit: async function mockLimit(
       identifier: string,
     ): Promise<RatelimitResponse> {
@@ -31,16 +48,12 @@ export function createSlidingWindowMock(config: SlidingWindowConfig): RatelimitL
       await new Promise(resolve => setImmediate(resolve));
 
       const now = Date.now();
-      const windowStart = now - config.windowMs;
-
-      let timestamps = buckets.get(identifier) ?? [];
-      timestamps = timestamps.filter((t) => t > windowStart);
+      const timestamps = liveTimestamps(identifier, now);
       const oldest = timestamps[0] ?? now;
 
       const remaining = Math.max(0, config.maxRequests - timestamps.length);
 
       if (remaining <= 0) {
-        buckets.set(identifier, timestamps);
         return {
           success: false,
           remaining: 0,
@@ -67,6 +80,11 @@ export function createSlidingWindowMock(config: SlidingWindowConfig): RatelimitL
 /** Mock that always throws — simulates Upstash Redis connection failure. */
 export function createFailingMock(): RatelimitLike {
   return {
+    getRemaining: async () => ({
+      remaining: 1,
+      reset: Date.now() + 60_000,
+      limit: 1,
+    }),
     limit: async function mockLimit(): Promise<RatelimitResponse> {
       throw new Error("Connection refused");
     },
@@ -76,6 +94,11 @@ export function createFailingMock(): RatelimitLike {
 /** Mock that resolves with the SDK's fail-open timeout shape (`reason: "timeout"`). */
 export function createTimeoutMock(): RatelimitLike {
   return {
+    getRemaining: async () => ({
+      remaining: 1,
+      reset: Date.now() + 60_000,
+      limit: 5,
+    }),
     limit: async function mockLimit(): Promise<RatelimitResponse> {
       return {
         success: true,

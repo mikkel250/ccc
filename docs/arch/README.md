@@ -44,10 +44,10 @@ POST /api/tailor-cv
   ↓
 
 buildTailorResponse (tailor-pipeline.ts) via tailor-cv/route.ts
-  ├── parseClientIp (rightmost x-forwarded-for)
-  ├── checkRateLimit (Upstash; before auth)
+  ├── parseClientIp (rightmost x-forwarded-for; 400 if unknown)
   ├── authenticate (Bearer TAILOR_API_KEY)
   ├── capped body read + validateTailorCvBody
+  ├── checkRateLimit (Upstash; session:<id> or IP + secret hash)
   ├── requireMasterCv (MASTER_CV_JSON / MASTER_CV_PATH)
   ├── getCuratorPrompt()        → Langfuse ("cv-curator-json", label: production)
   │     └── fallback: hardcoded prompt in curator-prompt.ts when Langfuse is unset,

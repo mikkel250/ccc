@@ -210,7 +210,7 @@ When leaving local-only: coordinate CCC `Authorization: Bearer` with this API cu
 | **400** on tailor-cv | Malformed JSON, oversize body/JD, or missing IP | Check body + `x-forwarded-for` |
 | **405** on tailor-cv | Wrong HTTP method | Use POST |
 | **422** | Curator JSON/schema/builder failure | Inspect server logs (no PII payloads); retry |
-| **429** | Dual rate limit | Check `RATE_LIMIT_MAX` / `RATE_LIMIT_SECRET_MAX` |
+| **429** | Dual rate limit | Check `RATE_LIMIT_MAX` (per `session:<id>` or IP) / `RATE_LIMIT_SECRET_MAX` (global) |
 | **503** | Master CV unavailable / Redis / LLM | Check `MASTER_CV_*`, Upstash, provider keys |
 | Empty or invalid `.docx` | Builder or curator failure | Prefer `npm run smoke`; check `builderVersion` |
 | Langfuse shows raw master/curated | Redaction not applied | Confirm tailor uses redacting tracer path (R8b) |
