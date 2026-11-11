@@ -13,7 +13,7 @@ import { pathToFileURL } from "node:url";
 import { inboxProcessedKey } from "../app/api/lib/inbox-processed-store";
 import { scanInbox, type InboxScanResult } from "../app/api/lib/inbox-scan";
 import { preloadMasterCv } from "../app/api/lib/master-cv";
-import { getEnvBoolean, getEnvString } from "../lib/env";
+import { getEnvBoolean } from "../lib/env";
 import { inboxScanCliExitCode } from "../scripts/inbox-scan";
 import { DEFAULT_DEEPSEEK_MOCK_PORT } from "./deepseek-mock.mjs";
 import {
@@ -32,9 +32,11 @@ const DEFAULT_LOCAL_MOCK_TAILOR_MODEL = "deepseek/deepseek-chat";
 const DEFAULT_LOCAL_MOCK_DEEPSEEK_API_KEY = "local-dev-deepseek-key";
 const DEFAULT_LOCAL_REDIS_PROBE_KEY = "inbox:local-dev-probe";
 
-/** Local-mock default, replaced when the named env var is nonblank. */
-function localMockSetting(key: string, fallback: string): string {
-  return getEnvString(key, fallback) ?? fallback;
+/** Local-mock default from `env`, used when that variable is missing or blank. */
+function localMockSetting(env: NodeJS.ProcessEnv, key: string, fallback: string): string {
+  const value = env[key];
+  if (value === undefined || value.trim() === "") return fallback;
+  return value;
 }
 
 /** Set an env value only when the current one is missing or blank. */
@@ -55,12 +57,12 @@ export function applyLocalInboxMockClientEnv(env: NodeJS.ProcessEnv = process.en
   fillBlank(
     env,
     "DEEPSEEK_API_KEY",
-    localMockSetting("LOCAL_MOCK_DEEPSEEK_API_KEY", DEFAULT_LOCAL_MOCK_DEEPSEEK_API_KEY)
+    localMockSetting(env, "LOCAL_MOCK_DEEPSEEK_API_KEY", DEFAULT_LOCAL_MOCK_DEEPSEEK_API_KEY)
   );
   fillBlank(
     env,
     "TAILOR_MODEL",
-    localMockSetting("LOCAL_MOCK_TAILOR_MODEL", DEFAULT_LOCAL_MOCK_TAILOR_MODEL)
+    localMockSetting(env, "LOCAL_MOCK_TAILOR_MODEL", DEFAULT_LOCAL_MOCK_TAILOR_MODEL)
   );
 }
 
@@ -165,15 +167,17 @@ export async function runLocalInboxScan(options?: {
   scan?: () => Promise<InboxScanResult>;
   redisMod?: RedisHelperModule;
   messageId?: string;
+  env?: NodeJS.ProcessEnv;
 }): Promise<{
   ok: boolean;
   scan: InboxScanResult;
   processed: unknown;
   redisProbe: LocalRedisProbe | null;
 }> {
-  applyLocalInboxMockClientEnv();
+  const env = options?.env ?? process.env;
+  applyLocalInboxMockClientEnv(env);
   applyLocalInboxGmailEnv();
-  assertLocalMockClientUrls(process.env);
+  assertLocalMockClientUrls(env);
   assertLocalInboxGmailUrlsAreHttps();
   const loaded = await preloadMasterCv();
   if (!loaded.ok) {
@@ -193,7 +197,7 @@ export async function runLocalInboxScan(options?: {
     try {
       redisProbe = await probeRedisHelpers(
         redisMod,
-        localMockSetting("LOCAL_REDIS_PROBE_KEY", DEFAULT_LOCAL_REDIS_PROBE_KEY)
+        localMockSetting(env, "LOCAL_REDIS_PROBE_KEY", DEFAULT_LOCAL_REDIS_PROBE_KEY)
       );
     } catch (error) {
       redisProbe = {
