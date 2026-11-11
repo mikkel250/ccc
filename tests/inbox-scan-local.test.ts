@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { __resetMasterCvCacheForTest } from "../app/api/lib/master-cv";
 import {
+  applyLocalInboxMockClientEnv,
   probeRedisHelpers,
   readProcessedMark,
   runLocalInboxCli,
@@ -113,6 +114,86 @@ describe("runLocalInboxScan service URLs", () => {
     assert.equal(process.env.TAILOR_MODEL, "deepseek/deepseek-chat");
     assert.equal(store.has("inbox:local-dev-probe"), false);
     assert.equal(outcome.redisProbe, null);
+  });
+
+  it("preserves nonblank Redis, DeepSeek, and model settings and replaces only blank values", async () => {
+    delete process.env.LOCAL_MOCK_DEEPSEEK_API_KEY;
+    delete process.env.LOCAL_MOCK_TAILOR_MODEL;
+    delete process.env.UPSTASH_REST_PORT;
+    delete process.env.DEEPSEEK_MOCK_PORT;
+    process.env.MASTER_CV_JSON = JSON.stringify(validCv);
+    const scan = async () => ({ ok: true as const, items: [] });
+    const redisMod = createFakeRedis(new Map());
+
+    process.env.UPSTASH_REDIS_REST_URL = "http://127.0.0.1:18079";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "custom-token";
+    process.env.DEEPSEEK_BASE_URL = "http://127.0.0.1:14010";
+    process.env.DEEPSEEK_API_KEY = "custom-deepseek-key";
+    process.env.TAILOR_MODEL = "deepseek/deepseek-reasoner";
+    await runLocalInboxScan({ scan, redisMod });
+    assert.equal(process.env.UPSTASH_REDIS_REST_URL, "http://127.0.0.1:18079");
+    assert.equal(process.env.UPSTASH_REDIS_REST_TOKEN, "custom-token");
+    assert.equal(process.env.DEEPSEEK_BASE_URL, "http://127.0.0.1:14010");
+    assert.equal(process.env.DEEPSEEK_API_KEY, "custom-deepseek-key");
+    assert.equal(process.env.TAILOR_MODEL, "deepseek/deepseek-reasoner");
+
+    process.env.UPSTASH_REDIS_REST_URL = "  ";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "\t";
+    process.env.DEEPSEEK_BASE_URL = " ";
+    process.env.DEEPSEEK_API_KEY = "\n";
+    process.env.TAILOR_MODEL = "   ";
+    await runLocalInboxScan({ scan, redisMod });
+    assert.equal(process.env.UPSTASH_REDIS_REST_URL, "http://127.0.0.1:8079");
+    assert.equal(process.env.UPSTASH_REDIS_REST_TOKEN, "local-dev-upstash-token");
+    assert.equal(process.env.DEEPSEEK_BASE_URL, "http://127.0.0.1:4010");
+    assert.equal(process.env.DEEPSEEK_API_KEY, "local-dev-deepseek-key");
+    assert.equal(process.env.TAILOR_MODEL, "deepseek/deepseek-chat");
+  });
+
+  it("reads local mock overrides from the supplied env", () => {
+    process.env.LOCAL_MOCK_DEEPSEEK_API_KEY = "process-deepseek-key";
+    process.env.LOCAL_MOCK_TAILOR_MODEL = "deepseek/process-model";
+
+    const overridden: NodeJS.ProcessEnv = {
+      DEEPSEEK_API_KEY: " ",
+      TAILOR_MODEL: " ",
+      LOCAL_MOCK_DEEPSEEK_API_KEY: "supplied-deepseek-key",
+      LOCAL_MOCK_TAILOR_MODEL: "deepseek/supplied-model",
+    };
+    applyLocalInboxMockClientEnv(overridden);
+    assert.equal(overridden.DEEPSEEK_API_KEY, "supplied-deepseek-key");
+    assert.equal(overridden.TAILOR_MODEL, "deepseek/supplied-model");
+
+    const blankOverrides: NodeJS.ProcessEnv = {
+      DEEPSEEK_API_KEY: "\t",
+      TAILOR_MODEL: "  ",
+      LOCAL_MOCK_DEEPSEEK_API_KEY: " ",
+      LOCAL_MOCK_TAILOR_MODEL: "",
+    };
+    applyLocalInboxMockClientEnv(blankOverrides);
+    assert.equal(blankOverrides.DEEPSEEK_API_KEY, "local-dev-deepseek-key");
+    assert.equal(blankOverrides.TAILOR_MODEL, "deepseek/deepseek-chat");
+  });
+
+  it("reads the Redis probe key from the supplied env", async () => {
+    process.env.LOCAL_REDIS_PROBE_KEY = "inbox:process-probe";
+    process.env.INBOX_SCAN_LOCAL_REDIS_PROBE = "1";
+    process.env.MASTER_CV_JSON = JSON.stringify(validCv);
+    const env: NodeJS.ProcessEnv = {
+      UPSTASH_REDIS_REST_URL: "http://127.0.0.1:8079",
+      DEEPSEEK_BASE_URL: "http://127.0.0.1:4010",
+      TAILOR_MODEL: "deepseek/deepseek-chat",
+      LOCAL_REDIS_PROBE_KEY: "inbox:supplied-probe",
+    };
+    const store = new Map<string, string>();
+    await runLocalInboxScan({
+      env,
+      scan: async () => ({ ok: true, items: [] }),
+      redisMod: createFakeRedis(store),
+    });
+    assert.equal(store.get("inbox:supplied-probe"), "ok");
+    assert.equal(store.has("inbox:process-probe"), false);
+    assert.equal(store.has("inbox:local-dev-probe"), false);
   });
 
   it("uses the configured mock ports when filling blank client URLs", async () => {

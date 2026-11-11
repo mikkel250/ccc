@@ -110,6 +110,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 ├── instrumentation.ts           # Next.js register (nodejs-only gate)
 ├── instrumentation.node.ts      # ensureSecureStartup (R5d) + preloadMasterCv
 ├── next.config.mjs              # Next.js config (OTEL external packages)
+├── .github/workflows/ci.yml     # PR/main: npm ci, lint, test, build (no smoke/e2e)
 ├── railway.toml                 # Railway API service (always-on npm start)
 ├── railway.inbox-scan.toml      # Railway cron service: npm run inbox:scan at 05:00 UTC
 ├── .coderabbit.yaml             # CodeRabbit review config

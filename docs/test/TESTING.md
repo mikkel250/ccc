@@ -119,6 +119,8 @@ RUN_INBOX_REDIS_TESTS=1 UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... 
 | `tests/json-docx-builder.test.ts` | JSON→docx builder + regen CLI |
 | `tests/curator-prompt.test.ts` | Curator prompt contract |
 | `tests/knowledge-base.test.ts` | Legacy KB helpers (not tailor hot path) |
+| `tests/ci-workflow.test.ts` | GitHub Actions CI workflow: lint + `npm test` + build on PRs/`main`; no live-secret jobs |
+| `tests/markdown-docx.test.ts` | Legacy markdown→docx; `isValidDocxBase64` rejects unpadded / charset-invalid input |
 | `tests/npm-test-script.test.ts` | `package.json` `test` script keeps quoted `tests/**/*.test.ts` glob for nested tests under npm |
 | `tests/rate-limit.test.ts` | Dual IP + secret rate limits |
 | `tests/gmail-oauth.test.ts` | Gmail OAuth URL, PKCE, callback, token exchange/refresh |
@@ -184,6 +186,10 @@ npm run test:e2e
 Bearer required (or `TAILOR_AUTH_INSECURE_BYPASS=1` with `TAILOR_API_KEY` unset for local/dev/test bypass cases — hard-blocked in production-like deploys). Optional LLM path gated by `RUN_E2E_LLM_TESTS=true`.
 
 ---
+
+## GitHub Actions (CI)
+
+`.github/workflows/ci.yml` runs on pull requests and on pushes to `main`: `npm ci`, `npm run lint`, `npm test` (includes `typecheck:tests` via `pretest`), and `npm run build`. It does not invoke smoke, Playwright, or `RUN_INBOX_REDIS_TESTS` — those need secrets or a running server.
 
 ## Suggested test order (before a PR)
 
