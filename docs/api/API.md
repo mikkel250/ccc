@@ -30,11 +30,14 @@ Dual Upstash sliding-window ceilings (R21):
 
 | Bucket | Env var | Default |
 |--------|---------|---------|
-| Per client IP | `RATE_LIMIT_MAX` | `5` |
-| Per shared-secret hash | `RATE_LIMIT_SECRET_MAX` | `floor(RATE_LIMIT_MAX / 2)` (min 1) |
+| Per caller (`session:<id>` after successful auth, else client IP) | `RATE_LIMIT_MAX` | `5` |
+| Per shared-secret hash (global cap) | `RATE_LIMIT_SECRET_MAX` | `floor(RATE_LIMIT_MAX / 2)` (min 1) |
 | Window | `RATE_LIMIT_WINDOW` | `60000` ms |
+| Max `sessionId` chars for a caller key | `RATE_LIMIT_SESSION_ID_MAX_CHARS` | `128` |
 
-Success responses return the **more restrictive** `remaining` / `resetTime` of the two buckets. `sessionId` does not key rate limits. The secret bucket hashes the configured `TAILOR_API_KEY` only for a matching Bearer; missing and wrong tokens use shared sentinels (`unauth:missing` / `unauth:invalid`) so failed auth cannot exhaust the legitimate key's quota or evade the secret window by rotating guesses.
+Success responses return the **more restrictive** `remaining` / `resetTime` of the two buckets. After successful Bearer (or local bypass), a usable body `sessionId` (`A-Za-z0-9_-`, 1..max chars) keys the per-caller bucket as `session:<id>`. Omitted or invalid `sessionId` keeps the rightmost `x-forwarded-for` IP. Failed auth never honors `sessionId` (IP + unauth sentinels only). User identity is not read from inbound headers.
+
+The secret bucket is the global cap for a valid `TAILOR_API_KEY`. Defaults 5 / 2 mean per-user splits cannot fire: raise `RATE_LIMIT_SECRET_MAX` above `RATE_LIMIT_MAX` (typically ≥ concurrent BFF users × `RATE_LIMIT_MAX`). The secret bucket hashes the configured key only for a matching Bearer; missing and wrong tokens use shared sentinels (`unauth:missing` / `unauth:invalid`) so failed auth cannot exhaust the legitimate key's quota or evade the secret window by rotating guesses.
 
 ```json
 HTTP 429
@@ -69,7 +72,7 @@ Headers: `Content-Type: application/json`, `Authorization: Bearer <TAILOR_API_KE
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `jobDescription` | `string` | Yes | Untrusted JD text; size capped by `TAILOR_JD_MAX_CHARS` (default 50000) |
-| `sessionId` | `string` | No | Optional caller ID (not used for rate limiting) |
+| `sessionId` | `string` | No | Optional caller ID. After successful auth, a usable value keys the per-caller rate-limit bucket (`session:<id>`). Never copied from inbound headers; BFF sets this to the session user id. |
 | `curationMode` | `"strict"` \| `"flexible"` | No | Defaults to `TAILOR_DEFAULT_CURATION_MODE` (or `strict`). `strict`: cut/reorder/trim discrete master roles only (no category-style collapse). `flexible`: transferable-skills pivot with cover letter generation; foregrounds adjacent experience via grounded category-style collapse of weak-fit role clusters |
 
 Request body size capped by `TAILOR_REQUEST_MAX_BYTES` (default 65536).
@@ -179,9 +182,10 @@ Errors use `{ "error": string }`. `remaining` / `resetTime` appear on 429 only.
 | `MASTER_CV_JSON` / `MASTER_CV_PATH` | Canonical master CV | Prefer env body; path must not be world-readable |
 | `TAILOR_MODEL` | Curator model (`provider/model`) | `anthropic/sonnet` |
 | `TAILOR_DEFAULT_CURATION_MODE` | Default `curationMode` when omitted (`strict` \| `flexible`) | `strict` |
-| `RATE_LIMIT_MAX` | Per-IP sliding-window ceiling | `5` |
-| `RATE_LIMIT_SECRET_MAX` | Per-shared-secret ceiling | half of `RATE_LIMIT_MAX` (min 1) |
+| `RATE_LIMIT_MAX` | Per-caller sliding-window ceiling (`session:<id>` or IP) | `5` |
+| `RATE_LIMIT_SECRET_MAX` | Global per-shared-secret ceiling | half of `RATE_LIMIT_MAX` (min 1) |
 | `RATE_LIMIT_WINDOW` | Sliding window length (ms) | `60000` |
+| `RATE_LIMIT_SESSION_ID_MAX_CHARS` | Max chars for a `sessionId` caller key | `128` |
 | `TAILOR_REQUEST_MAX_BYTES` / `TAILOR_JD_MAX_CHARS` | Ingress limits | `65536` / `50000` |
 | `TAILOR_CURATED_JSON_MAX_BYTES` / `TAILOR_RESPONSE_MAX_BYTES` | Egress limits | `512000` / `2097152` |
 

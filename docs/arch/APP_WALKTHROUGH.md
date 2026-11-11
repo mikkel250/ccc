@@ -19,10 +19,10 @@ Client (smoke CLI)
     │
     ▼ POST { jobDescription } + Authorization: Bearer
 app/api/tailor-cv/route.ts
-    ├── parseClientIp()                 (rightmost x-forwarded-for)
-    ├── checkRateLimit(ip, secret)    app/api/lib/rate-limit.ts  (before auth)
+    ├── parseClientIp()                 (rightmost x-forwarded-for; 400 if unknown)
     ├── authenticateTailorRequest()   app/api/lib/tailor-auth.ts
     ├── validateTailorCvBody()        app/api/lib/tailor-cv-validation.ts
+    ├── checkRateLimit(session:id or ip, secret)  app/api/lib/rate-limit.ts
     └── runTailorCore()               app/api/lib/tailor-pipeline.ts
           ├── requireMasterCv()       app/api/lib/master-cv.ts
           ├── getCuratorPrompt() + compile  app/api/lib/curator-prompt.ts
@@ -56,19 +56,20 @@ The root page (`app/page.tsx :: Home`) calls `notFound()` — there is intention
 
 | Step | File | Function |
 |------|------|----------|
-| Client identity | `tailor-pipeline.ts` | Rightmost `x-forwarded-for` entry → `400` if unresolvable |
-| JSON body | `tailor-pipeline.ts` | Capped read (`TAILOR_REQUEST_MAX_BYTES`) then `JSON.parse` |
+| Client IP | `tailor-pipeline.ts` | Rightmost `x-forwarded-for` entry → `400` if unresolvable (before auth/body) |
+| Auth | `app/api/lib/tailor-auth.ts` | Bearer / local bypass |
+| JSON body | `tailor-pipeline.ts` | Capped read (`TAILOR_REQUEST_MAX_BYTES`) then `JSON.parse` (authed requests only) |
 | Validation | `app/api/lib/tailor-cv-validation.ts` | `validateTailorCvBody(body, fallbackSessionId)` |
 
-**Contract:** `jobDescription` required non-empty string; `sessionId` optional (defaults to IP-based id). Failures → **400**.
+**Contract:** `jobDescription` required non-empty string; `sessionId` optional. Failures → **400**. Failed auth does not read the body for identity.
 
 ### 3. Rate limiting
 
 | Step | File | Function |
 |------|------|----------|
-| Burst limit | `app/api/lib/rate-limit.ts` | `checkRateLimit("pre-body", ipAddress, secretBucketKey)` |
+| Burst limit | `app/api/lib/rate-limit.ts` | `checkRateLimit("caller", callerIdentifier, secretBucketKey)` |
 
-Upstash Redis dual sliding windows (`RATE_LIMIT_MAX` + `RATE_LIMIT_SECRET_MAX`). Secret bucket is checked first so secret exhaustion does not burn IP quota. Runs after IP resolution and **before** auth so failed credential guesses still consume IP quota (and a shared missing/invalid-auth secret bucket — not the configured `TAILOR_API_KEY` hash). Also runs before body parse so invalid authorized floods still count. **Quota exhaustion → 429** with more-restrictive `remaining`/`resetTime`. **Redis / rate-limit service failure → 503**. Unresolvable IP → **400** before rate limiting.
+Upstash Redis dual sliding windows (`RATE_LIMIT_MAX` + `RATE_LIMIT_SECRET_MAX`). Secret bucket is checked first so secret exhaustion does not burn per-caller quota. Failed auth consumes the IP caller key plus unauth secret sentinels (body `sessionId` ignored). Successful auth keys the per-caller bucket on a usable body `sessionId` as `session:<id>`, else the parsed IP. Invalid authed JSON does not consume quota. **Quota exhaustion → 429** with more-restrictive `remaining`/`resetTime`. **Redis / rate-limit service failure → 503**. Unresolvable IP → **400** before rate limiting. User identity is never read from inbound headers.
 
 ### 4. Load master CV
 

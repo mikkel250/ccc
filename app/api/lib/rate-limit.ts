@@ -1,9 +1,11 @@
 /**
  * Rate limiter backed by Upstash Redis via @upstash/ratelimit SDK.
  *
- * Dual fail-closed ceilings (R21 / KTD7): per-IP and per-shared-secret hash.
- * Success responses return the more restrictive remaining/resetTime.
- * sessionId is accepted for future auth integration; not used as an anti-exfil key.
+ * Dual fail-closed ceilings (R21 / KTD7): per-caller (IP or `session:<id>`)
+ * and per-shared-secret hash. Success responses return the more restrictive
+ * remaining/resetTime. Body sessionId keys the per-caller bucket only after
+ * successful Bearer/bypass auth in the HTTP adapter; the secret hash remains
+ * the anti-exfil cap.
  */
 import { createHash } from "node:crypto";
 import { Ratelimit } from "@upstash/ratelimit";
@@ -12,8 +14,9 @@ import { getRedisClient } from "./redis";
 import { getEnvNumber, getEnvString } from "../../../lib/env";
 
 const RATE_LIMIT_MAX = Math.max(1, Math.floor(getEnvNumber("RATE_LIMIT_MAX", 5)));
-// Per-secret ceiling defaults to half the per-IP cap so key sharing cannot
-// inflate overall throughput beyond a single authenticated consumer.
+// Per-secret ceiling defaults to half the per-caller cap so key sharing cannot
+// inflate overall throughput beyond a single authenticated consumer. Raise
+// RATE_LIMIT_SECRET_MAX when multiple BFF users should each get RATE_LIMIT_MAX.
 const RATE_LIMIT_SECRET_MAX = Math.max(
   1,
   Math.floor(getEnvNumber("RATE_LIMIT_SECRET_MAX", Math.max(1, Math.floor(RATE_LIMIT_MAX / 2))))
@@ -24,6 +27,12 @@ const RATE_LIMIT_TIMEOUT_MS = Math.max(
   1,
   Math.floor(getEnvNumber("RATE_LIMIT_TIMEOUT_MS", 2000))
 );
+const RATE_LIMIT_SESSION_ID_MAX_CHARS = Math.max(
+  1,
+  Math.floor(getEnvNumber("RATE_LIMIT_SESSION_ID_MAX_CHARS", 128))
+);
+const SESSION_RATE_LIMIT_KEY_PREFIX = "session:";
+const SESSION_ID_CHARSET = /^[A-Za-z0-9_-]+$/;
 
 export interface RateLimitResult {
   allowed: boolean;
@@ -38,7 +47,37 @@ export function getRateLimitConfig() {
     secretMaxRequests: RATE_LIMIT_SECRET_MAX,
     windowMs: RATE_LIMIT_WINDOW_MS,
     timeoutMs: RATE_LIMIT_TIMEOUT_MS,
+    sessionIdMaxChars: RATE_LIMIT_SESSION_ID_MAX_CHARS,
   };
+}
+
+/** True when a trimmed sessionId may key the per-caller bucket. */
+export function isUsableRateLimitSessionId(sessionId: string): boolean {
+  return (
+    sessionId.length > 0 &&
+    sessionId.length <= RATE_LIMIT_SESSION_ID_MAX_CHARS &&
+    SESSION_ID_CHARSET.test(sessionId)
+  );
+}
+
+/**
+ * Choose the per-caller Redis identifier.
+ * Usable body sessionId → `session:<id>` so it cannot collide with an IP key.
+ * Missing or invalid sessionId → the parsed client IP (caller must already
+ * have passed the unknown-IP 400). Auth gating belongs in the HTTP adapter.
+ */
+export function resolveCallerRateLimitKey(
+  sessionId: unknown,
+  ipAddress: string
+): string {
+  if (typeof sessionId !== "string") {
+    return ipAddress;
+  }
+  const trimmed = sessionId.trim();
+  if (!isUsableRateLimitSessionId(trimmed)) {
+    return ipAddress;
+  }
+  return `${SESSION_RATE_LIMIT_KEY_PREFIX}${trimmed}`;
 }
 
 /** Stable Redis key material from the shared secret — never store the raw key. */
@@ -144,27 +183,29 @@ function moreRestrictive(
 }
 
 /**
- * Check IP and shared-secret rate-limit buckets (both must succeed).
- * Secret bucket is checked first so secret exhaustion does not burn IP quota.
+ * Check per-caller and shared-secret rate-limit buckets (both must succeed).
+ * Secret bucket is checked first so secret exhaustion does not burn caller quota.
  *
- * @param _sessionId Reserved — not used as an anti-exfil identity.
- * @param ipIdentifier Client IP from x-forwarded-for.
+ * @param _sessionId Unused at this layer — pipeline resolves the caller key.
+ * @param callerIdentifier Parsed client IP, or `session:<id>` from
+ *   {@link resolveCallerRateLimitKey}.
  * @param secretBucketKey Hash of the presented shared secret (or bypass token).
  */
 export async function checkRateLimit(
   _sessionId: string,
-  ipIdentifier: string,
+  callerIdentifier: string,
   secretBucketKey: string
 ): Promise<RateLimitResult> {
-  const ipRl = getIpRatelimit();
+  const callerRl = getIpRatelimit();
   const secretRl = getSecretRatelimit();
-  // Sequential: secret-first, then IP. Secret exhaustion must not burn IP quota
-  // (R21 / plan design decision), so we cannot fire both in parallel. The ~50ms
-  // extra latency in the common (both-allowed) case is an intentional tradeoff.
+  // Sequential: secret-first, then per-caller. Secret exhaustion must not burn
+  // caller quota (R21 / plan design decision), so we cannot fire both in
+  // parallel. The ~50ms extra latency in the common (both-allowed) case is an
+  // intentional tradeoff.
   const secretResult = await runLimit(secretRl, secretBucketKey);
   if (!secretResult.allowed) {
     return secretResult;
   }
-  const ipResult = await runLimit(ipRl, ipIdentifier);
-  return moreRestrictive(ipResult, secretResult);
+  const callerResult = await runLimit(callerRl, callerIdentifier);
+  return moreRestrictive(callerResult, secretResult);
 }

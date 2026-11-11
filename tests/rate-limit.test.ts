@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   checkRateLimit,
   getRateLimitConfig,
+  resolveCallerRateLimitKey,
   __injectRatelimitForTest,
   __injectSecretRatelimitForTest,
   hashTailorApiKeyForRateLimit,
@@ -103,17 +104,36 @@ describe("checkRateLimit", () => {
     assert.ok(blocked.resetTime! > Date.now());
   });
 
-  it("rate limits by identifier regardless of sessionId", async () => {
-    const identifier = `session-ip-${Date.now()}`;
+  it("does not share per-caller buckets across session-prefixed identifiers", async () => {
+    const ip = "127.0.0.1";
+    const keyA = resolveCallerRateLimitKey("user-a", ip);
+    const keyB = resolveCallerRateLimitKey("user-b", ip);
+    const secretA = hashTailorApiKeyForRateLimit(`sess-a-${Date.now()}`);
+    const secretB = hashTailorApiKeyForRateLimit(`sess-b-${Date.now()}`);
+    assert.notEqual(keyA, keyB);
 
-    await checkRateLimit("session-A", identifier, SECRET_BUCKET);
-    await checkRateLimit("session-B", identifier, SECRET_BUCKET);
-
-    for (let i = 2; i < config.maxRequests; i++) {
-      await checkRateLimit(`session-${i}`, identifier, SECRET_BUCKET);
+    for (let i = 0; i < config.maxRequests; i++) {
+      const r = await checkRateLimit("any-session", keyA, secretA);
+      assert.equal(r.allowed, true, `user-a request ${i + 1} should be allowed`);
     }
+    const blockedA = await checkRateLimit("any-session", keyA, secretA);
+    assert.equal(blockedA.allowed, false);
 
-    const blocked = await checkRateLimit("session-Z", identifier, SECRET_BUCKET);
+    const allowedB = await checkRateLimit("any-session", keyB, secretB);
+    assert.equal(allowedB.allowed, true);
+  });
+
+  it("keeps the same session-prefixed bucket when the IP changes", async () => {
+    const sessionId = `user-stable-${Date.now()}`;
+    const keyA = resolveCallerRateLimitKey(sessionId, "198.51.100.1");
+    const keyB = resolveCallerRateLimitKey(sessionId, "198.51.100.2");
+    assert.equal(keyA, keyB);
+
+    for (let i = 0; i < config.maxRequests; i++) {
+      const r = await checkRateLimit("any-session", keyA, SECRET_BUCKET);
+      assert.equal(r.allowed, true);
+    }
+    const blocked = await checkRateLimit("any-session", keyB, SECRET_BUCKET);
     assert.equal(blocked.allowed, false);
   });
 
@@ -322,6 +342,31 @@ describe("checkRateLimit — missing env vars", () => {
   });
 });
 
+describe("resolveCallerRateLimitKey", () => {
+  const ip = "203.0.113.9";
+
+  it("prefixes a usable sessionId so it cannot collide with an IP key", () => {
+    assert.equal(resolveCallerRateLimitKey("user_a-1", ip), "session:user_a-1");
+    assert.notEqual(resolveCallerRateLimitKey("user_a-1", ip), "user_a-1");
+    assert.notEqual(resolveCallerRateLimitKey("user_a-1", ip), ip);
+  });
+
+  it("falls back to the IP when sessionId is missing or not a usable string", () => {
+    assert.equal(resolveCallerRateLimitKey(undefined, ip), ip);
+    assert.equal(resolveCallerRateLimitKey("", ip), ip);
+    assert.equal(resolveCallerRateLimitKey("   ", ip), ip);
+    assert.equal(resolveCallerRateLimitKey("user@id", ip), ip);
+    assert.equal(resolveCallerRateLimitKey("user id", ip), ip);
+    assert.equal(resolveCallerRateLimitKey("127.0.0.1", ip), ip);
+    assert.equal(resolveCallerRateLimitKey("a".repeat(129), ip), ip);
+    assert.equal(resolveCallerRateLimitKey(12, ip), ip);
+  });
+
+  it("trims a usable sessionId before prefixing", () => {
+    assert.equal(resolveCallerRateLimitKey("  user-a  ", ip), "session:user-a");
+  });
+});
+
 describe("getRateLimitConfig", () => {
   beforeEach(() => {
     ensureEnv();
@@ -334,9 +379,11 @@ describe("getRateLimitConfig", () => {
     assert.ok(cfg.secretMaxRequests > 0);
     assert.ok(cfg.windowMs > 0);
     assert.ok(cfg.timeoutMs > 0);
+    assert.ok(cfg.sessionIdMaxChars > 0);
     assert.equal(cfg.maxRequests, config.maxRequests);
     assert.equal(cfg.secretMaxRequests, config.secretMaxRequests);
     assert.equal(cfg.windowMs, config.windowMs);
+    assert.equal(cfg.sessionIdMaxChars, config.sessionIdMaxChars);
   });
 });
 

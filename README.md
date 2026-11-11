@@ -45,7 +45,7 @@ Full catalog: [`.env.example`](.env.example)
 | `TAILOR_API_KEY` | Bearer shared secret | — |
 | `MASTER_CV_JSON` / `MASTER_CV_PATH` | Canonical master CV | — |
 | `TAILOR_MODEL` | Curator model | `anthropic/sonnet` |
-| `RATE_LIMIT_MAX` / `RATE_LIMIT_SECRET_MAX` | Dual rate ceilings | `5` / half |
+| `RATE_LIMIT_MAX` / `RATE_LIMIT_SECRET_MAX` | Per-caller (`session:<id>` or IP) / global secret-hash ceilings | `5` / half |
 | `LANGFUSE_TRACING` | Langfuse tracing | `false` |
 
 ---

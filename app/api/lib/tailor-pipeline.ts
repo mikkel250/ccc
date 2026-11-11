@@ -1,7 +1,7 @@
 /**
  * CV tailoring pipeline — HTTP adapter plus shared curator/DOCX core.
  *
- * `buildTailorResponse` maps NextRequest (IP, rate-limit, Bearer, body) onto
+ * `buildTailorResponse` maps NextRequest (IP, Bearer, body, rate-limit) onto
  * `runTailorCore`. The route handler maps the result to HTTP status codes.
  */
 import { isIP } from "node:net";
@@ -21,7 +21,12 @@ import {
   parseBearerToken,
   type TailorAuthResult,
 } from "./tailor-auth";
-import { hashTailorApiKeyForRateLimit, getRateLimitConfig } from "./rate-limit";
+import {
+  hashTailorApiKeyForRateLimit,
+  getRateLimitConfig,
+  resolveCallerRateLimitKey,
+  type RateLimitResult,
+} from "./rate-limit";
 import {
   getTailorRequestMaxBytes,
   getTailorResponseMaxBytes,
@@ -172,7 +177,7 @@ export interface TailorPipelineDeps {
   ) => TailorAuthResult;
   checkRateLimit: (
     phase: string,
-    ipAddress: string,
+    callerIdentifier: string,
     secretBucketKey: string
   ) => Promise<{
     allowed: boolean;
@@ -284,53 +289,27 @@ export async function buildTailorResponse(
     return { ok: false, error: "Cannot determine client IP", status: 400 };
   }
 
-  // 2. Rate limit (before auth so failed credential guesses consume IP +
-  // invalid/missing-auth sentinel quota, not the configured key's secret bucket)
   const secretBucketKey = resolveSecretBucketKey(
     request.headers.get("authorization")
   );
 
-  let rateLimit: Awaited<ReturnType<typeof deps.checkRateLimit>>;
-  try {
-    rateLimit = await deps.checkRateLimit(
-      "pre-body",
-      ipAddress,
-      secretBucketKey
-    );
-  } catch (error: unknown) {
-    if (error instanceof RateLimitError) {
-      return {
-        ok: false,
-        error: error.message,
-        status: 429,
-        resetTime: Date.now() + getRateLimitConfig().windowMs,
-        remaining: 0,
-      };
-    }
-    if (error instanceof ServiceError) {
-      return { ok: false, error: error.message, status: 503 };
-    }
-    throw error;
-  }
-  if (!rateLimit.allowed) {
-    return {
-      ok: false,
-      error: rateLimit.message || "Rate limit exceeded",
-      status: 429,
-      resetTime: rateLimit.resetTime,
-      remaining: rateLimit.remaining,
-    };
-  }
-
-  // 3. Auth
+  // 2. Auth — failed guesses consume IP + unauth sentinels, never body sessionId
   const auth = deps.authenticateTailorRequest(
     request.headers.get("authorization")
   );
   if (!auth.ok) {
+    const unauthLimit = await consumeRateLimit(
+      deps,
+      ipAddress,
+      secretBucketKey
+    );
+    if (!unauthLimit.ok) {
+      return unauthLimit;
+    }
     return { ok: false, error: auth.error, status: auth.status };
   }
 
-  // 4. Body cap
+  // 3. Body cap
   const maxRequestBytes = getTailorRequestMaxBytes();
   const bodyRead = await readRequestBodyCapped(request, maxRequestBytes);
   if (!bodyRead.ok) {
@@ -339,7 +318,7 @@ export async function buildTailorResponse(
     return { ok: false, error: bodyRead.error, status };
   }
 
-  // 5. JSON parse + validate
+  // 4. JSON parse + validate (invalid authed bodies do not consume quota)
   let body: unknown;
   try {
     body = JSON.parse(bodyRead.text);
@@ -353,6 +332,19 @@ export async function buildTailorResponse(
   }
 
   const { jobDescription, curationMode } = validated;
+  const callerIdentifier = resolveCallerRateLimitKey(
+    rawBodySessionId(body),
+    ipAddress
+  );
+
+  const consumed = await consumeRateLimit(
+    deps,
+    callerIdentifier,
+    secretBucketKey
+  );
+  if (!consumed.ok) {
+    return consumed;
+  }
 
   const core = await runTailorCore(deps, {
     jobDescription,
@@ -365,8 +357,8 @@ export async function buildTailorResponse(
 
   const responseBody: TailorResponseBody = {
     ...core.body,
-    remaining: rateLimit.remaining,
-    resetTime: rateLimit.resetTime,
+    remaining: consumed.rateLimit.remaining,
+    resetTime: consumed.rateLimit.resetTime,
   };
 
   const responseBytes = Buffer.byteLength(
@@ -382,6 +374,54 @@ export async function buildTailorResponse(
   }
 
   return { ok: true, body: responseBody };
+}
+
+function rawBodySessionId(body: unknown): unknown {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return undefined;
+  }
+  return (body as Record<string, unknown>).sessionId;
+}
+
+async function consumeRateLimit(
+  deps: TailorPipelineDeps,
+  callerIdentifier: string,
+  secretBucketKey: string
+): Promise<
+  | { ok: true; rateLimit: RateLimitResult }
+  | Extract<TailorPipelineResult, { ok: false }>
+> {
+  try {
+    const rateLimit = await deps.checkRateLimit(
+      "caller",
+      callerIdentifier,
+      secretBucketKey
+    );
+    if (!rateLimit.allowed) {
+      return {
+        ok: false,
+        error: rateLimit.message || "Rate limit exceeded",
+        status: 429,
+        resetTime: rateLimit.resetTime,
+        remaining: rateLimit.remaining,
+      };
+    }
+    return { ok: true, rateLimit };
+  } catch (error: unknown) {
+    if (error instanceof RateLimitError) {
+      return {
+        ok: false,
+        error: error.message,
+        status: 429,
+        resetTime: Date.now() + getRateLimitConfig().windowMs,
+        remaining: 0,
+      };
+    }
+    if (error instanceof ServiceError) {
+      return { ok: false, error: error.message, status: 503 };
+    }
+    throw error;
+  }
 }
 
 function isTransientFetchTypeError(error: TypeError): boolean {

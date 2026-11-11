@@ -183,7 +183,7 @@ describe("buildTailorResponse — pipeline orchestration", () => {
     assert.equal(legit.ok, true);
   });
 
-  it("calls rate limit before auth when Authorization is missing", async () => {
+  it("rate-limits failed auth after the auth check when Authorization is missing", async () => {
     const events: string[] = [];
     const secretKeys: string[] = [];
     mock.method(
@@ -210,7 +210,7 @@ describe("buildTailorResponse — pipeline orchestration", () => {
     );
     assert.equal(result.ok, false);
     if (!result.ok) assert.equal(result.status, 401);
-    assert.deepEqual(events.slice(0, 2), ["rate-limit", "auth"]);
+    assert.deepEqual(events.slice(0, 2), ["auth", "rate-limit"]);
     assert.deepEqual(secretKeys, [
       hashTailorApiKeyForRateLimit("unauth:missing"),
     ]);
@@ -341,7 +341,7 @@ describe("buildTailorResponse — pipeline orchestration", () => {
       buildPostRequest(VALID_BODY, { "x-forwarded-for": "198.51.100.42" })
     );
     assert.equal(result.ok, true);
-    assert.deepEqual(events.slice(0, 2), ["rate-limit", "auth"]);
+    assert.deepEqual(events.slice(0, 2), ["auth", "rate-limit"]);
     assert.deepEqual(secretKeys, [
       hashTailorApiKeyForRateLimit("bypass:bypass"),
     ]);
@@ -435,7 +435,10 @@ describe("buildTailorResponse — pipeline orchestration", () => {
     const result = await buildTailorResponse(
       tailorCvDeps,
       buildPostRequest(
-        VALID_BODY,
+        JSON.stringify({
+          jobDescription:
+            "We need a senior engineer with React and Node.js experience.",
+        }),
         authHeaders({ "x-forwarded-for": beyondWindow })
       )
     );
@@ -470,6 +473,196 @@ describe("buildTailorResponse — pipeline orchestration", () => {
     );
     assert.equal(result.ok, false);
     if (!result.ok) assert.equal(result.status, 503);
+  });
+
+  const JD =
+    "We need a senior engineer with React and Node.js experience.";
+
+  function sessionBody(sessionId?: string): string {
+    return JSON.stringify(
+      sessionId === undefined
+        ? { jobDescription: JD }
+        : { jobDescription: JD, sessionId }
+    );
+  }
+
+  it("passes a session-prefixed caller key to checkRateLimit after successful auth", async () => {
+    mockPipelineSuccess();
+    const callerKeys: string[] = [];
+    mock.method(
+      tailorCvDeps,
+      "checkRateLimit",
+      async (_phase: string, callerIdentifier: string) => {
+        callerKeys.push(callerIdentifier);
+        return {
+          allowed: true,
+          remaining: 10,
+          resetTime: Date.now() + 60_000,
+        };
+      }
+    );
+    const result = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(
+        sessionBody("user-a"),
+        authHeaders({ "x-forwarded-for": "127.0.0.1" })
+      )
+    );
+    assert.equal(result.ok, true);
+    assert.deepEqual(callerKeys, ["session:user-a"]);
+  });
+
+  it("does not share per-caller buckets across sessionIds with the same XFF", async () => {
+    mockPipelineSuccess();
+    const config = getRateLimitConfig();
+    const headers = authHeaders({ "x-forwarded-for": "127.0.0.1" });
+
+    for (let i = 0; i < config.maxRequests; i++) {
+      const result = await buildTailorResponse(
+        tailorCvDeps,
+        buildPostRequest(sessionBody("user-a"), headers)
+      );
+      assert.equal(result.ok, true, `user-a request ${i + 1} should succeed`);
+    }
+    const blockedA = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(sessionBody("user-a"), headers)
+    );
+    assert.equal(blockedA.ok, false);
+    if (!blockedA.ok) assert.equal(blockedA.status, 429);
+
+    const allowedB = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(sessionBody("user-b"), headers)
+    );
+    assert.equal(allowedB.ok, true);
+  });
+
+  it("does not change a sessionId bucket when XFF is spoofed", async () => {
+    mockPipelineSuccess();
+    const config = getRateLimitConfig();
+    const sessionId = "user-stable";
+
+    for (let i = 0; i < config.maxRequests; i++) {
+      const result = await buildTailorResponse(
+        tailorCvDeps,
+        buildPostRequest(
+          sessionBody(sessionId),
+          authHeaders({ "x-forwarded-for": "198.51.100.1" })
+        )
+      );
+      assert.equal(result.ok, true);
+    }
+    const blocked = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(
+        sessionBody(sessionId),
+        authHeaders({ "x-forwarded-for": "198.51.100.2" })
+      )
+    );
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.status, 429);
+  });
+
+  it("falls back to rightmost XFF when sessionId is omitted", async () => {
+    mockPipelineSuccess();
+    const config = getRateLimitConfig();
+    const headersA = authHeaders({ "x-forwarded-for": "198.51.100.10" });
+    const headersB = authHeaders({ "x-forwarded-for": "198.51.100.11" });
+
+    for (let i = 0; i < config.maxRequests; i++) {
+      const result = await buildTailorResponse(
+        tailorCvDeps,
+        buildPostRequest(sessionBody(), headersA)
+      );
+      assert.equal(result.ok, true);
+    }
+    const blockedA = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(sessionBody(), headersA)
+    );
+    assert.equal(blockedA.ok, false);
+    if (!blockedA.ok) assert.equal(blockedA.status, 429);
+
+    const allowedB = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(sessionBody(), headersB)
+    );
+    assert.equal(allowedB.ok, true);
+  });
+
+  it("ignores body sessionId when Bearer auth fails", async () => {
+    mockPipelineSuccess();
+    const config = getRateLimitConfig();
+    const xff = "127.0.0.1";
+    const victim = sessionBody("victim-user");
+
+    for (let i = 0; i < config.maxRequests; i++) {
+      const failed = await buildTailorResponse(
+        tailorCvDeps,
+        buildPostRequest(victim, {
+          "x-forwarded-for": xff,
+          authorization: "Bearer wrong-key",
+        })
+      );
+      assert.equal(failed.ok, false);
+      if (!failed.ok) assert.equal(failed.status, 401);
+    }
+    const blockedUnauth = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(victim, {
+        "x-forwarded-for": xff,
+        authorization: "Bearer wrong-key",
+      })
+    );
+    assert.equal(blockedUnauth.ok, false);
+    if (!blockedUnauth.ok) assert.equal(blockedUnauth.status, 429);
+
+    const authed = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(
+        victim,
+        authHeaders({ "x-forwarded-for": xff })
+      )
+    );
+    assert.equal(authed.ok, true);
+  });
+
+  it("still applies the global secret cap across distinct sessionIds", async () => {
+    mockPipelineSuccess();
+    const config = getRateLimitConfig();
+    __injectSecretRatelimitForTest(
+      createSlidingWindowMock({
+        maxRequests: config.secretMaxRequests,
+        windowMs: config.windowMs,
+      })
+    );
+    __injectRatelimitForTest(
+      createSlidingWindowMock({
+        maxRequests: 100,
+        windowMs: config.windowMs,
+      })
+    );
+
+    for (let i = 0; i < config.secretMaxRequests; i++) {
+      const result = await buildTailorResponse(
+        tailorCvDeps,
+        buildPostRequest(
+          sessionBody(`user-${i}`),
+          authHeaders({ "x-forwarded-for": "127.0.0.1" })
+        )
+      );
+      assert.equal(result.ok, true, `secret request ${i + 1} should succeed`);
+    }
+    const blocked = await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(
+        sessionBody("user-overflow"),
+        authHeaders({ "x-forwarded-for": "127.0.0.1" })
+      )
+    );
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.status, 429);
   });
 
   // --- Body size / JSON parse ---

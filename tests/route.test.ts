@@ -209,7 +209,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
     assert.equal(json.error, "Invalid JSON in request body");
   });
 
-  it("still rate-limits authorized invalid JSON (before body parse succeeds)", async () => {
+  it("does not consume rate-limit quota for authorized invalid JSON", async () => {
     const checkRateLimitSpy = mock.method(tailorCvDeps, "checkRateLimit");
     const response = await POST(
       buildPostRequest(
@@ -218,7 +218,7 @@ describe("POST /api/tailor-cv — request hardening", () => {
       )
     );
     assert.equal(response.status, 400);
-    assert.ok(checkRateLimitSpy.mock.callCount() >= 1);
+    assert.equal(checkRateLimitSpy.mock.callCount(), 0);
   });
 
   it("returns 400 for missing IP before attempting JSON parse when authorized", async () => {
@@ -262,12 +262,16 @@ describe("POST /api/tailor-cv — request hardening", () => {
     const spoofedIp = "10.0.0.1";
     const realIp = "203.0.113.9";
     const config = getRateLimitConfig();
+    const ipOnlyBody = JSON.stringify({
+      jobDescription:
+        "We need a senior engineer with React and Node.js experience.",
+    });
     const header = authHeaders({
       "x-forwarded-for": `${spoofedIp}, ${realIp}`,
     });
 
     for (let i = 0; i < config.maxRequests; i++) {
-      const response = await POST(buildPostRequest(VALID_BODY, header));
+      const response = await POST(buildPostRequest(ipOnlyBody, header));
       assert.equal(
         response.status,
         200,
@@ -275,12 +279,12 @@ describe("POST /api/tailor-cv — request hardening", () => {
       );
     }
 
-    const blocked = await POST(buildPostRequest(VALID_BODY, header));
+    const blocked = await POST(buildPostRequest(ipOnlyBody, header));
     assert.equal(blocked.status, 429);
 
     const spoofedAlone = await POST(
       buildPostRequest(
-        VALID_BODY,
+        ipOnlyBody,
         authHeaders({ "x-forwarded-for": spoofedIp })
       )
     );
