@@ -35,9 +35,9 @@ Dual Upstash sliding-window ceilings (R21):
 | Window | `RATE_LIMIT_WINDOW` | `60000` ms |
 | Max `sessionId` chars for a caller key | `RATE_LIMIT_SESSION_ID_MAX_CHARS` | `128` |
 
-Success responses return the **more restrictive** `remaining` / `resetTime` of the two buckets. After successful Bearer (or local bypass), a usable body `sessionId` (`A-Za-z0-9_-`, 1..max chars) keys the per-caller bucket as `session:<id>`. Omitted or invalid `sessionId` keeps the rightmost `x-forwarded-for` IP. Failed auth never honors `sessionId` (IP + unauth sentinels only). User identity is not read from inbound headers.
+Success responses return the **more restrictive** `remaining` / `resetTime` of the two buckets. After successful Bearer (or local bypass), a usable body `sessionId` (`A-Za-z0-9_-`, 1..max chars) keys the per-caller bucket as `session:<id>`. Omitted or invalid `sessionId` keeps the rightmost `x-forwarded-for` IP. Failed auth never honors `sessionId` (IP + the shared `unauth:failed` sentinel only). User identity is not read from inbound headers.
 
-The secret bucket is the global cap for a valid `TAILOR_API_KEY`. Defaults 5 / 2 mean per-user splits cannot fire: raise `RATE_LIMIT_SECRET_MAX` above `RATE_LIMIT_MAX` (typically ≥ concurrent BFF users × `RATE_LIMIT_MAX`). The secret bucket hashes the configured key only for a matching Bearer; missing and wrong tokens use shared sentinels (`unauth:missing` / `unauth:invalid`) so failed auth cannot exhaust the legitimate key's quota or evade the secret window by rotating guesses.
+The secret bucket is the global cap for a valid `TAILOR_API_KEY`. Defaults 5 / 2 mean per-user splits cannot fire: raise `RATE_LIMIT_SECRET_MAX` above `RATE_LIMIT_MAX` (typically ≥ concurrent BFF users × `RATE_LIMIT_MAX`). The secret bucket hashes the configured key only for a matching Bearer; missing and wrong tokens share one unauthenticated sentinel (`unauth:failed`) so failed auth cannot exhaust the legitimate key's quota or obtain separate secret-window budgets by alternating header shapes.
 
 ```json
 HTTP 429

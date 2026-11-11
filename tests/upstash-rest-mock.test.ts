@@ -1,8 +1,12 @@
 import http from "node:http";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
 import { __inboxRedisScriptsForTest } from "../app/api/lib/inbox-processed-store";
+
+const require = createRequire(import.meta.url);
 
 // `npm test` sets this via tests/set-node-env-test.mjs. Plain `node --test` does not.
 if (!process.env.NODE_ENV) {
@@ -100,36 +104,49 @@ describe("upstash-rest-mock sliding window", () => {
     );
   });
 
-  it("accepts the installed @upstash/ratelimit sliding-window scripts", () => {
-    const source = readFileSync(
-      "node_modules/@upstash/ratelimit/dist/index.mjs",
-      "utf8"
-    );
-    const extract = (varName: string) => {
-      const marker = `var ${varName} = \``;
-      const start = source.indexOf(marker);
-      assert.ok(start >= 0, varName);
-      const bodyStart = start + marker.length;
-      const end = source.indexOf("`;", bodyStart);
-      assert.ok(end > bodyStart, varName);
-      return source.slice(bodyStart, end);
-    };
-    const memory = createMemoryStore();
-    const now = Date.now();
-    const limit = evalLua(
-      memory,
-      extract("slidingWindowLimitScript"),
-      ["cur", "prev", ""],
-      ["2", String(now), "60000", "1"]
-    );
-    const remaining = evalLua(
-      memory,
-      extract("slidingWindowRemainingTokensScript"),
-      ["cur", "prev", ""],
-      ["2", String(now), "60000"]
-    );
-    assert.deepEqual(limit, [1, 2]);
-    assert.deepEqual(remaining, [1, 2]);
+  it("targets @upstash/ratelimit 2.x slidingWindow without reading its bundle", async () => {
+    const loaded: unknown = require("@upstash/ratelimit/package.json");
+    const version =
+      loaded !== null &&
+      typeof loaded === "object" &&
+      "version" in loaded &&
+      typeof loaded.version === "string"
+        ? loaded.version.replace(/^v/, "")
+        : "";
+    assert.match(version, /^2\./);
+
+    const { server } = listenUpstashRestMock({ port: 0, token: "tok" });
+    const port = await new Promise<number>((resolve) => {
+      server.once("listening", () => {
+        const address = server.address();
+        if (address && typeof address === "object") resolve(address.port);
+      });
+    });
+    try {
+      const redis = new Redis({ url: `http://127.0.0.1:${port}`, token: "tok" });
+      const ratelimit = new Ratelimit({
+        redis,
+        limiter: Ratelimit.slidingWindow(2, "60 s"),
+        prefix: "rl-test",
+        ephemeralCache: false,
+        analytics: false,
+      });
+      const first = await ratelimit.limit("user");
+      const second = await ratelimit.limit("user");
+      const denied = await ratelimit.limit("user");
+      assert.equal(first.success, true);
+      assert.equal(first.limit, 2);
+      assert.equal(first.remaining, 1);
+      assert.equal(first.reason, undefined);
+      assert.equal(second.success, true);
+      assert.equal(second.remaining, 0);
+      assert.equal(denied.success, false);
+      assert.equal(denied.remaining, 0);
+      assert.equal(denied.limit, 2);
+      assert.equal(denied.reason, undefined);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });
 
@@ -174,6 +191,135 @@ describe("upstash-rest-mock inbox scripts", () => {
     assert.equal(runCommand(memory, ["GET", "renew"]), null);
   });
 
+  it("still recognizes mark scripts when a string literal contains --", () => {
+    const scripts = __inboxRedisScriptsForTest();
+    const memory = createMemoryStore();
+    const script = `local _ = "https://ex--ample.test"\n${scripts.markProcessedIfOwned.trim()}`;
+    runCommand(memory, ["SET", "claim", "token-a"]);
+    assert.equal(evalLua(memory, script, ["claim", "processed"], ["token-a", "30"]), 1);
+    assert.equal(runCommand(memory, ["GET", "claim"]), null);
+    assert.equal(runCommand(memory, ["GET", "processed"]), "1");
+  });
+
+  it("recognizes a mark script when -- sits inside a long-bracket string on the same line", () => {
+    const scripts = __inboxRedisScriptsForTest();
+    const memory = createMemoryStore();
+    const body = scripts.markProcessedIfOwned.trim().replace(/\s+/g, " ");
+    const script = `local _ = [[keep -- dashes]] ${body}`;
+    const leveled = `local _ = [=[keep -- dashes]=] ${body}`;
+    runCommand(memory, ["SET", "claim", "token-a"]);
+    assert.equal(evalLua(memory, script, ["claim", "processed"], ["token-a", "30"]), 1);
+    runCommand(memory, ["SET", "claim", "token-a"]);
+    assert.equal(evalLua(memory, leveled, ["claim", "processed"], ["token-a", "30"]), 1);
+    assert.equal(runCommand(memory, ["GET", "claim"]), null);
+    assert.equal(runCommand(memory, ["GET", "processed"]), "1");
+  });
+
+  it("recognizes ownership scripts with line comments outside strings", () => {
+    const memory = createMemoryStore();
+    const script =
+      'local note = "keep -- dashes"\n' +
+      "-- between statements\n" +
+      'local current = redis.call("GET", KEYS[1])\r\n' +
+      "-- crlf comment\r\n" +
+      "if current ~= ARGV[1] then return 0 end\n" +
+      'if tonumber(ARGV[2]) > 0 then redis.call("SET", KEYS[2], "1", "EX", ARGV[2]) ' +
+      'else redis.call("SET", KEYS[2], "1") end\n' +
+      'redis.call("DEL", KEYS[1])\n' +
+      "return 1 -- eof comment";
+    runCommand(memory, ["SET", "claim", "token-a"]);
+    assert.equal(evalLua(memory, script, ["claim", "processed"], ["token-a", "0"]), 1);
+    assert.equal(runCommand(memory, ["GET", "claim"]), null);
+    assert.equal(runCommand(memory, ["GET", "processed"]), "1");
+  });
+
+  it("does not treat a redis.call argument prefix as the ownership command", () => {
+    const memory = createMemoryStore();
+    runCommand(memory, ["SET", "claim", "token-a"]);
+    const markSetConcat = `
+local current = redis.call("GET", KEYS[1])
+if current ~= ARGV[1] then
+  return 0
+end
+if tonumber(ARGV[2]) > 0 then
+  redis.call("SET", KEYS[2], "1" .. "x", "EX", ARGV[2])
+else
+  redis.call("SET", KEYS[2], "1" .. "x")
+end
+redis.call("DEL", KEYS[1])
+return 1
+`;
+    const markDelConcat = `
+local current = redis.call("GET", KEYS[1])
+if current ~= ARGV[1] then
+  return 0
+end
+if tonumber(ARGV[2]) > 0 then
+  redis.call("SET", KEYS[2], "1", "EX", ARGV[2])
+else
+  redis.call("SET", KEYS[2], "1")
+end
+redis.call("DEL", KEYS[1] .. "")
+return 1
+`;
+    assert.throws(
+      () => evalLua(memory, markSetConcat, ["claim", "processed"], ["token-a", "0"]),
+      /unknown lua script/
+    );
+    assert.throws(
+      () => evalLua(memory, markDelConcat, ["claim", "processed"], ["token-a", "0"]),
+      /unknown lua script/
+    );
+    assert.equal(runCommand(memory, ["GET", "claim"]), "token-a");
+    assert.equal(runCommand(memory, ["GET", "processed"]), null);
+  });
+
+  it("accepts ownership scripts when only quotes or whitespace change", () => {
+    const scripts = __inboxRedisScriptsForTest();
+    const mark = `
+local current = redis.call('GET', KEYS[1])
+if current ~= ARGV[1] then
+  return 0
+end
+if tonumber( ARGV[2] ) > 0 then
+  redis.call('SET', KEYS[2], '1', 'EX', ARGV[2])
+else
+  redis.call('SET', KEYS[2], '1')
+end
+redis.call('DEL', KEYS[1])
+return 1
+`;
+    const expire = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('EXPIRE', KEYS[1], tonumber( ARGV[2] ))
+else
+  return 0
+end
+`;
+    const del = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+else
+  return 0
+end
+`;
+    assert.notEqual(mark, scripts.markProcessedIfOwned);
+    assert.notEqual(expire, scripts.expireIfOwned);
+    assert.notEqual(del, scripts.deleteIfValue);
+    const memory = createMemoryStore();
+    runCommand(memory, ["SET", "claim", "token-a"]);
+    assert.equal(evalLua(memory, mark, ["claim", "processed"], ["token-a", "30"]), 1);
+    assert.equal(runCommand(memory, ["GET", "claim"]), null);
+    assert.equal(runCommand(memory, ["GET", "processed"]), "1");
+    assert.ok(Number(runCommand(memory, ["TTL", "processed"])) > 0);
+
+    runCommand(memory, ["SET", "renew", "token-a"]);
+    assert.equal(evalLua(memory, expire, ["renew"], ["token-a", "30"]), 1);
+    assert.ok(Number(runCommand(memory, ["TTL", "renew"])) > 0);
+    assert.equal(evalLua(memory, del, ["renew"], ["token-a"]), 1);
+    assert.equal(runCommand(memory, ["GET", "renew"]), null);
+  });
+
   it("does not route near-miss ownership text to the production scripts", () => {
     const memory = createMemoryStore();
     runCommand(memory, ["SET", "claim", "token-a"]);
@@ -194,6 +340,140 @@ describe("upstash-rest-mock inbox scripts", () => {
     );
     assert.throws(
       () => evalLua(memory, 'redis.call("del", KEYS[1])', ["claim"], ["token-a"]),
+      /unknown lua script/
+    );
+    assert.equal(runCommand(memory, ["GET", "claim"]), "token-a");
+  });
+
+  it("does not route ownership scripts that use the other comparison operator", () => {
+    const memory = createMemoryStore();
+    runCommand(memory, ["SET", "claim", "token-a"]);
+    const markWithEquals = `
+local current = redis.call("GET", KEYS[1])
+if current == ARGV[1] then
+  return 0
+end
+if tonumber(ARGV[2]) > 0 then
+  redis.call("SET", KEYS[2], "1", "EX", ARGV[2])
+else
+  redis.call("SET", KEYS[2], "1")
+end
+redis.call("DEL", KEYS[1])
+return 1
+`;
+    const expireWithNotEquals = `
+if redis.call("GET", KEYS[1]) ~= ARGV[1] then
+  return redis.call("EXPIRE", KEYS[1], tonumber(ARGV[2]))
+else
+  return 0
+end
+`;
+    const deleteWithNotEquals = `
+if redis.call("GET", KEYS[1]) ~= ARGV[1] then
+  return redis.call("DEL", KEYS[1])
+else
+  return 0
+end
+`;
+    assert.throws(
+      () => evalLua(memory, markWithEquals, ["claim", "processed"], ["token-a", "0"]),
+      /unknown lua script/
+    );
+    assert.throws(
+      () => evalLua(memory, expireWithNotEquals, ["claim"], ["token-a", "30"]),
+      /unknown lua script/
+    );
+    assert.throws(
+      () => evalLua(memory, deleteWithNotEquals, ["claim"], ["token-a"]),
+      /unknown lua script/
+    );
+    assert.equal(runCommand(memory, ["GET", "claim"]), "token-a");
+    assert.equal(runCommand(memory, ["GET", "processed"]), null);
+    assert.equal(runCommand(memory, ["TTL", "claim"]), -1);
+  });
+
+  it("does not route semantic near misses to ownership handlers", () => {
+    const memory = createMemoryStore();
+    runCommand(memory, ["SET", "claim", "token-a"]);
+    runCommand(memory, ["SET", "other", "token-a"]);
+    runCommand(memory, ["SET", "renew", "token-a"]);
+
+    const markWrongSetValue = `
+local current = redis.call("GET", KEYS[1])
+if current ~= ARGV[1] then
+  return 0
+end
+if tonumber(ARGV[2]) > 0 then
+  redis.call("SET", KEYS[2], "9", "EX", ARGV[2])
+else
+  redis.call("SET", KEYS[2], "9")
+end
+redis.call("DEL", KEYS[1])
+return 1
+`;
+    assert.throws(
+      () => evalLua(memory, markWrongSetValue, ["claim", "processed"], ["token-a", "0"]),
+      /unknown lua script/
+    );
+    assert.equal(runCommand(memory, ["GET", "claim"]), "token-a");
+    assert.equal(runCommand(memory, ["GET", "processed"]), null);
+
+    const markDelWrongKey = `
+local current = redis.call("GET", KEYS[1])
+if current ~= ARGV[1] then
+  return 0
+end
+if tonumber(ARGV[2]) > 0 then
+  redis.call("SET", KEYS[2], "1", "EX", ARGV[2])
+else
+  redis.call("SET", KEYS[2], "1")
+end
+redis.call("DEL", KEYS[2])
+return 1
+`;
+    assert.throws(
+      () => evalLua(memory, markDelWrongKey, ["claim", "processed"], ["token-a", "0"]),
+      /unknown lua script/
+    );
+    assert.equal(runCommand(memory, ["GET", "claim"]), "token-a");
+
+    assert.throws(
+      () =>
+        evalLua(
+          memory,
+          'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("expire", KEYS[2], tonumber(ARGV[2])) else return 0 end',
+          ["renew"],
+          ["token-a", "30"]
+        ),
+      /unknown lua script/
+    );
+    assert.equal(runCommand(memory, ["GET", "renew"]), "token-a");
+    assert.equal(runCommand(memory, ["TTL", "renew"]), -1);
+
+    assert.throws(
+      () =>
+        evalLua(
+          memory,
+          'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[2]) else return 0 end',
+          ["other"],
+          ["token-a"]
+        ),
+      /unknown lua script/
+    );
+    assert.equal(runCommand(memory, ["GET", "other"]), "token-a");
+
+    const markWithoutOwnershipCheck = `
+local current = redis.call("GET", KEYS[1])
+if tonumber(ARGV[2]) > 0 then
+  redis.call("SET", KEYS[2], "1", "EX", ARGV[2])
+else
+  redis.call("SET", KEYS[2], "1")
+end
+redis.call("DEL", KEYS[1])
+return 1
+`;
+    assert.throws(
+      () => evalLua(memory, markWithoutOwnershipCheck, ["claim", "processed"], ["token-a", "0"]),
       /unknown lua script/
     );
     assert.equal(runCommand(memory, ["GET", "claim"]), "token-a");

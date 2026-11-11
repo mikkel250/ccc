@@ -248,10 +248,12 @@ export interface TailorPipelineDeps {
 
 /**
  * Secret-bucket key material. When a key is configured, hash the configured
- * secret only for a matching Bearer. Missing and wrong tokens use shared
- * sentinels so unauthenticated traffic cannot drain the legitimate key's
- * quota and rotating wrong tokens cannot bypass the secret window.
+ * secret only for a matching Bearer. Missing and wrong tokens share one
+ * unauthenticated sentinel so failed auth cannot drain the legitimate key's
+ * quota or obtain separate secret-window budgets by alternating header shapes.
  */
+const UNAUTH_SECRET_BUCKET_SENTINEL = "unauth:failed";
+
 function resolveSecretBucketKey(authorizationHeader: string | null): string {
   const configuredKey = getConfiguredTailorApiKey();
   if (!configuredKey) {
@@ -261,13 +263,10 @@ function resolveSecretBucketKey(authorizationHeader: string | null): string {
     return hashTailorApiKeyForRateLimit("bypass:unconfigured");
   }
   const presented = parseBearerToken(authorizationHeader);
-  if (!presented) {
-    return hashTailorApiKeyForRateLimit("unauth:missing");
+  if (!presented || !bearerTokenEquals(presented, configuredKey)) {
+    return hashTailorApiKeyForRateLimit(UNAUTH_SECRET_BUCKET_SENTINEL);
   }
-  if (bearerTokenEquals(presented, configuredKey)) {
-    return hashTailorApiKeyForRateLimit(configuredKey);
-  }
-  return hashTailorApiKeyForRateLimit("unauth:invalid");
+  return hashTailorApiKeyForRateLimit(configuredKey);
 }
 
 // ---------------------------------------------------------------------------
@@ -293,7 +292,7 @@ export async function buildTailorResponse(
     request.headers.get("authorization")
   );
 
-  // 2. Auth — failed guesses consume IP + unauth sentinels, never body sessionId
+  // 2. Auth — failed guesses consume IP + unauth sentinel, never body sessionId
   const auth = deps.authenticateTailorRequest(
     request.headers.get("authorization")
   );
@@ -380,7 +379,10 @@ function rawBodySessionId(body: unknown): unknown {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     return undefined;
   }
-  return (body as Record<string, unknown>).sessionId;
+  if (!("sessionId" in body)) {
+    return undefined;
+  }
+  return body.sessionId;
 }
 
 async function consumeRateLimit(

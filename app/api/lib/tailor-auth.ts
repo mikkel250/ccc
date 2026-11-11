@@ -83,7 +83,7 @@ export function parseBearerToken(authorizationHeader: string | null): string | n
 /**
  * Authenticate a tailor request. Call before master load / LLM work that should
  * not run for anonymous callers. Failed auth still consumes the IP caller
- * bucket plus shared missing/invalid-auth secret sentinels — not the
+ * bucket plus the shared unauthenticated secret sentinel — not the
  * configured `TAILOR_API_KEY` hash. Usable body `sessionId` is honored only
  * after this check succeeds.
  */

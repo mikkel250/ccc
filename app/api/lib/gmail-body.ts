@@ -19,7 +19,12 @@ function decodeGmailBodyData(data: unknown): string | undefined {
 }
 
 const WHOLE_TAG_SKIP = new Set(["head", "script", "style"]);
-/** Visible blocks that can end a broken hidden preheader. Div is not one: a descendant div stays inside the hidden wrapper. */
+/**
+ * Visible blocks that can end a broken hidden preheader.
+ * `table` is included because HTML emails are table-based: a nested `td` is
+ * never depth-0, so omitting `table` drops the whole JD.
+ * Div is not one: a descendant div stays inside the hidden wrapper.
+ */
 const RECOVERY_BLOCK_TAGS = new Set([
   "p",
   "h1",
@@ -31,6 +36,7 @@ const RECOVERY_BLOCK_TAGS = new Set([
   "li",
   "td",
   "th",
+  "table",
   "blockquote",
   "section",
   "article",
@@ -504,7 +510,9 @@ export function htmlToText(html: string): string {
       .replace(/<br\s*\/?>/gi, "\n")
       .replace(/<\/p>/gi, "\n")
       .replace(/<\/div>/gi, "\n")
-      .replace(/<[^>]+>/g, " ")
+      .replace(/<!DOCTYPE\b[^>]*>/gi, " ")
+      // Same tag shape as htmlTokenRe — `<5 years` / `<100k` are text, not tags.
+      .replace(/<\/?[a-zA-Z][\w:-]*\b[^>]*>/g, " ")
   );
   return withoutBlocks.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/[ \t]{2,}/g, " ").trim();
 }

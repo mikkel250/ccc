@@ -2,7 +2,6 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ServiceError } from "../app/api/lib/errors";
 import type { InboxScanItem } from "../app/api/lib/inbox-scan";
 import {
   __resetMasterCvCacheForTest,
@@ -88,15 +87,15 @@ describe("runInboxScanCli master CV preload", () => {
 
   it("fills the cache before scan so requireMasterCv can serve the master", async () => {
     process.env.MASTER_CV_JSON = JSON.stringify(validCv);
-    process.env.INBOX_SCAN_ENABLED = "1";
-    await assert.rejects(
-      () => runInboxScanCli(),
-      (error: unknown) => {
-        assert.ok(error instanceof ServiceError);
-        assert.match(error.message, /GMAIL_REFRESH_TOKEN/);
-        return true;
-      }
-    );
+    let scanInvoked = false;
+    await runInboxScanCli({
+      scan: async () => {
+        scanInvoked = true;
+        assert.deepEqual(requireMasterCv(), validCv);
+        return { ok: true, items: [] };
+      },
+    });
+    assert.equal(scanInvoked, true);
     assert.deepEqual(requireMasterCv(), validCv);
   });
 
@@ -114,6 +113,34 @@ describe("runInboxScanCli master CV preload", () => {
       items,
       lines: items.map((item) => JSON.stringify(item)),
     });
+  });
+
+  it("main logs JSON lines and sets exit code 0 after success, including when exit code was nonzero", async () => {
+    process.env.MASTER_CV_JSON = JSON.stringify(validCv);
+    const items: InboxScanItem[] = [
+      { messageId: "m1", status: "drafted" },
+      { messageId: "m2", status: "reused-draft" },
+    ];
+    const logged: unknown[][] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      logged.push(args);
+    };
+    const previousExitCode = process.exitCode;
+    try {
+      process.exitCode = 1;
+      await main({
+        scan: async () => ({ ok: true, items }),
+      });
+      assert.equal(process.exitCode, 0);
+      assert.deepEqual(
+        logged,
+        items.map((item) => [JSON.stringify(item)])
+      );
+    } finally {
+      console.log = originalLog;
+      process.exitCode = previousExitCode;
+    }
   });
 
   it("returns the scan error and skips item formatting when the scan fails", async () => {

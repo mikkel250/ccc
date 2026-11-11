@@ -17,7 +17,7 @@ Inbox without live Gmail (injected `fetchImpl`; `GMAIL_*_URL` remain HTTPS):
 npm run inbox:scan:local
 ```
 
-That scan refuses a non-loopback `UPSTASH_REDIS_REST_URL` or `DEEPSEEK_BASE_URL`, and a `TAILOR_MODEL` that does not use the deepseek provider, before it reads mail. It talks to the Upstash mock and, when CCC PR #66 is present, exercises `getRedisKey` / `setRedisKey` / `evalRedisScript`. The process exits 1 when any item is `fetch-failed`, `tailor-failed`, or `draft-failed`.
+Blank `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `DEEPSEEK_BASE_URL`, `DEEPSEEK_API_KEY`, and `TAILOR_MODEL` are filled from the local mock defaults (`http://127.0.0.1` on the mock ports, `deepseek/deepseek-chat`) before the check. A value that is already set stays as-is, so a live URL or a non-deepseek model still exits before mail is read. The process exits 1 when any item is `fetch-failed`, `tailor-failed`, or `draft-failed`. `INBOX_SCAN_LOCAL_REDIS_PROBE=1` runs a Redis helper probe after the scan and records a probe error on the JSON result beside the scan. `npm run dev:local` reads those client settings from the env file and refuses a blank value.
 
 ## Frontend
 

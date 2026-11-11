@@ -212,11 +212,11 @@ describe("buildTailorResponse — pipeline orchestration", () => {
     if (!result.ok) assert.equal(result.status, 401);
     assert.deepEqual(events.slice(0, 2), ["auth", "rate-limit"]);
     assert.deepEqual(secretKeys, [
-      hashTailorApiKeyForRateLimit("unauth:missing"),
+      hashTailorApiKeyForRateLimit("unauth:failed"),
     ]);
   });
 
-  it("keys wrong Bearer tokens onto a shared invalid-auth secret bucket", async () => {
+  it("keys wrong Bearer tokens onto the shared unauthenticated secret bucket", async () => {
     const secretKeys: string[] = [];
     mock.method(
       tailorCvDeps,
@@ -249,13 +249,44 @@ describe("buildTailorResponse — pipeline orchestration", () => {
     assert.equal(second.ok, false);
     if (!first.ok) assert.equal(first.status, 401);
     if (!second.ok) assert.equal(second.status, 401);
-    const invalidBucket = hashTailorApiKeyForRateLimit("unauth:invalid");
-    assert.deepEqual(secretKeys, [invalidBucket, invalidBucket]);
-    assert.notEqual(invalidBucket, hashTailorApiKeyForRateLimit(TEST_API_KEY));
-    assert.notEqual(
-      invalidBucket,
-      hashTailorApiKeyForRateLimit("unauth:missing")
+    const unauthBucket = hashTailorApiKeyForRateLimit("unauth:failed");
+    assert.deepEqual(secretKeys, [unauthBucket, unauthBucket]);
+    assert.notEqual(unauthBucket, hashTailorApiKeyForRateLimit(TEST_API_KEY));
+  });
+
+  it("uses the same unauthenticated secret bucket for missing and wrong Bearer", async () => {
+    const secretKeys: string[] = [];
+    mock.method(
+      tailorCvDeps,
+      "checkRateLimit",
+      async (_phase: string, _ip: string, secretBucketKey: string) => {
+        secretKeys.push(secretBucketKey);
+        return {
+          allowed: true,
+          remaining: 10,
+          resetTime: Date.now() + 60_000,
+        };
+      }
     );
+    mock.method(tailorCvDeps, "authenticateTailorRequest", () => ({
+      ok: false as const,
+      error: "Unauthorized",
+      status: 401 as const,
+    }));
+
+    await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(VALID_BODY, { "x-forwarded-for": "198.51.100.42" })
+    );
+    await buildTailorResponse(
+      tailorCvDeps,
+      buildPostRequest(VALID_BODY, {
+        "x-forwarded-for": "198.51.100.43",
+        authorization: "Bearer wrong-key",
+      })
+    );
+    const unauthBucket = hashTailorApiKeyForRateLimit("unauth:failed");
+    assert.deepEqual(secretKeys, [unauthBucket, unauthBucket]);
   });
 
   it("still keys the secret bucket on the real key when the presented Bearer matches", async () => {
