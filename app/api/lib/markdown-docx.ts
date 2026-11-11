@@ -104,9 +104,9 @@ const BASE64_CHARSET = /^[A-Za-z0-9+/]*={0,2}$/;
 
 /** ZIP magic bytes for a valid .docx (Office Open XML) */
 export function isValidDocxBase64(base64: string): boolean {
-  if (!base64 || base64.length % 4 === 1) return false;
-  // Padding (if any) is only at the end; total length must be a multiple of 4.
-  if (base64.includes("=") && base64.length % 4 !== 0) return false;
+  // Standard base64 is always a multiple of 4. Node's Buffer.from still
+  // decodes unpadded input, so reject % 4 !== 0 before the charset check.
+  if (!base64 || base64.length % 4 !== 0) return false;
   if (!BASE64_CHARSET.test(base64)) return false;
   const buf = Buffer.from(base64, "base64");
   return buf.length > 4 && buf[0] === 0x50 && buf[1] === 0x4b;
