@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import assert from "node:assert/strict";
 import {
   checkRateLimit,
@@ -207,6 +207,51 @@ describe("checkRateLimit", () => {
     assert.ok(blocked.resetTime! - now <= config.windowMs);
   });
 
+  it("does not spend the shared secret window when the caller is already at its ceiling", async () => {
+    const callerMax = 2;
+    const secretMax = 10;
+    assert.ok(secretMax > callerMax);
+    __injectRatelimitForTest(
+      createSlidingWindowMock({
+        maxRequests: callerMax,
+        windowMs: config.windowMs,
+      })
+    );
+    const secretInner = createSlidingWindowMock({
+      maxRequests: secretMax,
+      windowMs: config.windowMs,
+    });
+    let secretCalls = 0;
+    __injectSecretRatelimitForTest({
+      getRemaining: (identifier) => secretInner.getRemaining(identifier),
+      limit: async (identifier: string) => {
+        secretCalls += 1;
+        return secretInner.limit(identifier);
+      },
+    });
+    const secret = hashTailorApiKeyForRateLimit(`over-cap-${Date.now()}`);
+    const callerA = `session:user-a-${Date.now()}`;
+    const callerB = `session:user-b-${Date.now()}`;
+
+    for (let i = 0; i < callerMax; i++) {
+      const allowed = await checkRateLimit("s", callerA, secret);
+      assert.equal(allowed.allowed, true, `caller A request ${i + 1} should be allowed`);
+    }
+    assert.equal(secretCalls, callerMax);
+
+    const blocked = await checkRateLimit("s", callerA, secret);
+    assert.equal(blocked.allowed, false);
+    assert.equal(
+      secretCalls,
+      callerMax,
+      "a retry past the caller ceiling must not increment the secret bucket"
+    );
+
+    const other = await checkRateLimit("s", callerB, secret);
+    assert.equal(other.allowed, true);
+    assert.equal(secretCalls, callerMax + 1);
+  });
+
   it("does not consume IP quota when secret bucket alone denies", async () => {
     __injectSecretRatelimitForTest(
       createSlidingWindowMock({
@@ -220,6 +265,7 @@ describe("checkRateLimit", () => {
     });
     let ipCalls = 0;
     __injectRatelimitForTest({
+      getRemaining: (identifier) => ipInner.getRemaining(identifier),
       limit: async (identifier: string) => {
         ipCalls += 1;
         return ipInner.limit(identifier);
@@ -282,6 +328,41 @@ describe("checkRateLimit — error paths", () => {
                ((err as Error).cause as Error).message === "Connection refused";
       }
     );
+  });
+
+  it("fails closed when the caller peek does not return, without consuming the secret bucket", async () => {
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      let secretCalls = 0;
+      __injectRatelimitForTest({
+        getRemaining: () => new Promise(() => undefined),
+        limit: async () => {
+          throw new Error("caller limit should not run");
+        },
+      });
+      __injectSecretRatelimitForTest({
+        getRemaining: async () => ({
+          remaining: 1,
+          reset: Date.now() + config.windowMs,
+          limit: config.secretMaxRequests,
+        }),
+        limit: async () => {
+          secretCalls += 1;
+          throw new Error("secret limit should not run");
+        },
+      });
+      const pending = checkRateLimit("s", `peek-hang-${Date.now()}`, SECRET_BUCKET);
+      const assertion = assert.rejects(pending, (err: unknown) => {
+        return err instanceof Error &&
+          err.name === "ServiceError" &&
+          err.message === "Rate limit service unavailable";
+      });
+      mock.timers.tick(config.timeoutMs);
+      await assertion;
+      assert.equal(secretCalls, 0);
+    } finally {
+      mock.timers.reset();
+    }
   });
 
   it("throws ServiceError when limit returns timeout reason", async () => {

@@ -85,7 +85,7 @@ export function hashTailorApiKeyForRateLimit(apiKey: string): string {
   return createHash("sha256").update(apiKey, "utf8").digest("hex").slice(0, 32);
 }
 
-type RatelimitLike = Pick<Ratelimit, "limit">;
+type RatelimitLike = Pick<Ratelimit, "limit" | "getRemaining">;
 
 let ipRatelimit: RatelimitLike | null = null;
 let secretRatelimit: RatelimitLike | null = null;
@@ -139,6 +139,42 @@ export function __injectSecretRatelimitForTest(r: RatelimitLike | null): void {
   secretRatelimit = r;
 }
 
+/**
+ * `Ratelimit.getRemaining` does not use the SDK timeout that `limit` does.
+ * Bound the peek locally so a hung Redis read fails closed instead of holding
+ * the request.
+ */
+async function withRateLimitDeadline<T>(work: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new ServiceError("Rate limit service unavailable"));
+    }, RATE_LIMIT_TIMEOUT_MS);
+  });
+  // A peek that loses the race can still reject later. Attach a handler so
+  // that rejection is not unhandled.
+  work.catch(() => undefined);
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+async function peekCallerRemaining(
+  rl: RatelimitLike,
+  callerIdentifier: string
+): Promise<{ remaining: number; reset: number }> {
+  try {
+    return await withRateLimitDeadline(rl.getRemaining(callerIdentifier));
+  } catch (error) {
+    if (error instanceof ServiceError) {
+      throw error;
+    }
+    throw new ServiceError("Rate limit service unavailable", { cause: error });
+  }
+}
+
 async function runLimit(
   rl: RatelimitLike,
   key: string
@@ -184,7 +220,8 @@ function moreRestrictive(
 
 /**
  * Check per-caller and shared-secret rate-limit buckets (both must succeed).
- * Secret bucket is checked first so secret exhaustion does not burn caller quota.
+ * An exhausted caller is denied before the secret bucket increments. Otherwise
+ * the secret bucket is checked first so secret exhaustion does not burn caller quota.
  *
  * @param _sessionId Unused at this layer — pipeline resolves the caller key.
  * @param callerIdentifier Parsed client IP, or `session:<id>` from
@@ -198,6 +235,18 @@ export async function checkRateLimit(
 ): Promise<RateLimitResult> {
   const callerRl = getIpRatelimit();
   const secretRl = getSecretRatelimit();
+  // A caller already at its ceiling must not increment the shared secret
+  // window. Peek first (no consume). Two concurrent requests can both observe
+  // remaining 1 and both proceed; that is one extra admit, not a retry loop.
+  const callerPeek = await peekCallerRemaining(callerRl, callerIdentifier);
+  if (callerPeek.remaining <= 0) {
+    return {
+      allowed: false,
+      remaining: 0,
+      resetTime: callerPeek.reset,
+      message: "Too many requests. Please wait before trying again.",
+    };
+  }
   // Sequential: secret-first, then per-caller. Secret exhaustion must not burn
   // caller quota (R21 / plan design decision), so we cannot fire both in
   // parallel. The ~50ms extra latency in the common (both-allowed) case is an
