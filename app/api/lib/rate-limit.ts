@@ -5,7 +5,9 @@
  * and per-shared-secret hash. Success responses return the more restrictive
  * remaining/resetTime. Body sessionId keys the per-caller bucket only after
  * successful Bearer/bypass auth in the HTTP adapter; the secret hash remains
- * the anti-exfil cap.
+ * the anti-exfil cap. A denial already recorded for that caller or secret key
+ * is served from a process-local cache until its reset, so retries do not
+ * read Redis. Keys that are not cached still take the authoritative check.
  */
 import { createHash } from "node:crypto";
 import { Ratelimit } from "@upstash/ratelimit";
@@ -31,6 +33,10 @@ const RATE_LIMIT_SESSION_ID_MAX_CHARS = Math.max(
   1,
   Math.floor(getEnvNumber("RATE_LIMIT_SESSION_ID_MAX_CHARS", 128))
 );
+const RATE_LIMIT_DENIAL_CACHE_MAX = Math.max(
+  1,
+  Math.floor(getEnvNumber("RATE_LIMIT_DENIAL_CACHE_MAX", 256))
+);
 const SESSION_RATE_LIMIT_KEY_PREFIX = "session:";
 const SESSION_ID_CHARSET = /^[A-Za-z0-9_-]+$/;
 
@@ -48,6 +54,7 @@ export function getRateLimitConfig() {
     windowMs: RATE_LIMIT_WINDOW_MS,
     timeoutMs: RATE_LIMIT_TIMEOUT_MS,
     sessionIdMaxChars: RATE_LIMIT_SESSION_ID_MAX_CHARS,
+    denialCacheMax: RATE_LIMIT_DENIAL_CACHE_MAX,
   };
 }
 
@@ -128,6 +135,7 @@ export function __injectRatelimitForTest(r: RatelimitLike | null): void {
   if (process.env.NODE_ENV !== "test") {
     throw new Error("__injectRatelimitForTest is only available in the test environment");
   }
+  clearRateLimitDenials();
   ipRatelimit = r;
 }
 
@@ -136,6 +144,7 @@ export function __injectSecretRatelimitForTest(r: RatelimitLike | null): void {
   if (process.env.NODE_ENV !== "test") {
     throw new Error("__injectSecretRatelimitForTest is only available in the test environment");
   }
+  clearRateLimitDenials();
   secretRatelimit = r;
 }
 
@@ -200,6 +209,69 @@ async function runLimit(
   }
 }
 
+const callerDenials = new Map<string, number>();
+const secretDenials = new Map<string, number>();
+
+function clearRateLimitDenials(): void {
+  callerDenials.clear();
+  secretDenials.clear();
+}
+
+function deniedResult(resetTime: number): RateLimitResult {
+  return {
+    allowed: false,
+    remaining: 0,
+    resetTime,
+    message: "Too many requests. Please wait before trying again.",
+  };
+}
+
+/**
+ * Remember a Redis denial until `resetTime`, clamped to one window.
+ * Returns the reset this process will honor, or undefined when the denial
+ * should not be cached (caller still returns the Redis result).
+ */
+function rememberDenial(
+  cache: Map<string, number>,
+  key: string,
+  resetTime: number
+): number | undefined {
+  const now = Date.now();
+  if (!Number.isFinite(resetTime) || resetTime <= now) {
+    return undefined;
+  }
+  const bounded = Math.min(resetTime, now + RATE_LIMIT_WINDOW_MS);
+  if (cache.has(key)) {
+    cache.delete(key);
+  }
+  cache.set(key, bounded);
+  while (cache.size > RATE_LIMIT_DENIAL_CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) {
+      break;
+    }
+    cache.delete(oldest);
+  }
+  return bounded;
+}
+
+function cachedDenial(
+  cache: Map<string, number>,
+  key: string
+): RateLimitResult | undefined {
+  const resetTime = cache.get(key);
+  if (resetTime === undefined) {
+    return undefined;
+  }
+  if (Date.now() >= resetTime) {
+    cache.delete(key);
+    return undefined;
+  }
+  cache.delete(key);
+  cache.set(key, resetTime);
+  return deniedResult(resetTime);
+}
+
 function moreRestrictive(
   a: RateLimitResult,
   b: RateLimitResult
@@ -222,6 +294,9 @@ function moreRestrictive(
  * Check per-caller and shared-secret rate-limit buckets (both must succeed).
  * An exhausted caller is denied before the secret bucket increments. Otherwise
  * the secret bucket is checked first so secret exhaustion does not burn caller quota.
+ * Repeats of a caller or secret denial already in the local cache return before
+ * any Redis read; the cache expires at reset (at most one window) and drops the
+ * oldest key when it is full, and those requests hit Redis again.
  *
  * @param _sessionId Unused at this layer — pipeline resolves the caller key.
  * @param callerIdentifier Parsed client IP, or `session:<id>` from
@@ -233,6 +308,15 @@ export async function checkRateLimit(
   callerIdentifier: string,
   secretBucketKey: string
 ): Promise<RateLimitResult> {
+  const cachedCaller = cachedDenial(callerDenials, callerIdentifier);
+  if (cachedCaller) {
+    return cachedCaller;
+  }
+  const cachedSecret = cachedDenial(secretDenials, secretBucketKey);
+  if (cachedSecret) {
+    return cachedSecret;
+  }
+
   const callerRl = getIpRatelimit();
   const secretRl = getSecretRatelimit();
   // A caller already at its ceiling must not increment the shared secret
@@ -240,12 +324,12 @@ export async function checkRateLimit(
   // remaining 1 and both proceed; that is one extra admit, not a retry loop.
   const callerPeek = await peekCallerRemaining(callerRl, callerIdentifier);
   if (callerPeek.remaining <= 0) {
-    return {
-      allowed: false,
-      remaining: 0,
-      resetTime: callerPeek.reset,
-      message: "Too many requests. Please wait before trying again.",
-    };
+    const resetTime = rememberDenial(
+      callerDenials,
+      callerIdentifier,
+      callerPeek.reset
+    );
+    return deniedResult(resetTime ?? callerPeek.reset);
   }
   // Sequential: secret-first, then per-caller. Secret exhaustion must not burn
   // caller quota (R21 / plan design decision), so we cannot fire both in
@@ -253,8 +337,26 @@ export async function checkRateLimit(
   // intentional tradeoff.
   const secretResult = await runLimit(secretRl, secretBucketKey);
   if (!secretResult.allowed) {
-    return secretResult;
+    const resetTime = rememberDenial(
+      secretDenials,
+      secretBucketKey,
+      secretResult.resetTime
+    );
+    if (resetTime === undefined) {
+      return secretResult;
+    }
+    return { ...secretResult, remaining: 0, resetTime };
   }
   const callerResult = await runLimit(callerRl, callerIdentifier);
+  if (!callerResult.allowed) {
+    const resetTime = rememberDenial(
+      callerDenials,
+      callerIdentifier,
+      callerResult.resetTime
+    );
+    if (resetTime !== undefined) {
+      return { ...callerResult, remaining: 0, resetTime };
+    }
+  }
   return moreRestrictive(callerResult, secretResult);
 }

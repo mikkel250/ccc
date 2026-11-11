@@ -124,16 +124,32 @@ describe("checkRateLimit", () => {
   });
 
   it("keeps the same session-prefixed bucket when the IP changes", async () => {
+    const callerMax = config.maxRequests;
+    __injectRatelimitForTest(
+      createSlidingWindowMock({
+        maxRequests: callerMax,
+        windowMs: config.windowMs,
+      })
+    );
+    // Above the caller ceiling so the shared secret cannot reject the loop
+    // before the session bucket is exercised.
+    __injectSecretRatelimitForTest(
+      createSlidingWindowMock({
+        maxRequests: callerMax + 1,
+        windowMs: config.windowMs,
+      })
+    );
     const sessionId = `user-stable-${Date.now()}`;
+    const secret = hashTailorApiKeyForRateLimit(`stable-${sessionId}`);
     const keyA = resolveCallerRateLimitKey(sessionId, "198.51.100.1");
     const keyB = resolveCallerRateLimitKey(sessionId, "198.51.100.2");
     assert.equal(keyA, keyB);
 
-    for (let i = 0; i < config.maxRequests; i++) {
-      const r = await checkRateLimit("any-session", keyA, SECRET_BUCKET);
-      assert.equal(r.allowed, true);
+    for (let i = 0; i < callerMax; i++) {
+      const r = await checkRateLimit("any-session", keyA, secret);
+      assert.equal(r.allowed, true, `request ${i + 1} should be allowed`);
     }
-    const blocked = await checkRateLimit("any-session", keyB, SECRET_BUCKET);
+    const blocked = await checkRateLimit("any-session", keyB, secret);
     assert.equal(blocked.allowed, false);
   });
 
@@ -295,6 +311,187 @@ describe("checkRateLimit", () => {
       result.remaining,
       Math.min(config.maxRequests, config.secretMaxRequests) - 1
     );
+  });
+
+  it("does not read Redis again while a caller denial is still inside its reset", async () => {
+    let peeks = 0;
+    const reset = Date.now() + config.windowMs;
+    __injectRatelimitForTest({
+      getRemaining: async () => {
+        peeks += 1;
+        return { remaining: 0, reset, limit: 1 };
+      },
+      limit: async () => {
+        throw new Error("caller limit should not run");
+      },
+    });
+    __injectSecretRatelimitForTest({
+      getRemaining: async () => {
+        throw new Error("secret peek should not run");
+      },
+      limit: async () => {
+        throw new Error("secret limit should not run");
+      },
+    });
+    const caller = `cached-caller-${Date.now()}`;
+    const secret = hashTailorApiKeyForRateLimit(`cached-caller-${caller}`);
+    const first = await checkRateLimit("s", caller, secret);
+    assert.equal(first.allowed, false);
+    assert.equal(peeks, 1);
+
+    const second = await checkRateLimit("s", caller, secret);
+    assert.equal(second.allowed, false);
+    assert.equal(second.resetTime, first.resetTime);
+    assert.equal(peeks, 1);
+
+    await checkRateLimit("s", `other-${caller}`, secret);
+    assert.equal(peeks, 2);
+  });
+
+  it("does not read Redis again while a secret denial is still inside its reset", async () => {
+    let peeks = 0;
+    let secretLimits = 0;
+    const reset = Date.now() + config.windowMs;
+    __injectRatelimitForTest({
+      getRemaining: async () => {
+        peeks += 1;
+        return { remaining: 5, reset, limit: 5 };
+      },
+      limit: async () => {
+        throw new Error("caller limit should not run when the secret denies");
+      },
+    });
+    __injectSecretRatelimitForTest({
+      getRemaining: async () => ({ remaining: 0, reset, limit: 1 }),
+      limit: async () => {
+        secretLimits += 1;
+        return {
+          success: false,
+          remaining: 0,
+          reset,
+          limit: 1,
+          pending: Promise.resolve(),
+        };
+      },
+    });
+    const secret = hashTailorApiKeyForRateLimit(`cached-secret-${Date.now()}`);
+    const first = await checkRateLimit("s", `ip-a-${secret}`, secret);
+    assert.equal(first.allowed, false);
+    assert.equal(secretLimits, 1);
+    assert.equal(peeks, 1);
+
+    const second = await checkRateLimit("s", `ip-b-${secret}`, secret);
+    assert.equal(second.allowed, false);
+    assert.equal(secretLimits, 1);
+    assert.equal(peeks, 1);
+
+    const otherSecret = hashTailorApiKeyForRateLimit(`other-secret-${secret}`);
+    const proceeded = await checkRateLimit("s", `ip-c-${secret}`, otherSecret);
+    assert.equal(proceeded.allowed, false);
+    assert.equal(secretLimits, 2);
+    assert.equal(peeks, 2);
+  });
+
+  it("reads Redis again once a cached denial reaches its reset", async () => {
+    mock.timers.enable({ apis: ["Date"], now: Date.now() });
+    try {
+      let peeks = 0;
+      const reset = Date.now() + 1_000;
+      __injectRatelimitForTest({
+        getRemaining: async () => {
+          peeks += 1;
+          return { remaining: 0, reset, limit: 1 };
+        },
+        limit: async () => {
+          throw new Error("caller limit should not run");
+        },
+      });
+      __injectSecretRatelimitForTest({
+        getRemaining: async () => {
+          throw new Error("secret peek should not run");
+        },
+        limit: async () => {
+          throw new Error("secret limit should not run");
+        },
+      });
+      const caller = "cached-expiry";
+      await checkRateLimit("s", caller, "secret-expiry");
+      await checkRateLimit("s", caller, "secret-expiry");
+      assert.equal(peeks, 1);
+      mock.timers.tick(1_000);
+      await checkRateLimit("s", caller, "secret-expiry");
+      assert.equal(peeks, 2);
+    } finally {
+      mock.timers.reset();
+    }
+  });
+
+  it("rechecks Redis within one window when the limiter reset is farther out", async () => {
+    mock.timers.enable({ apis: ["Date"], now: Date.now() });
+    try {
+      let peeks = 0;
+      const reset = Date.now() + config.windowMs * 10;
+      __injectRatelimitForTest({
+        getRemaining: async () => {
+          peeks += 1;
+          return { remaining: 0, reset, limit: 1 };
+        },
+        limit: async () => {
+          throw new Error("caller limit should not run");
+        },
+      });
+      __injectSecretRatelimitForTest({
+        getRemaining: async () => {
+          throw new Error("secret peek should not run");
+        },
+        limit: async () => {
+          throw new Error("secret limit should not run");
+        },
+      });
+      const caller = "cached-bound";
+      const denied = await checkRateLimit("s", caller, "secret-bound");
+      assert.equal(denied.allowed, false);
+      assert.ok(denied.resetTime <= Date.now() + config.windowMs);
+      await checkRateLimit("s", caller, "secret-bound");
+      assert.equal(peeks, 1);
+      mock.timers.tick(config.windowMs);
+      await checkRateLimit("s", caller, "secret-bound");
+      assert.equal(peeks, 2);
+    } finally {
+      mock.timers.reset();
+    }
+  });
+
+  it("checks Redis again for the oldest denial once the local cache is full", async () => {
+    const cap = config.denialCacheMax;
+    const peeks = new Map<string, number>();
+    const reset = Date.now() + config.windowMs;
+    __injectRatelimitForTest({
+      getRemaining: async (identifier: string) => {
+        peeks.set(identifier, (peeks.get(identifier) ?? 0) + 1);
+        return { remaining: 0, reset, limit: 1 };
+      },
+      limit: async () => {
+        throw new Error("caller limit should not run");
+      },
+    });
+    __injectSecretRatelimitForTest({
+      getRemaining: async () => {
+        throw new Error("secret peek should not run");
+      },
+      limit: async () => {
+        throw new Error("secret limit should not run");
+      },
+    });
+    for (let i = 0; i <= cap; i++) {
+      const denied = await checkRateLimit("s", `fill-${i}`, "secret-fill");
+      assert.equal(denied.allowed, false);
+    }
+    assert.equal(peeks.get("fill-0"), 1);
+    await checkRateLimit("s", "fill-0", "secret-fill");
+    assert.equal(peeks.get("fill-0"), 2);
+    await checkRateLimit("s", `fill-${cap}`, "secret-fill");
+    assert.equal(peeks.get(`fill-${cap}`), 1);
   });
 
 });
@@ -461,6 +658,7 @@ describe("getRateLimitConfig", () => {
     assert.ok(cfg.windowMs > 0);
     assert.ok(cfg.timeoutMs > 0);
     assert.ok(cfg.sessionIdMaxChars > 0);
+    assert.ok(cfg.denialCacheMax > 0);
     assert.equal(cfg.maxRequests, config.maxRequests);
     assert.equal(cfg.secretMaxRequests, config.secretMaxRequests);
     assert.equal(cfg.windowMs, config.windowMs);

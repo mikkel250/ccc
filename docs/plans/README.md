@@ -35,6 +35,7 @@ Drain order (composite pick): GitHub #38, then M7. Inbox product contract: [inbo
 | M8.4 | Tailor from a labeled message | in progress | [in-process tailor](./2026-09-06-006-feat-in-process-tailor-plan.md) — product contract [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) R8 | In-process strict tailor returns `.docx` and reply text without public rate-limit buckets | awaiting-merge |
 | M8.5 | Thread draft + attach + body | in progress | [gmail thread draft](./2026-09-06-007-feat-gmail-thread-draft-plan.md) — product contract [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) R10, R11, R13 | Local scan creates a Gmail reply draft with body and CV `.docx` | awaiting-merge |
 | M8.6 | Railway schedule for the same scan job | in progress | [railway inbox cron](./2026-09-06-008-feat-railway-inbox-cron-plan.md) — product contract [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) R14 | Deploy scans while the laptop is closed; reruns skip processed ids | awaiting-merge |
+| | Per-user tailor rate-limit keys | in progress | [per-user tailor rate-limit keys](./2026-11-11-0004-feat-session-id-rate-limit-plan.md) | Signed-in BFF users sharing loopback get independent tailor ceilings | awaiting-merge |
 
 M5–M6 numbering here is the *current* board. Historical “M5 tenure honesty” / “M6 holistic smoke judge” from the first README pass are retired or parked below — do not treat those old labels as live work.
 
