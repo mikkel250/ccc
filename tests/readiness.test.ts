@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { evaluateReadiness } from "../app/api/lib/readiness";
 import { __resetMasterCvCacheForTest, loadMasterCv } from "../app/api/lib/master-cv";
-import { GET } from "../app/api/ready/route";
+import { GET, dynamic as readyDynamic } from "../app/api/ready/route";
 
 const ORIGINAL_ENV = { ...process.env };
 const FIXTURE_CV = readFileSync(
@@ -156,17 +156,33 @@ describe("GET /api/ready", () => {
     const response = await GET();
     assert.equal(response.status, 503);
     assert.equal(response.headers.get("cache-control"), "no-store");
-    const body = (await response.json()) as {
-      service: string;
-      status: string;
-      checks: { auth: string; masterCv: string; redis: string };
-    };
-    assert.equal(body.service, "cv-tailoring-api");
-    assert.equal(body.status, "not_ready");
-    assert.equal(body.checks.auth, "failed");
-    assert.equal(body.checks.masterCv, "failed");
-    assert.equal(body.checks.redis, "failed");
-    assert.equal(JSON.stringify(body).includes("ready-test-key"), false);
+    const body: unknown = await response.json();
+    assert.deepEqual(body, {
+      service: "cv-tailoring-api",
+      status: "not_ready",
+      checks: { auth: "failed", masterCv: "failed", redis: "failed" },
+    });
+  });
+
+  it("does not leak secrets or master CV when a later check fails", async () => {
+    configureReadyEnv();
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    const response = await GET();
+    assert.equal(response.status, 503);
+    const body: unknown = await response.json();
+    assert.deepEqual(body, {
+      service: "cv-tailoring-api",
+      status: "not_ready",
+      checks: { auth: "ok", masterCv: "ok", redis: "failed" },
+    });
+    const serialized = JSON.stringify(body);
+    assert.equal(serialized.includes("ready-test-key"), false);
+    assert.equal(serialized.includes("example-token"), false);
+    assert.equal(serialized.includes("example-upstash.upstash.io"), false);
+    assert.equal(serialized.includes("jane.example@example.com"), false);
+    assert.equal(serialized.includes("+1-555-0100"), false);
+    assert.equal(serialized.includes("Unauthorized"), false);
+    assert.equal(serialized.includes("Service unavailable"), false);
   });
 
   it("does not require Authorization", async () => {
@@ -177,6 +193,10 @@ describe("GET /api/ready", () => {
 });
 
 describe("Railway API healthcheck", () => {
+  it("forces dynamic rendering so build-time env cannot bake a 503", () => {
+    assert.equal(readyDynamic, "force-dynamic");
+  });
+
   it("probes GET /api/ready instead of process-up /api/hello", () => {
     const toml = readFileSync(join(process.cwd(), "railway.toml"), "utf8");
     const uncommented = toml

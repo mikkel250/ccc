@@ -1,5 +1,6 @@
 /** Deploy readiness probe — auth, master CV cache, Redis env. No LLM. */
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { evaluateReadiness } from "../lib/readiness";
