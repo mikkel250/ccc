@@ -58,6 +58,8 @@ After changing `next.config.mjs` or `instrumentation.ts`, restart.
 ```bash
 curl http://localhost:3000/api/hello
 # → {"service":"cv-tailoring-api","status":"ok"}
+curl http://localhost:3000/api/ready
+# → 200 when auth, preloaded master CV, and Redis env are present; otherwise 503
 ```
 
 ### Validation (no LLM call)
@@ -198,7 +200,8 @@ npm test                    # 1. Unit tests (no live smoke LLM)
 npm run build               # 2. Production build
 npm run lint                # 3. Lint
 npm run dev                 # 4. Start server (separate terminal)
-curl http://localhost:3000/api/hello   # 5. Health
+curl http://localhost:3000/api/hello   # 5. Liveness
+curl http://localhost:3000/api/ready   # 5b. Readiness (503 if auth/master/Redis env missing)
 npm run smoke -- http://localhost:3000 # 6. Live dual artifacts (operator review)
 npm run test:e2e            # 7. Playwright HTTP
 ```
@@ -212,6 +215,7 @@ When leaving local-only: coordinate CCC `Authorization: Bearer` with this API cu
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
 | `/api/hello` returns 500 HTML | OTEL/grpc bundled in dev | Restart dev server |
+| `/api/ready` returns **503** | Missing `TAILOR_API_KEY` / master CV preload / Redis env | Check `.env.local` and wait for startup preload |
 | **401** on tailor-cv | Missing/wrong Bearer | Set `Authorization: Bearer $TAILOR_API_KEY` |
 | **400** on tailor-cv | Malformed JSON, oversize body/JD, or missing IP | Check body + `x-forwarded-for` |
 | **405** on tailor-cv | Wrong HTTP method | Use POST |
