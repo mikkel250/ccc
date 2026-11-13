@@ -11,7 +11,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
 import { recordLangSmithTrace, recordLangfuseTrace, type LangfusePromptRef } from './tracers';
 import { toTraceOptions, type TracePayload } from './tracers/tracer';
-import { getDeepSeekBaseUrl, getEnvNumber, getLLMConfig, getDefaultLlmModel, truncateSafeLogDetail } from '../../../lib/env';
+import { getDeepSeekBaseUrl, getEnvNumber, getLLMConfig, getDefaultLlmModel, getLlmTimeoutMs, truncateSafeLogDetail } from '../../../lib/env';
 import type { ReasoningEffort } from '../../../lib/env';
 import { parseNamespacedProvider, KNOWN_PROVIDERS, type Provider } from '../../../lib/providers';
 import anthropicModels from '../../../config/anthropic-models.json';
@@ -77,7 +77,10 @@ export interface ChatOptions {
    * DeepSeek direct gets `thinking` + `reasoning_effort` (mapped). Unset = provider default.
    */
   reasoningEffort?: ReasoningEffort;
-  /** Abort signal for bounded LLM calls (judge/revise deadlines). */
+  /**
+   * Abort signal combined with `LLM_TIMEOUT_MS` inside `chat()`.
+   * Caller abort (inbox lease loss) still wins when it fires first.
+   */
   signal?: AbortSignal;
   /** Test-only: inject OpenAI client */
   openaiClient?: OpenAI;
@@ -823,8 +826,93 @@ function buildLlmTracePayload(params: {
 }
 
 /**
+ * Referenced abort timer. AbortSignal.timeout() is unref'd, so a hung
+ * provider call that is the only pending work never fires the deadline.
+ */
+function llmAbortAfter(timeoutMs: number): {
+  signal: AbortSignal;
+  cancel: () => void;
+} {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timer),
+  };
+}
+
+function combineAbortSignals(left: AbortSignal, right: AbortSignal): AbortSignal {
+  if (left.aborted || right.aborted) {
+    const aborted = new AbortController();
+    aborted.abort();
+    return aborted.signal;
+  }
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  left.addEventListener("abort", abort, { once: true });
+  right.addEventListener("abort", abort, { once: true });
+  return controller.signal;
+}
+
+function llmTimeoutError(timeoutMs: number): Error {
+  return new Error(`LLM request timed out after ${timeoutMs}ms`);
+}
+
+/**
+ * Bound `work` by the deadline even when the provider SDK ignores AbortSignal.
+ * Caller abort is not rewritten as a timeout. The deadline listener is removed
+ * when `work` settles so a successful call does not leak a pending rejector.
+ */
+async function raceWithLlmDeadline<T>(
+  work: Promise<T>,
+  deadline: { signal: AbortSignal; cancel: () => void },
+  timeoutMs: number,
+  callerSignal: AbortSignal | undefined
+): Promise<T> {
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      const onAbort = (): void => {
+        cleanup();
+        if (callerSignal?.aborted) {
+          reject(new DOMException("The operation was aborted", "AbortError"));
+          return;
+        }
+        reject(llmTimeoutError(timeoutMs));
+      };
+      const cleanup = (): void => {
+        deadline.signal.removeEventListener("abort", onAbort);
+        deadline.cancel();
+      };
+      if (deadline.signal.aborted) {
+        onAbort();
+        return;
+      }
+      deadline.signal.addEventListener("abort", onAbort, { once: true });
+      work.then(
+        (value) => {
+          cleanup();
+          resolve(value);
+        },
+        (error: unknown) => {
+          cleanup();
+          if (deadline.signal.aborted && !callerSignal?.aborted) {
+            reject(llmTimeoutError(timeoutMs));
+            return;
+          }
+          reject(error);
+        }
+      );
+    });
+  } finally {
+    deadline.cancel();
+    void work.catch(() => {});
+  }
+}
+
+/**
  * Central entry for all LLM chat completions. Resolves model from options or AI_MODEL,
  * dispatches to the correct provider integration, and records traces for observability.
+ * Every dispatch is bounded by `LLM_TIMEOUT_MS` (default 5 min).
  */
 export async function chat(
   messages: Omit<ChatMessage, 'role'>[] | ChatMessage[],
@@ -834,14 +922,26 @@ export async function chat(
   const model = options.model || getDefaultLlmModel();
   const provider = detectProvider(model);
   const startTime = Date.now();
+  const timeoutMs = getLlmTimeoutMs();
+  const deadline = llmAbortAfter(timeoutMs);
+  const callerSignal = options.signal;
+  const signal = callerSignal
+    ? combineAbortSignals(callerSignal, deadline.signal)
+    : deadline.signal;
 
   console.log(`LLM dispatch: ${model} (${provider})`);
 
   try {
-    const response = await dispatchProvider(provider, messages, systemPrompt, {
-      ...options,
-      model,
-    });
+    const response = await raceWithLlmDeadline(
+      dispatchProvider(provider, messages, systemPrompt, {
+        ...options,
+        model,
+        signal,
+      }),
+      deadline,
+      timeoutMs,
+      callerSignal
+    );
 
     const tracePayload = buildLlmTracePayload({
       provider,

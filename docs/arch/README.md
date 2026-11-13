@@ -53,7 +53,7 @@ buildTailorResponse (tailor-pipeline.ts) via tailor-cv/route.ts
   │     └── fallback: hardcoded prompt in curator-prompt.ts when Langfuse is unset,
   │         the fetch fails, or the strict production text omits `reply_text`
   ├── applyCurationModePolicy + compileCuratorPrompt
-  ├── chat(..., { model: getTailorModel(), langfusePrompt })
+  ├── chat(..., { model: getTailorModel(), langfusePrompt })  # LLM_TIMEOUT_MS bound
   ├── extractStructuredJson → validateCvJson → size cap
   ├── sanitize + buildJsonDocxBase64
   └── return { cv, curatedJson, builderVersion, ... }

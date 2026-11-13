@@ -109,7 +109,8 @@ RUN_INBOX_REDIS_TESTS=1 UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... 
 |------|--------|
 | `tests/cv-prompt.test.ts` | CV prompt schema |
 | `tests/cv-prompt-struan-fallback.test.ts` | Struan framework fallback text |
-| `tests/env.test.ts` | Env var parsing, provider/model validation |
+| `tests/env.test.ts` | Env var parsing, provider/model validation, `LLM_TIMEOUT_MS` catalog |
+| `tests/llm-chat-dispatch.test.ts` | Provider dispatch, flex gating, `LLM_TIMEOUT_MS` abort |
 | `tests/errors.test.ts` | Typed error classes (`RateLimitError`, `ServiceError`) |
 | `tests/eval-architecture-docs.test.ts` | Eval architecture doc cross-references |
 | `tests/eval-tailor-model-default.test.ts` | `TAILOR_MODEL` env contract; gitignored `eval-results/` checks skip when that directory is absent |
