@@ -530,6 +530,43 @@ describe("chat — LLM_TIMEOUT_MS", () => {
       return true;
     });
   });
+
+  it("fails closed on caller abort even when the provider ignores AbortSignal", { timeout: 500 }, async () => {
+    process.env.LLM_TIMEOUT_MS = "5000";
+    const controller = new AbortController();
+    const pending = chat([{ role: "user", content: "Hi" }], "System", {
+      model: "openrouter/openai/gpt-4o",
+      openRouterClient: hungClientIgnoringAbort(),
+      signal: controller.signal,
+    });
+    controller.abort();
+    await assert.rejects(pending, (err: unknown) => {
+      assert.ok(err instanceof DOMException);
+      assert.equal(err.name, "AbortError");
+      assert.doesNotMatch(err.message, /timed out/i);
+      return true;
+    });
+  });
+
+  it("fails closed when the caller signal is already aborted", { timeout: 500 }, async () => {
+    process.env.LLM_TIMEOUT_MS = "5000";
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(
+      () =>
+        chat([{ role: "user", content: "Hi" }], "System", {
+          model: "openrouter/openai/gpt-4o",
+          openRouterClient: hungClientIgnoringAbort(),
+          signal: controller.signal,
+        }),
+      (err: unknown) => {
+        assert.ok(err instanceof DOMException);
+        assert.equal(err.name, "AbortError");
+        assert.doesNotMatch(err.message, /timed out/i);
+        return true;
+      }
+    );
+  });
 });
 
 describe("isLlmServiceError", () => {

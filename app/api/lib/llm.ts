@@ -860,14 +860,17 @@ function llmTimeoutError(timeoutMs: number): Error {
 
 /**
  * Bound `work` by the deadline even when the provider SDK ignores AbortSignal.
- * Caller abort is not rewritten as a timeout. The deadline listener is removed
- * when `work` settles so a successful call does not leak a pending rejector.
+ * `abortSignal` is the same combined signal passed to the SDK, so caller abort
+ * also fails closed. Caller abort is not rewritten as a timeout. The abort
+ * listener is removed when `work` settles so a successful call does not leak
+ * a pending rejector.
  */
 async function raceWithLlmDeadline<T>(
   work: Promise<T>,
   deadline: { signal: AbortSignal; cancel: () => void },
   timeoutMs: number,
-  callerSignal: AbortSignal | undefined
+  callerSignal: AbortSignal | undefined,
+  abortSignal: AbortSignal
 ): Promise<T> {
   try {
     return await new Promise<T>((resolve, reject) => {
@@ -880,14 +883,14 @@ async function raceWithLlmDeadline<T>(
         reject(llmTimeoutError(timeoutMs));
       };
       const cleanup = (): void => {
-        deadline.signal.removeEventListener("abort", onAbort);
+        abortSignal.removeEventListener("abort", onAbort);
         deadline.cancel();
       };
-      if (deadline.signal.aborted) {
+      if (abortSignal.aborted) {
         onAbort();
         return;
       }
-      deadline.signal.addEventListener("abort", onAbort, { once: true });
+      abortSignal.addEventListener("abort", onAbort, { once: true });
       work.then(
         (value) => {
           cleanup();
@@ -940,7 +943,8 @@ export async function chat(
       }),
       deadline,
       timeoutMs,
-      callerSignal
+      callerSignal,
+      signal
     );
 
     const tracePayload = buildLlmTracePayload({
