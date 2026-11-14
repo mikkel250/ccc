@@ -70,7 +70,37 @@ describe("evaluateReadiness", () => {
     process.env.RAILWAY_ENVIRONMENT = "production";
     const result = await evaluateReadiness();
     assert.equal(result.checks.auth, "failed");
-    assert.equal(result.ok, false);
+  });
+
+  it("is not ready when auth is the only failed check", async () => {
+    configureReadyEnv();
+    process.env.RAILWAY_ENVIRONMENT = "production";
+    delete process.env.TAILOR_API_KEY;
+    const checks = { auth: "failed", masterCv: "ok", redis: "ok" } as const;
+    assert.deepEqual(await evaluateReadiness(), { ok: false, checks });
+    const response = await GET();
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), {
+      service: "cv-tailoring-api",
+      status: "not_ready",
+      checks,
+    });
+  });
+
+  it("is not ready when a cached master CV miss is the only failed check", async () => {
+    configureReadyEnv();
+    __resetMasterCvCacheForTest();
+    delete process.env.MASTER_CV_JSON;
+    loadMasterCv();
+    const checks = { auth: "ok", masterCv: "failed", redis: "ok" } as const;
+    assert.deepEqual(await evaluateReadiness(), { ok: false, checks });
+    const response = await GET();
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), {
+      service: "cv-tailoring-api",
+      status: "not_ready",
+      checks,
+    });
   });
 
   it("fails auth when insecure bypass is set in a production-like deploy", async () => {
