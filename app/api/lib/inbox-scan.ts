@@ -35,6 +35,7 @@ export type InboxScanItem = {
   messageId: string;
   status: InboxScanItemStatus;
   error?: string;
+  requestId?: string;
 };
 
 export type InboxScanResult =
@@ -166,6 +167,7 @@ async function scanOneMessage(params: {
         messageId,
         status: "tailor-failed",
         error: tailored.error,
+        requestId: tailored.requestId,
       };
     }
     const leased = await withClaimLease(

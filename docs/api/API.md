@@ -169,7 +169,7 @@ Unexpected failures: `{ "error": "Internal server error. Please try again later.
 
 ## Error Envelope
 
-Errors use `{ "error": string }`. `remaining` / `resetTime` appear on 429 only.
+Errors use `{ "error": string, "requestId": string }`. `remaining` / `resetTime` appear on 429 only. `requestId` is also sent as `X-Request-Id`. A safe inbound `X-Request-Id` (`A-Za-z0-9_-`, 1–128 chars) is echoed; otherwise the API generates a UUID. Success JSON is unchanged; the header is still set.
 
 ---
 
@@ -188,6 +188,8 @@ Errors use `{ "error": string }`. `remaining` / `resetTime` appear on 429 only.
 | `RATE_LIMIT_SESSION_ID_MAX_CHARS` | Max chars for a `sessionId` caller key | `128` |
 | `TAILOR_REQUEST_MAX_BYTES` / `TAILOR_JD_MAX_CHARS` | Ingress limits | `65536` / `50000` |
 | `TAILOR_CURATED_JSON_MAX_BYTES` / `TAILOR_RESPONSE_MAX_BYTES` | Egress limits | `512000` / `2097152` |
+| `LANGFUSE_TRACING` | Langfuse generations (exactly `true` to enable) | `false` |
+| `LANGSMITH_TRACING` | LangSmith runs (exactly `true` plus `LANGSMITH_API_KEY`) | `false` |
 
 Full catalog with comments: [`.env.example`](../../.env.example)
 

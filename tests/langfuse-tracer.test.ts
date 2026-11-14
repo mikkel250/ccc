@@ -1,5 +1,7 @@
 import { describe, it, mock, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   langfuseTracer,
   buildLangfuseGenerationUpdate,
@@ -44,6 +46,13 @@ describe("langfuseTracer.isEnabled", () => {
     assert.equal(langfuseTracer.isEnabled(), true);
     process.env.LANGFUSE_TRACING = "yes";
     assert.equal(langfuseTracer.isEnabled(), false);
+  });
+
+  it(".env.example defaults LANGFUSE_TRACING to false so copying it does not enable tracing", () => {
+    const catalog = readFileSync(join(process.cwd(), ".env.example"), "utf8");
+    const match = catalog.match(/^LANGFUSE_TRACING=(.*)$/m);
+    assert.ok(match, "LANGFUSE_TRACING must be catalogued in .env.example");
+    assert.equal(match[1], "false");
   });
 });
 

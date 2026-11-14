@@ -1,5 +1,7 @@
 import { describe, it, mock, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { langsmithTracer } from "../app/api/lib/tracers/langsmith";
 import { recordLangSmithTrace } from "../app/api/lib/tracers";
 import type { ChatResponse } from "../app/api/lib/llm";
@@ -37,6 +39,27 @@ describe("langsmithTracer.isEnabled", () => {
     assert.equal(langsmithTracer.isEnabled(), true);
     process.env.LANGSMITH_TRACING = "1";
     assert.equal(langsmithTracer.isEnabled(), false);
+  });
+
+  it(".env.example catalogs LangSmith opt-in vars with tracing off", () => {
+    const catalog = readFileSync(join(process.cwd(), ".env.example"), "utf8");
+    const tracing = catalog.match(/^LANGSMITH_TRACING=(.*)$/m);
+    assert.ok(tracing, "LANGSMITH_TRACING must be catalogued in .env.example");
+    assert.equal(tracing[1], "false");
+    assert.match(catalog, /^LANGSMITH_API_KEY=/m);
+    assert.match(catalog, /^LANGSMITH_PROJECT_NAME=/m);
+    assert.match(catalog, /^#? ?LANGSMITH_WORKSPACE_ID=/m);
+    const endpoint = catalog.match(/^#? ?LANGSMITH_ENDPOINT=(.*)$/m);
+    assert.ok(endpoint, "LANGSMITH_ENDPOINT must be catalogued in .env.example");
+    const source = readFileSync(
+      join(process.cwd(), "app/api/lib/tracers/langsmith.ts"),
+      "utf8"
+    );
+    const codeDefault = source.match(
+      /getEnvString\(\s*['"]LANGSMITH_ENDPOINT['"]\s*,\s*['"]([^'"]+)['"]/
+    );
+    assert.ok(codeDefault, "langsmith.ts must default LANGSMITH_ENDPOINT");
+    assert.equal(endpoint[1], codeDefault[1]);
   });
 });
 

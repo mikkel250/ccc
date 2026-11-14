@@ -52,6 +52,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── rate-limit.ts     # Dual IP + secret-hash rate limiter
 │           ├── tailor-cv-validation.ts  # Request body validation
 │           ├── errors.ts             # RateLimitError / ServiceError
+│           ├── request-id.ts         # X-Request-Id resolve/generate for tailor + inbox errors
 │           ├── eval-parse.ts         # extractStructuredJson (untrusted LLM text)
 │           ├── eval-defaults.ts      # Historical eval default CSV/model constants
 │           ├── eval-model-validation.ts
