@@ -17,6 +17,7 @@ import {
 import { getInboxClaimTtlSeconds } from "./inbox-config";
 import { getTailorJdMaxChars } from "./cv-schema";
 import { ServiceError } from "./errors";
+import { generateRequestId } from "./request-id";
 import {
   runTailorCore,
   type TailorCoreSuccess,
@@ -27,7 +28,7 @@ export type TailorLabeledResult =
   | { ok: true; status: "tailored"; body: TailorCoreSuccess; claimToken: string }
   | { ok: true; status: "skipped-processed" }
   | { ok: true; status: "skipped-claimed" }
-  | { ok: false; error: string; status?: 422 | 500 | 503 };
+  | { ok: false; error: string; status?: 422 | 500 | 503; requestId: string };
 
 function isInboxRedisError(error: string): boolean {
   return (
@@ -112,14 +113,15 @@ export async function tailorLabeledMessage(
   deps: TailorPipelineDeps,
   input: { messageId: string; message: unknown }
 ): Promise<TailorLabeledResult> {
+  const requestId = generateRequestId();
   const extracted = await extractUnprocessedInboxMessage(
     input.messageId,
     input.message
   );
   if (!extracted.ok) {
     return isInboxRedisError(extracted.error)
-      ? { ok: false, error: extracted.error, status: 503 }
-      : extracted;
+      ? { ok: false, error: extracted.error, status: 503, requestId }
+      : { ...extracted, requestId };
   }
   if (extracted.status !== "extracted") {
     return { ok: true, status: extracted.status };
@@ -131,6 +133,7 @@ export async function tailorLabeledMessage(
       ok: false,
       error: "jobDescription exceeds configured size limit.",
       status: 422,
+      requestId,
     };
   }
 
@@ -154,7 +157,7 @@ export async function tailorLabeledMessage(
       if (!isInboxRedisError(leased.error)) {
         await releaseInboxClaim(input.messageId, extracted.claimToken);
       }
-      return { ok: false, error: leased.error, status: 503 };
+      return { ok: false, error: leased.error, status: 503, requestId };
     }
     core = leased.value;
   } catch (error: unknown) {
@@ -168,21 +171,23 @@ export async function tailorLabeledMessage(
             ? error.message
             : "AI service error. Please try again.",
         status: 503,
+        requestId,
       };
     }
-    console.error(
-      "Inbox tailor failed:",
-      error instanceof Error ? error.name : "Error"
-    );
+    console.error("Inbox tailor failed:", {
+      requestId,
+      name: error instanceof Error ? error.name : "Error",
+    });
     return {
       ok: false,
       error: "Internal server error. Please try again later.",
       status: 500,
+      requestId,
     };
   }
   if (!core.ok) {
     await releaseInboxClaim(input.messageId, extracted.claimToken);
-    return core;
+    return { ...core, requestId };
   }
   return {
     ok: true,

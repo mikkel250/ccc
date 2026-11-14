@@ -1,5 +1,7 @@
 import { describe, it, mock, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   langfuseTracer,
   buildLangfuseGenerationUpdate,
@@ -45,6 +47,13 @@ describe("langfuseTracer.isEnabled", () => {
     process.env.LANGFUSE_TRACING = "yes";
     assert.equal(langfuseTracer.isEnabled(), false);
   });
+
+  it(".env.example defaults LANGFUSE_TRACING to false so copying it does not enable tracing", () => {
+    const catalog = readFileSync(join(process.cwd(), ".env.example"), "utf8");
+    const match = catalog.match(/^LANGFUSE_TRACING=(.*)$/m);
+    assert.ok(match, "LANGFUSE_TRACING must be catalogued in .env.example");
+    assert.equal(match[1], "false");
+  });
 });
 
 describe("recordLangfuseTrace — awaited", () => {
@@ -64,6 +73,22 @@ describe("recordLangfuseTrace — awaited", () => {
       throw new Error("langfuse boom");
     });
     await assert.doesNotReject(() => recordLangfuseTrace(basePayload));
+  });
+
+  it("returns when record() stays pending past LANGFUSE_FLUSH_TIMEOUT_MS", { timeout: 500 }, async () => {
+    const saved = process.env.LANGFUSE_FLUSH_TIMEOUT_MS;
+    process.env.LANGFUSE_FLUSH_TIMEOUT_MS = "30";
+    mock.method(langfuseTracer, "record", async () => {
+      await new Promise(() => {});
+    });
+    try {
+      const started = Date.now();
+      await recordLangfuseTrace(basePayload);
+      assert.ok(Date.now() - started < 400);
+    } finally {
+      if (saved === undefined) delete process.env.LANGFUSE_FLUSH_TIMEOUT_MS;
+      else process.env.LANGFUSE_FLUSH_TIMEOUT_MS = saved;
+    }
   });
 });
 

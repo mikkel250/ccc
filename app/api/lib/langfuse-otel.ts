@@ -57,7 +57,14 @@ export async function ensureLangfuseOtel(): Promise<void> {
   await otelStarting;
 }
 
-const DEFAULT_FLUSH_TIMEOUT_MS = 5000;
+export const DEFAULT_LANGFUSE_FLUSH_TIMEOUT_MS = 5000;
+
+export function getLangfuseFlushTimeoutMs(): number {
+  return Math.max(
+    1,
+    Math.floor(getEnvNumber("LANGFUSE_FLUSH_TIMEOUT_MS", DEFAULT_LANGFUSE_FLUSH_TIMEOUT_MS))
+  );
+}
 
 function flushWithTimeout(processor: LangfuseSpanProcessor, timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -82,10 +89,7 @@ function flushWithTimeout(processor: LangfuseSpanProcessor, timeoutMs: number): 
 export async function flushLangfuseTraces(): Promise<void> {
   if (!spanProcessor) return;
 
-  const timeoutMs = Math.max(
-    1,
-    Math.floor(getEnvNumber("LANGFUSE_FLUSH_TIMEOUT_MS", DEFAULT_FLUSH_TIMEOUT_MS))
-  );
+  const timeoutMs = getLangfuseFlushTimeoutMs();
 
   try {
     await flushWithTimeout(spanProcessor, timeoutMs);

@@ -284,3 +284,68 @@ describe("provider default models", () => {
     assert.equal(capturedModel, "openai/gpt-5.4-mini");
   });
 });
+
+describe("chat — Anthropic alias abort", () => {
+  const originalTimeout = process.env.LLM_TIMEOUT_MS;
+  const originalCacheTtl = process.env.ANTHROPIC_MODEL_CACHE_TTL_MS;
+
+  afterEach(() => {
+    if (originalTimeout === undefined) delete process.env.LLM_TIMEOUT_MS;
+    else process.env.LLM_TIMEOUT_MS = originalTimeout;
+    if (originalCacheTtl === undefined) delete process.env.ANTHROPIC_MODEL_CACHE_TTL_MS;
+    else process.env.ANTHROPIC_MODEL_CACHE_TTL_MS = originalCacheTtl;
+  });
+
+  it("rejects the prompt when the caller aborts during alias resolution", { timeout: 500 }, async () => {
+    process.env.LLM_TIMEOUT_MS = "5000";
+    process.env.ANTHROPIC_MODEL_CACHE_TTL_MS = "0";
+    const controller = new AbortController();
+    let createCalls = 0;
+    const mockClient = {
+      models: {
+        list: async (
+          _params?: unknown,
+          options?: { signal?: AbortSignal }
+        ) => {
+          const signal = options?.signal;
+          await new Promise<void>((_resolve, reject) => {
+            const abort = (): void => {
+              reject(new DOMException("The operation was aborted", "AbortError"));
+            };
+            if (signal?.aborted) {
+              abort();
+              return;
+            }
+            signal?.addEventListener("abort", abort, { once: true });
+          });
+          return { data: [{ id: "claude-haiku-4-5" }] };
+        },
+      },
+      messages: {
+        create: async () => {
+          createCalls += 1;
+          return {
+            model: "claude-haiku-4-5",
+            content: [{ type: "text", text: "should-not-send" }],
+            usage: { input_tokens: 1, output_tokens: 1 },
+            stop_reason: "end_turn",
+          };
+        },
+      },
+    } as unknown as Anthropic;
+
+    const pending = chat([{ role: "user", content: "Hi" }], "System", {
+      model: "anthropic/haiku",
+      anthropicClient: mockClient,
+      signal: controller.signal,
+    });
+    controller.abort();
+
+    await assert.rejects(pending, (err: unknown) => {
+      assert.ok(err instanceof DOMException);
+      assert.equal(err.name, "AbortError");
+      return true;
+    });
+    assert.equal(createCalls, 0);
+  });
+});

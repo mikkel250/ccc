@@ -8,6 +8,12 @@ import { getEnvString } from '../../../../lib/env';
 import type { Tracer, TracePayload } from './tracer';
 
 const REDACTED = '[REDACTED]';
+const DEFAULT_LANGSMITH_ENDPOINT = 'https://api.smith.langchain.com';
+
+/** Ingest URL from `LANGSMITH_ENDPOINT`, otherwise the catalog default. */
+export function resolveLangSmithEndpoint(): string {
+  return getEnvString('LANGSMITH_ENDPOINT', DEFAULT_LANGSMITH_ENDPOINT)!;
+}
 
 let client: Client | null = null;
 
@@ -16,7 +22,7 @@ function initLangSmith(): Client | null {
   if (!client && apiKey) {
     client = new Client({
       apiKey,
-      apiUrl: getEnvString('LANGSMITH_ENDPOINT', 'https://api.smith.langchain.com')!,
+      apiUrl: resolveLangSmithEndpoint(),
       workspaceId: getEnvString('LANGSMITH_WORKSPACE_ID'),
     });
   }

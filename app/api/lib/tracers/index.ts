@@ -6,6 +6,7 @@
  * MUST be awaited so `flushLangfuseTraces()` completes before the serverless
  * container freezes — without the await, traces vanish on cold-instance shutdown.
  */
+import { getLangfuseFlushTimeoutMs } from '../langfuse-otel';
 import { langsmithTracer } from './langsmith';
 import { langfuseTracer } from './langfuse';
 import type { TracePayload } from './tracer';
@@ -20,9 +21,28 @@ export function recordLangSmithTrace(payload: TracePayload): void {
     .catch((err) => console.error(`Trace failed (${langsmithTracer.name}):`, err));
 }
 
-/** Awaited — caller must await so the Langfuse flush completes before returning. */
+/**
+ * Awaited so the Langfuse flush can finish before the caller returns.
+ * The wait is capped by `LANGFUSE_FLUSH_TIMEOUT_MS`. On timeout the caller
+ * continues; a hung export must not hold HTTP or inbox work open.
+ */
 export async function recordLangfuseTrace(payload: TracePayload): Promise<void> {
-  await langfuseTracer
-    .record(payload)
-    .catch((err) => console.error(`Trace failed (${langfuseTracer.name}):`, err));
+  const timeoutMs = getLangfuseFlushTimeoutMs();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(`Langfuse trace timed out after ${timeoutMs}ms`);
+      resolve();
+    }, timeoutMs);
+  });
+  try {
+    await Promise.race([
+      langfuseTracer
+        .record(payload)
+        .catch((err) => console.error(`Trace failed (${langfuseTracer.name}):`, err)),
+      timeout,
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }

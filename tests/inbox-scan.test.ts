@@ -384,6 +384,8 @@ describe("scanInbox", () => {
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.equal(result.items[0]?.status, "tailor-failed");
+      assert.equal(typeof result.items[0]?.requestId, "string");
+      assert.match(result.items[0]!.requestId!, /^[A-Za-z0-9_-]{1,128}$/);
     }
     assert.equal(draftCreates, 0);
     assert.equal(memory.store.has(inboxProcessedKey("m1")), false);

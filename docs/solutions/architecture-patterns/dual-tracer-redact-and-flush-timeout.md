@@ -42,7 +42,7 @@ Treat dual tracers as **two contracts**, not one shared “trace everything” p
 
 **Langfuse — same content redaction parity.** The Langfuse adapter must also replace messages, system prompt, and response content with `[REDACTED]` in `generation.update()` input/output (`app/api/lib/tracers/langfuse.ts` via `buildLangfuseGenerationUpdate`). Keep usage, model, duration, and source metadata. Do not log raw `TracePayload` bodies on adapter failure.
 
-**Langfuse — await record + flush; bound the wait.** Keep `recordLangSmithTrace` fire-and-forget and `await recordLangfuseTrace` on both success and error paths (`app/api/lib/llm.ts`). Race `forceFlush()` against `LANGFUSE_FLUSH_TIMEOUT_MS` (default 5000 ms, min 1). On timeout or failure, warn and continue — do not fail the LLM call (`app/api/lib/langfuse-otel.ts`). Catalog the env var in `.env.example`.
+**Langfuse — await record + flush; bound the wait.** Keep `recordLangSmithTrace` fire-and-forget and `await recordLangfuseTrace` on both success and error paths (`app/api/lib/llm.ts`). Bound that whole await, not only `forceFlush()`, with `LANGFUSE_FLUSH_TIMEOUT_MS` (default 5000 ms, min 1) so a hung span export cannot hold the request open past the provider deadline. On timeout or failure, warn and continue — do not fail the LLM call (`app/api/lib/tracers/index.ts`, `app/api/lib/langfuse-otel.ts`). Catalog the env var in `.env.example`.
 
 **Shared payload hygiene.** Pass `toTraceOptions(options)` into `TracePayload` so injectable SDK clients never serialize into traces (`app/api/lib/tracers/tracer.ts`).
 

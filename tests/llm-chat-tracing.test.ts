@@ -119,4 +119,45 @@ describe("chat() — tracer flush semantics", () => {
     await assert.rejects(chatPromise, /OpenRouter service unavailable/);
     assert.equal(langsmithSpy.mock.callCount(), 1);
   });
+
+  it("returns a successful chat when Langfuse record exceeds its bound", { timeout: 1000 }, async () => {
+    const saved = process.env.LANGFUSE_FLUSH_TIMEOUT_MS;
+    process.env.LANGFUSE_FLUSH_TIMEOUT_MS = "30";
+    mock.method(langfuseTracer, "record", async () => {
+      await new Promise(() => {});
+    });
+    try {
+      const started = Date.now();
+      const response = await chat([{ role: "user", content: "Hi" }], "System", {
+        model: "openrouter/openai/gpt-4o",
+        openRouterClient: createSuccessOpenRouterClient(),
+      });
+      assert.equal(response.content, "ok");
+      assert.ok(Date.now() - started < 800);
+    } finally {
+      if (saved === undefined) delete process.env.LANGFUSE_FLUSH_TIMEOUT_MS;
+      else process.env.LANGFUSE_FLUSH_TIMEOUT_MS = saved;
+    }
+  });
+
+  it("still rethrows the provider error when Langfuse record exceeds its bound", { timeout: 1000 }, async () => {
+    const saved = process.env.LANGFUSE_FLUSH_TIMEOUT_MS;
+    process.env.LANGFUSE_FLUSH_TIMEOUT_MS = "30";
+    mock.method(langfuseTracer, "record", async () => {
+      await new Promise(() => {});
+    });
+    try {
+      await assert.rejects(
+        () =>
+          chat([{ role: "user", content: "Hi" }], "System", {
+            model: "openrouter/openai/gpt-4o",
+            openRouterClient: createFailingOpenRouterClient(),
+          }),
+        /OpenRouter service unavailable/
+      );
+    } finally {
+      if (saved === undefined) delete process.env.LANGFUSE_FLUSH_TIMEOUT_MS;
+      else process.env.LANGFUSE_FLUSH_TIMEOUT_MS = saved;
+    }
+  });
 });

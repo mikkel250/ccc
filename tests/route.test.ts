@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NextRequest } from "next/server";
 import { POST, GET } from "../app/api/tailor-cv/route";
+import { REQUEST_ID_MAX_CHARS } from "../app/api/lib/request-id";
 import { RateLimitError, ServiceError } from "../app/api/lib/errors";
 import {
   __injectRatelimitForTest,
@@ -626,5 +627,120 @@ describe("POST /api/tailor-cv — request hardening", () => {
       assert.equal(typeof json.remaining, "number");
       assert.equal(typeof json.resetTime, "number");
     });
+  });
+});
+
+const REQUEST_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+
+describe("POST /api/tailor-cv — request ids", () => {
+  const XFF = authHeaders({ "x-forwarded-for": "198.51.100.42" });
+
+  beforeEach(() => {
+    ensureEnv();
+    resetRedisClientForTest();
+    injectSlidingWindowMock();
+  });
+
+  afterEach(() => {
+    mock.restoreAll();
+    resetRedisClientForTest();
+  });
+
+  it("puts a generated requestId on 500 JSON, the x-request-id header, and the error log", async () => {
+    mock.method(tailorCvDeps, "requireMasterCv", () => {
+      throw new Error("unexpected failure");
+    });
+    const logs: unknown[][] = [];
+    const originalError = console.error;
+    console.error = (...args: unknown[]) => {
+      logs.push(args);
+    };
+    try {
+      const response = await POST(buildPostRequest(VALID_BODY, XFF));
+      assert.equal(response.status, 500);
+      const json = (await response.json()) as {
+        error: string;
+        requestId?: string;
+      };
+      const headerId = response.headers.get("x-request-id");
+      assert.equal(typeof json.requestId, "string");
+      assert.match(json.requestId!, REQUEST_ID_RE);
+      assert.equal(headerId, json.requestId);
+      const logged = logs.find(
+        (args) =>
+          typeof args[0] === "string" && args[0].includes("Tailor CV API error")
+      );
+      assert.ok(logged, "expected safeTailorLog to emit");
+      const meta = logged[1] as { requestId?: string };
+      assert.equal(meta.requestId, json.requestId);
+    } finally {
+      console.error = originalError;
+    }
+  });
+
+  it("echoes a safe inbound X-Request-Id on mapped pipeline errors", async () => {
+    const inbound = "bff-req-42";
+    const response = await POST(
+      buildPostRequest("", authHeaders({ "x-forwarded-for": "198.51.100.42", "x-request-id": inbound }))
+    );
+    assert.equal(response.status, 400);
+    const json = (await response.json()) as {
+      error: string;
+      requestId?: string;
+    };
+    assert.equal(json.requestId, inbound);
+    assert.equal(response.headers.get("x-request-id"), inbound);
+  });
+
+  it("ignores an inbound X-Request-Id with disallowed characters", async () => {
+    const inbound = "ok/injected";
+    const response = await POST(
+      buildPostRequest("", authHeaders({
+        "x-forwarded-for": "198.51.100.42",
+        "x-request-id": inbound,
+      }))
+    );
+    assert.equal(response.status, 400);
+    const json = (await response.json()) as { requestId?: string };
+    assert.notEqual(json.requestId, inbound);
+    assert.match(json.requestId!, REQUEST_ID_RE);
+    assert.equal(response.headers.get("x-request-id"), json.requestId);
+  });
+
+  it("replaces an overlong inbound X-Request-Id with one safe id on header and body", async () => {
+    const inbound = "a".repeat(REQUEST_ID_MAX_CHARS + 1);
+    const response = await POST(
+      buildPostRequest("", authHeaders({
+        "x-forwarded-for": "198.51.100.42",
+        "x-request-id": inbound,
+      }))
+    );
+    assert.equal(response.status, 400);
+    const json = (await response.json()) as { requestId?: string };
+    assert.notEqual(json.requestId, inbound);
+    assert.match(json.requestId!, REQUEST_ID_RE);
+    assert.equal(response.headers.get("x-request-id"), json.requestId);
+  });
+
+  it("GET 405 uses one generated safe id on the body and x-request-id", async () => {
+    const response = await GET();
+    assert.equal(response.status, 405);
+    const json = (await response.json()) as { error?: string; requestId?: string };
+    assert.match(json.error ?? "", /method not allowed/i);
+    assert.match(json.requestId!, REQUEST_ID_RE);
+    assert.equal(response.headers.get("x-request-id"), json.requestId);
+  });
+
+  it("sets x-request-id on 200 without adding requestId to the success body", async () => {
+    mockTailorPipelineSuccess();
+    const inbound = "success-corr-1";
+    const response = await POST(
+      buildPostRequest(VALID_BODY, { ...XFF, "x-request-id": inbound })
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-request-id"), inbound);
+    const json = (await response.json()) as { requestId?: string; cv?: string };
+    assert.equal(json.requestId, undefined);
+    assert.equal(typeof json.cv, "string");
   });
 });

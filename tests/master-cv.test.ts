@@ -1,6 +1,13 @@
-import { describe, it, beforeEach, afterEach } from "node:test";
+import { describe, it, beforeEach, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, chmodSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  chmodSync,
+  mkdtempSync,
+  rmSync,
+  promises as fsPromises,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -131,6 +138,45 @@ describe("loadMasterCv", () => {
 
   it("requireMasterCv throws when nothing was preloaded", () => {
     assert.throws(() => requireMasterCv(), ServiceError);
+  });
+
+  it("concurrent preloadMasterCv calls share one path read", { timeout: 2000 }, async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "master-cv-preload-shared-"));
+    const path = join(tempDir, "master.json");
+    writeFileSync(path, JSON.stringify(validCv), { mode: 0o600 });
+    chmodSync(path, 0o600);
+    process.env.MASTER_CV_PATH = path;
+    delete process.env.MASTER_CV_JSON;
+
+    let opens = 0;
+    let releaseOpen: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseOpen = resolve;
+    });
+    const realOpen = fsPromises.open.bind(fsPromises);
+    mock.method(
+      fsPromises,
+      "open",
+      async (...args: Parameters<typeof fsPromises.open>) => {
+        opens += 1;
+        await gate;
+        return realOpen(...args);
+      }
+    );
+
+    try {
+      const first = preloadMasterCv();
+      const second = preloadMasterCv();
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(opens, 1);
+      releaseOpen();
+      const [a, b] = await Promise.all([first, second]);
+      assert.equal(a.ok, true);
+      assert.deepEqual(a, b);
+    } finally {
+      releaseOpen();
+      mock.restoreAll();
+    }
   });
 
   it("preload cache is visible on globalThis for cross-bundle sharing", async () => {

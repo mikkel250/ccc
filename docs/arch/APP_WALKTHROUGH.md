@@ -49,7 +49,7 @@ Inbox is not this HTTP client. `tailorLabeledMessage` (`app/api/lib/inbox-tailor
 | Route handler | `app/api/tailor-cv/route.ts` | `POST` | `runtime = "nodejs"` — Railway Node process, not Edge |
 | Method guard | same | `GET` | Returns 405; only POST is supported |
 | Liveness | `app/api/hello/route.ts` | `GET` | `{ service, status: "ok" }` — process up; `npm run smoke` |
-| Readiness | `app/api/ready/route.ts` | `GET` | `{ service, status, checks }` — auth + master CV (preload cache, load-once if empty) + Redis env; Railway `healthcheckPath` |
+| Readiness | `app/api/ready/route.ts` | `GET` | `{ service, status, checks }` — auth + master CV (settled preload, one shared in-flight load) + Redis env; Railway `healthcheckPath` |
 
 The root page (`app/page.tsx :: Home`) calls `notFound()` — there is intentionally no frontend.
 
@@ -134,7 +134,8 @@ All runtime config flows through env vars parsed in `lib/env.ts`:
 |----------|--------|---------|
 | `TAILOR_MODEL` | `getTailorModel()` | Production CV generation |
 | `AI_MODEL` | `getDefaultLlmModel()` | Default when `chat()` has no model override |
-| `LLM_TIMEOUT_MS` | `getLlmTimeoutMs()` | Abort hung `chat()` dispatches (default 300000) |
+| `LLM_TIMEOUT_MS` | `getLlmTimeoutMs()` | Abort hung `chat()` provider dispatches (default 300000) |
+| `LANGFUSE_FLUSH_TIMEOUT_MS` | `getLangfuseFlushTimeoutMs()` | Bound the awaited Langfuse record after dispatch (default 5000) |
 | `EVAL_*` | `getEvalModels()`, etc. | Offline eval pipeline only |
 | `RATE_LIMIT_*` | read in `rate-limit.ts` | Burst limiter |
 | Langfuse / LangSmith keys | init functions | Tracing (opt-in via `*_TRACING=true`) |
@@ -150,6 +151,7 @@ Canonical catalog: `.env.example`. Cross-file invariant: documented `TAILOR_MODE
 | Langfuse generations | `app/api/lib/tracers/langfuse.ts :: record` via `recordLangfuseTrace` | Every `chat()` call when `LANGFUSE_TRACING=true`; awaited so flush completes |
 | Langfuse OTEL | `app/api/lib/langfuse-otel.ts :: ensureLangfuseOtel` | Lazy start on first trace; `flushLangfuseTraces()` before response ends |
 | LangSmith runs | `app/api/lib/tracers/langsmith.ts :: record` via `recordLangSmithTrace` | Every `chat()` when `LANGSMITH_TRACING=true`; fire-and-forget |
+| Request ids | `app/api/lib/request-id.ts` via tailor route + `inbox-tailor` | Error JSON/`X-Request-Id` on `POST /api/tailor-cv`; `requestId` on inbox tailor failures |
 | Next.js hook | `instrumentation.ts` → `instrumentation.node.ts :: registerNode` | `ensureSecureStartup()` (R5d) + `preloadMasterCv()`; OTEL stays lazy; node work isolated so Edge compile avoids `node:crypto` |
 
 Production curator generations link to Langfuse prompt `cv-curator-json` via `langfusePrompt` on `ChatOptions`. Prompt/response content is redacted for export (R8b).

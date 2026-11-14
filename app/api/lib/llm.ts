@@ -568,6 +568,9 @@ async function resolveLatestModelId(
       return resolved;
     }
   } catch (error) {
+    if (signal?.aborted) {
+      throw error;
+    }
     const message = error instanceof Error ? error.message : String(error);
     console.warn(
       `Anthropic models.list() failed for family "${family}"; using ${cached ? 'stale cache' : 'pinned fallback'}. Reason: ${message}`,
@@ -929,7 +932,8 @@ async function raceWithLlmDeadline<T>(
 /**
  * Central entry for all LLM chat completions. Resolves model from options or AI_MODEL,
  * dispatches to the correct provider integration, and records traces for observability.
- * Every dispatch is bounded by `LLM_TIMEOUT_MS` (default 5 min).
+ * Every dispatch is bounded by `LLM_TIMEOUT_MS` (default 5 min). The awaited
+ * Langfuse record that follows is separately bounded by `LANGFUSE_FLUSH_TIMEOUT_MS`.
  */
 export async function chat(
   messages: Omit<ChatMessage, 'role'>[] | ChatMessage[],
@@ -973,6 +977,9 @@ export async function chat(
     });
 
     recordLangSmithTrace(tracePayload);
+    // Awaited so flush can finish, but bounded inside recordLangfuseTrace
+    // (LANGFUSE_FLUSH_TIMEOUT_MS) so a slow backend cannot hold the request
+    // open after the provider dispatch returns.
     await recordLangfuseTrace(tracePayload);
 
     return response;
@@ -1001,8 +1008,9 @@ export async function chat(
     recordLangSmithTrace(tracePayload);
 
     // Langfuse trace MUST be awaited so `flushLangfuseTraces()` (exportMode: "immediate")
-    // completes before the serverless container is frozen. Without the await, error
-    // traces vanish on cold-start containers even though the success path persists them.
+    // completes before the serverless container is frozen. The await is bounded by
+    // LANGFUSE_FLUSH_TIMEOUT_MS inside recordLangfuseTrace; a timeout warns and
+    // continues so tracing cannot hold the error path open.
     await recordLangfuseTrace(tracePayload);
 
     throw error;
