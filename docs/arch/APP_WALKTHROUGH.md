@@ -48,7 +48,8 @@ Inbox is not this HTTP client. `tailorLabeledMessage` (`app/api/lib/inbox-tailor
 |------|------|----------|-------|
 | Route handler | `app/api/tailor-cv/route.ts` | `POST` | `runtime = "nodejs"` — Railway Node process, not Edge |
 | Method guard | same | `GET` | Returns 405; only POST is supported |
-| Health check | `app/api/hello/route.ts` | `GET` | `{ service, status: "ok" }` — deploy probes and `npm run smoke` |
+| Liveness | `app/api/hello/route.ts` | `GET` | `{ service, status: "ok" }` — process up; `npm run smoke` |
+| Readiness | `app/api/ready/route.ts` | `GET` | `{ service, status, checks }` — auth + master CV (preload cache, load-once if empty) + Redis env; Railway `healthcheckPath` |
 
 The root page (`app/page.tsx :: Home`) calls `notFound()` — there is intentionally no frontend.
 
@@ -120,7 +121,7 @@ Parse/schema/builder failures → **422** with no dual artifacts. Success → `{
 | Curator/schema/builder | 422 | client-safe; no dual artifacts |
 | `RateLimitError` | 429 | forwards `error.message` |
 | `ServiceError` | 503 | forwards `error.message` |
-| LLM provider/quota/timeout/connection/429 errors | 503 | `isLlmServiceError(message)` → masked generic message |
+| LLM provider/quota/timeout/connection/429 errors | 503 | `isLlmServiceError(message)` → masked generic message. Includes server-side `LLM_TIMEOUT_MS` aborts. |
 | Other | 500 | generic internal error |
 
 ---
@@ -133,6 +134,7 @@ All runtime config flows through env vars parsed in `lib/env.ts`:
 |----------|--------|---------|
 | `TAILOR_MODEL` | `getTailorModel()` | Production CV generation |
 | `AI_MODEL` | `getDefaultLlmModel()` | Default when `chat()` has no model override |
+| `LLM_TIMEOUT_MS` | `getLlmTimeoutMs()` | Abort hung `chat()` dispatches (default 300000) |
 | `EVAL_*` | `getEvalModels()`, etc. | Offline eval pipeline only |
 | `RATE_LIMIT_*` | read in `rate-limit.ts` | Burst limiter |
 | Langfuse / LangSmith keys | init functions | Tracing (opt-in via `*_TRACING=true`) |

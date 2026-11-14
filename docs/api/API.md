@@ -52,11 +52,43 @@ HTTP 429
 
 ## `GET /api/hello`
 
-Health probe. No LLM call, no master CV access.
+Liveness probe. Confirms the Node process is up. No LLM call, no master CV access, no Redis check. `npm run smoke` uses this before calling tailor.
 
 **Response 200:**
 ```json
 { "service": "cv-tailoring-api", "status": "ok" }
+```
+
+---
+
+## `GET /api/ready`
+
+Readiness probe. No auth header, no LLM call, no Redis ping. Returns **200** only when this process can serve `POST /api/tailor-cv` without immediately 503ing on missing config:
+
+| Check | Ready when |
+|-------|------------|
+| `auth` | `TAILOR_API_KEY` is set, or local insecure bypass is on outside production-like deploys |
+| `masterCv` | Valid master CV in the startup preload cache, or loaded once from `MASTER_CV_JSON` / `MASTER_CV_PATH` if that cache is still empty |
+| `redis` | `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are both set |
+
+Railway `healthcheckPath` is this route. A failed check is **503** (`status: "not_ready"`) so a misconfigured deploy is not marked healthy. Check names only — no secret values.
+
+**Response 200:**
+```json
+{
+  "service": "cv-tailoring-api",
+  "status": "ok",
+  "checks": { "auth": "ok", "masterCv": "ok", "redis": "ok" }
+}
+```
+
+**Response 503:**
+```json
+{
+  "service": "cv-tailoring-api",
+  "status": "not_ready",
+  "checks": { "auth": "failed", "masterCv": "failed", "redis": "failed" }
+}
 ```
 
 ---
@@ -159,7 +191,7 @@ Rate limit exceeded (see above).
 
 #### 503 Service Unavailable
 
-Auth misconfiguration (`TAILOR_API_KEY` unset, production bypass hard-block), master CV unavailable, curator prompt missing `{{MASTER_CV_JSON}}`, rate-limit Redis failure, or LLM service error (client-safe messages). Upstream timeouts, connection failures, and provider rate limits are LLM service errors.
+Auth misconfiguration (`TAILOR_API_KEY` unset, production bypass hard-block), master CV unavailable, curator prompt missing `{{MASTER_CV_JSON}}`, rate-limit Redis failure, or LLM service error (client-safe messages). Upstream timeouts, connection failures, provider rate limits, and server-side `LLM_TIMEOUT_MS` aborts are LLM service errors.
 
 #### 500 Internal Server Error
 
@@ -188,6 +220,7 @@ Errors use `{ "error": string, "requestId": string }`. `remaining` / `resetTime`
 | `RATE_LIMIT_SESSION_ID_MAX_CHARS` | Max chars for a `sessionId` caller key | `128` |
 | `TAILOR_REQUEST_MAX_BYTES` / `TAILOR_JD_MAX_CHARS` | Ingress limits | `65536` / `50000` |
 | `TAILOR_CURATED_JSON_MAX_BYTES` / `TAILOR_RESPONSE_MAX_BYTES` | Egress limits | `512000` / `2097152` |
+| `LLM_TIMEOUT_MS` | Abort hung `chat()` dispatches (HTTP tailor, inbox, smoke) | `300000` |
 | `LANGFUSE_TRACING` | Langfuse generations (exactly `true` to enable) | `false` |
 | `LANGSMITH_TRACING` | LangSmith runs (exactly `true` plus `LANGSMITH_API_KEY`) | `false` |
 
@@ -211,6 +244,7 @@ npm run regen-docx -- path/to/curated.json out.docx --builder-version=1.0.0
 
 ```bash
 curl http://localhost:3000/api/hello
+curl http://localhost:3000/api/ready
 
 curl -s -X POST http://localhost:3000/api/tailor-cv \
   -H "Content-Type: application/json" \
