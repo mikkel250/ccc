@@ -147,6 +147,9 @@ describe("evaluateReadiness", () => {
     process.env.UPSTASH_REDIS_REST_URL = "   ";
     process.env.UPSTASH_REDIS_REST_TOKEN = "example-token";
     assert.equal((await evaluateReadiness()).checks.redis, "failed");
+    process.env.UPSTASH_REDIS_REST_URL = "https://example-upstash.upstash.io";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "   ";
+    assert.equal((await evaluateReadiness()).checks.redis, "failed");
   });
 
   it("is ready when auth, preloaded master CV, and Redis env are present", async () => {
