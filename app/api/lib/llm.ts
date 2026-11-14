@@ -548,13 +548,17 @@ function pickVersionedAnthropicModelId(
 async function resolveLatestModelId(
   family: AnthropicModelAlias,
   client: Anthropic,
+  signal?: AbortSignal,
 ): Promise<string> {
   const cacheTtlMs = getEnvNumber('ANTHROPIC_MODEL_CACHE_TTL_MS', 7 * 24 * 60 * 60 * 1000);
   const cached = resolvedModelCache.get(family);
   if (cached && Date.now() - cached.ts < cacheTtlMs) return cached.id;
 
   try {
-    const page = await client.models.list();
+    const page = await client.models.list(
+      {},
+      signal ? { signal } : undefined,
+    );
     const resolved = pickVersionedAnthropicModelId(
       family,
       page.data.map((m) => m.id),
@@ -578,14 +582,15 @@ async function resolveLatestModelId(
 async function normalizeAnthropicModel(
   model: string,
   client: Anthropic,
+  signal?: AbortSignal,
 ): Promise<string> {
   const cleaned = model.replace(/^anthropic\//, '');
   if (isVersionedModelId(cleaned)) return cleaned;
 
-  if (isAnthropicAlias(cleaned)) return resolveLatestModelId(cleaned, client);
+  if (isAnthropicAlias(cleaned)) return resolveLatestModelId(cleaned, client, signal);
 
   const family = detectAnthropicFamily(cleaned);
-  if (family) return resolveLatestModelId(family, client);
+  if (family) return resolveLatestModelId(family, client, signal);
 
   return cleaned;
 }
@@ -601,7 +606,7 @@ export async function callAnthropic(
   if (!rawModel) throw new Error('model is required for callAnthropic');
 
   const anthropic = getAnthropic(options);
-  const model = await normalizeAnthropicModel(rawModel, anthropic);
+  const model = await normalizeAnthropicModel(rawModel, anthropic, options.signal);
 
   const formattedMessages = formatMessages(messages);
   const claudeMessages = formattedMessages
@@ -841,17 +846,26 @@ function llmAbortAfter(timeoutMs: number): {
   };
 }
 
-function combineAbortSignals(left: AbortSignal, right: AbortSignal): AbortSignal {
+function combineAbortSignals(
+  left: AbortSignal,
+  right: AbortSignal
+): { signal: AbortSignal; dispose: () => void } {
   if (left.aborted || right.aborted) {
     const aborted = new AbortController();
     aborted.abort();
-    return aborted.signal;
+    return { signal: aborted.signal, dispose: () => {} };
   }
   const controller = new AbortController();
   const abort = () => controller.abort();
   left.addEventListener("abort", abort, { once: true });
   right.addEventListener("abort", abort, { once: true });
-  return controller.signal;
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      left.removeEventListener("abort", abort);
+      right.removeEventListener("abort", abort);
+    },
+  };
 }
 
 function llmTimeoutError(timeoutMs: number): Error {
@@ -928,9 +942,10 @@ export async function chat(
   const timeoutMs = getLlmTimeoutMs();
   const deadline = llmAbortAfter(timeoutMs);
   const callerSignal = options.signal;
-  const signal = callerSignal
+  const combined = callerSignal
     ? combineAbortSignals(callerSignal, deadline.signal)
-    : deadline.signal;
+    : { signal: deadline.signal, dispose: () => {} };
+  const signal = combined.signal;
 
   console.log(`LLM dispatch: ${model} (${provider})`);
 
@@ -991,6 +1006,8 @@ export async function chat(
     await recordLangfuseTrace(tracePayload);
 
     throw error;
+  } finally {
+    combined.dispose();
   }
 }
 

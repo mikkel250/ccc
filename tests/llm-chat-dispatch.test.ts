@@ -548,6 +548,49 @@ describe("chat — LLM_TIMEOUT_MS", () => {
     });
   });
 
+  it("releases caller abort listeners after successful chats reuse the same signal", async () => {
+    process.env.LLM_TIMEOUT_MS = "5000";
+    const controller = new AbortController();
+    const signal = controller.signal;
+    let added = 0;
+    let removed = 0;
+    const add = signal.addEventListener.bind(signal);
+    const rem = signal.removeEventListener.bind(signal);
+    Object.defineProperty(signal, "addEventListener", {
+      configurable: true,
+      value: (
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+        options?: boolean | AddEventListenerOptions
+      ) => {
+        if (type === "abort") added += 1;
+        return add(type, listener, options);
+      },
+    });
+    Object.defineProperty(signal, "removeEventListener", {
+      configurable: true,
+      value: (
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+        options?: boolean | EventListenerOptions
+      ) => {
+        if (type === "abort") removed += 1;
+        return rem(type, listener, options);
+      },
+    });
+
+    for (let i = 0; i < 3; i++) {
+      await chat([{ role: "user", content: "Hi" }], "System", {
+        model: "openrouter/openai/gpt-4o",
+        openRouterClient: createCapturingOpenRouterClient(),
+        signal,
+      });
+    }
+
+    assert.equal(added, 3);
+    assert.equal(removed, added);
+  });
+
   it("fails closed when the caller signal is already aborted", { timeout: 500 }, async () => {
     process.env.LLM_TIMEOUT_MS = "5000";
     const controller = new AbortController();
