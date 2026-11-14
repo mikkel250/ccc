@@ -340,16 +340,36 @@ describe("tailorLabeledMessage", () => {
       throw new TypeError("curatorResponse.content is undefined");
     });
 
-    const result = await tailorLabeledMessage(tailorCvDeps, {
-      messageId: ID,
-      message: plainMessage(JD),
-    });
+    const logs: unknown[][] = [];
+    const originalError = console.error;
+    console.error = (...args: unknown[]) => {
+      logs.push(args);
+    };
+    let result: Awaited<ReturnType<typeof tailorLabeledMessage>>;
+    try {
+      result = await tailorLabeledMessage(tailorCvDeps, {
+        messageId: ID,
+        message: plainMessage(JD),
+      });
+    } finally {
+      console.error = originalError;
+    }
 
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.equal(result.status, 500);
       assert.equal(result.error, "Internal server error. Please try again later.");
       assert.doesNotMatch(result.error, /curatorResponse/);
+      assert.equal(typeof result.requestId, "string");
+      assert.match(result.requestId!, /^[A-Za-z0-9_-]{1,128}$/);
+      const logged = logs.find(
+        (args) =>
+          typeof args[0] === "string" && args[0].includes("Inbox tailor failed")
+      );
+      assert.ok(logged, "expected inbox tailor 500 log");
+      const meta = logged[1] as { requestId?: string; name?: string };
+      assert.equal(meta.requestId, result.requestId);
+      assert.equal(meta.name, "TypeError");
     }
     assert.equal(memory.store.has(inboxClaimKey(ID)), true);
     assert.equal(memory.store.has(inboxProcessedKey(ID)), false);
@@ -370,6 +390,8 @@ describe("tailorLabeledMessage", () => {
     if (!result.ok) {
       assert.equal(result.status, 503);
       assert.equal(result.error, "AI service error. Please try again.");
+      assert.equal(typeof result.requestId, "string");
+      assert.match(result.requestId!, /^[A-Za-z0-9_-]{1,128}$/);
     }
     assert.equal(memory.store.has(inboxClaimKey(ID)), false);
   });

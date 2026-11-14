@@ -10,26 +10,43 @@ import { RateLimitError, ServiceError } from "../lib/errors";
 import { tailorCvDeps } from "../lib/tailor-cv-deps";
 import { buildTailorResponse } from "../lib/tailor-pipeline";
 import { getRateLimitConfig } from "../lib/rate-limit";
+import {
+  REQUEST_ID_HEADER,
+  generateRequestId,
+  resolveRequestId,
+} from "../lib/request-id";
 
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" } as const;
 
 function jsonResponse(
   body: unknown,
   status: number,
+  requestId: string,
   extraHeaders?: Record<string, string>
 ): NextResponse {
-  return NextResponse.json(body, {
+  const payload =
+    status >= 400 && body !== null && typeof body === "object"
+      ? { ...body, requestId }
+      : body;
+  return NextResponse.json(payload, {
     status,
-    headers: extraHeaders
-      ? { ...NO_STORE_HEADERS, ...extraHeaders }
-      : NO_STORE_HEADERS,
+    headers: {
+      ...NO_STORE_HEADERS,
+      [REQUEST_ID_HEADER]: requestId,
+      ...extraHeaders,
+    },
   });
 }
 
-function safeTailorLog(message: string, error?: unknown): void {
+function safeTailorLog(
+  message: string,
+  requestId: string,
+  error?: unknown
+): void {
   const isProduction = process.env.NODE_ENV === "production";
   if (error instanceof Error) {
     console.error(message, {
+      requestId,
       name: error.name,
       message: error.message,
       ...(isProduction ? {} : { stack: error.stack }),
@@ -37,10 +54,10 @@ function safeTailorLog(message: string, error?: unknown): void {
     return;
   }
   if (error !== undefined) {
-    console.error(message, String(error));
+    console.error(message, { requestId, error: String(error) });
     return;
   }
-  console.error(message);
+  console.error(message, { requestId });
 }
 
 function retryAfterSeconds(resetTime: number): string {
@@ -48,10 +65,11 @@ function retryAfterSeconds(resetTime: number): string {
 }
 
 function mapPipelineResult(
-  result: Awaited<ReturnType<typeof buildTailorResponse>>
+  result: Awaited<ReturnType<typeof buildTailorResponse>>,
+  requestId: string
 ): NextResponse {
   if (result.ok) {
-    return jsonResponse(result.body, 200);
+    return jsonResponse(result.body, 200, requestId);
   }
   const headers =
     result.resetTime !== undefined
@@ -65,20 +83,23 @@ function mapPipelineResult(
         resetTime: result.resetTime,
       },
       result.status,
+      requestId,
       headers
     );
   }
-  return jsonResponse({ error: result.error }, result.status, headers);
+  return jsonResponse({ error: result.error }, result.status, requestId, headers);
 }
 
 export async function POST(request: NextRequest) {
+  const requestId = resolveRequestId(request.headers.get(REQUEST_ID_HEADER));
   try {
     return mapPipelineResult(
-      await buildTailorResponse(tailorCvDeps, request)
+      await buildTailorResponse(tailorCvDeps, request),
+      requestId
     );
   } catch (error: unknown) {
-    safeTailorLog("Tailor CV API error:", error);
-    return mapErrorToResponse(error);
+    safeTailorLog("Tailor CV API error:", requestId, error);
+    return mapErrorToResponse(error, requestId);
   }
 }
 
@@ -116,17 +137,27 @@ const ERROR_RESPONSES: ErrorResponseEntry[] = [
   },
 ];
 
-function mapErrorToResponse(error: unknown) {
+function mapErrorToResponse(error: unknown, requestId: string) {
   for (const entry of ERROR_RESPONSES) {
     if (!entry.matches(error)) continue;
-    return jsonResponse(entry.body(error), entry.status, entry.headers?.());
+    return jsonResponse(
+      entry.body(error),
+      entry.status,
+      requestId,
+      entry.headers?.()
+    );
   }
   return jsonResponse(
     { error: "Internal server error. Please try again later." },
-    500
+    500,
+    requestId
   );
 }
 
 export async function GET() {
-  return jsonResponse({ error: "Method not allowed. Use POST." }, 405);
+  return jsonResponse(
+    { error: "Method not allowed. Use POST." },
+    405,
+    generateRequestId()
+  );
 }
