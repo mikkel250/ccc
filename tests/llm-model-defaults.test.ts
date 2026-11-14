@@ -113,6 +113,38 @@ describe("provider default models", () => {
     assert.equal(capturedModel, "claude-haiku-4-5");
   });
 
+  it("callAnthropic forwards abort signal to models.list", async () => {
+    const controller = new AbortController();
+    let listSignal: AbortSignal | undefined;
+    const mockClient = {
+      models: {
+        list: async (
+          _params?: unknown,
+          options?: { signal?: AbortSignal }
+        ) => {
+          listSignal = options?.signal;
+          return { data: [{ id: "claude-haiku-4-5" }] };
+        },
+      },
+      messages: {
+        create: async (params: { model: string }) => ({
+          model: params.model,
+          content: [{ type: "text", text: "ok" }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+          stop_reason: "end_turn",
+        }),
+      },
+    } as unknown as Anthropic;
+
+    await callAnthropic([{ role: "user", content: "Hi" }], "System", {
+      anthropicClient: mockClient,
+      model: "anthropic/haiku",
+      signal: controller.signal,
+    });
+
+    assert.equal(listSignal, controller.signal);
+  });
+
   it("callAnthropic resolves sonnet alias to versioned model id", async () => {
     let capturedModel: string | undefined;
     const mockClient = {

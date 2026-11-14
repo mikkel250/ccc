@@ -11,7 +11,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
 import { recordLangSmithTrace, recordLangfuseTrace, type LangfusePromptRef } from './tracers';
 import { toTraceOptions, type TracePayload } from './tracers/tracer';
-import { getDeepSeekBaseUrl, getEnvNumber, getLLMConfig, getDefaultLlmModel, truncateSafeLogDetail } from '../../../lib/env';
+import { getDeepSeekBaseUrl, getEnvNumber, getLLMConfig, getDefaultLlmModel, getLlmTimeoutMs, truncateSafeLogDetail } from '../../../lib/env';
 import type { ReasoningEffort } from '../../../lib/env';
 import { parseNamespacedProvider, KNOWN_PROVIDERS, type Provider } from '../../../lib/providers';
 import anthropicModels from '../../../config/anthropic-models.json';
@@ -77,7 +77,10 @@ export interface ChatOptions {
    * DeepSeek direct gets `thinking` + `reasoning_effort` (mapped). Unset = provider default.
    */
   reasoningEffort?: ReasoningEffort;
-  /** Abort signal for bounded LLM calls (judge/revise deadlines). */
+  /**
+   * Abort signal combined with `LLM_TIMEOUT_MS` inside `chat()`.
+   * Caller abort (inbox lease loss) still wins when it fires first.
+   */
   signal?: AbortSignal;
   /** Test-only: inject OpenAI client */
   openaiClient?: OpenAI;
@@ -545,13 +548,17 @@ function pickVersionedAnthropicModelId(
 async function resolveLatestModelId(
   family: AnthropicModelAlias,
   client: Anthropic,
+  signal?: AbortSignal,
 ): Promise<string> {
   const cacheTtlMs = getEnvNumber('ANTHROPIC_MODEL_CACHE_TTL_MS', 7 * 24 * 60 * 60 * 1000);
   const cached = resolvedModelCache.get(family);
   if (cached && Date.now() - cached.ts < cacheTtlMs) return cached.id;
 
   try {
-    const page = await client.models.list();
+    const page = await client.models.list(
+      {},
+      signal ? { signal } : undefined,
+    );
     const resolved = pickVersionedAnthropicModelId(
       family,
       page.data.map((m) => m.id),
@@ -575,14 +582,15 @@ async function resolveLatestModelId(
 async function normalizeAnthropicModel(
   model: string,
   client: Anthropic,
+  signal?: AbortSignal,
 ): Promise<string> {
   const cleaned = model.replace(/^anthropic\//, '');
   if (isVersionedModelId(cleaned)) return cleaned;
 
-  if (isAnthropicAlias(cleaned)) return resolveLatestModelId(cleaned, client);
+  if (isAnthropicAlias(cleaned)) return resolveLatestModelId(cleaned, client, signal);
 
   const family = detectAnthropicFamily(cleaned);
-  if (family) return resolveLatestModelId(family, client);
+  if (family) return resolveLatestModelId(family, client, signal);
 
   return cleaned;
 }
@@ -598,7 +606,7 @@ export async function callAnthropic(
   if (!rawModel) throw new Error('model is required for callAnthropic');
 
   const anthropic = getAnthropic(options);
-  const model = await normalizeAnthropicModel(rawModel, anthropic);
+  const model = await normalizeAnthropicModel(rawModel, anthropic, options.signal);
 
   const formattedMessages = formatMessages(messages);
   const claudeMessages = formattedMessages
@@ -823,8 +831,105 @@ function buildLlmTracePayload(params: {
 }
 
 /**
+ * Referenced abort timer. AbortSignal.timeout() is unref'd, so a hung
+ * provider call that is the only pending work never fires the deadline.
+ */
+function llmAbortAfter(timeoutMs: number): {
+  signal: AbortSignal;
+  cancel: () => void;
+} {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timer),
+  };
+}
+
+function combineAbortSignals(
+  left: AbortSignal,
+  right: AbortSignal
+): { signal: AbortSignal; dispose: () => void } {
+  if (left.aborted || right.aborted) {
+    const aborted = new AbortController();
+    aborted.abort();
+    return { signal: aborted.signal, dispose: () => {} };
+  }
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  left.addEventListener("abort", abort, { once: true });
+  right.addEventListener("abort", abort, { once: true });
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      left.removeEventListener("abort", abort);
+      right.removeEventListener("abort", abort);
+    },
+  };
+}
+
+function llmTimeoutError(timeoutMs: number): Error {
+  return new Error(`LLM request timed out after ${timeoutMs}ms`);
+}
+
+/**
+ * Bound `work` by the deadline even when the provider SDK ignores AbortSignal.
+ * `abortSignal` is the same combined signal passed to the SDK, so caller abort
+ * also fails closed. Caller abort is not rewritten as a timeout. The abort
+ * listener is removed when `work` settles so a successful call does not leak
+ * a pending rejector.
+ */
+async function raceWithLlmDeadline<T>(
+  work: Promise<T>,
+  deadline: { signal: AbortSignal; cancel: () => void },
+  timeoutMs: number,
+  callerSignal: AbortSignal | undefined,
+  abortSignal: AbortSignal
+): Promise<T> {
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      const onAbort = (): void => {
+        cleanup();
+        if (callerSignal?.aborted) {
+          reject(new DOMException("The operation was aborted", "AbortError"));
+          return;
+        }
+        reject(llmTimeoutError(timeoutMs));
+      };
+      const cleanup = (): void => {
+        abortSignal.removeEventListener("abort", onAbort);
+        deadline.cancel();
+      };
+      if (abortSignal.aborted) {
+        onAbort();
+        return;
+      }
+      abortSignal.addEventListener("abort", onAbort, { once: true });
+      work.then(
+        (value) => {
+          cleanup();
+          resolve(value);
+        },
+        (error: unknown) => {
+          cleanup();
+          if (deadline.signal.aborted && !callerSignal?.aborted) {
+            reject(llmTimeoutError(timeoutMs));
+            return;
+          }
+          reject(error);
+        }
+      );
+    });
+  } finally {
+    deadline.cancel();
+    void work.catch(() => {});
+  }
+}
+
+/**
  * Central entry for all LLM chat completions. Resolves model from options or AI_MODEL,
  * dispatches to the correct provider integration, and records traces for observability.
+ * Every dispatch is bounded by `LLM_TIMEOUT_MS` (default 5 min).
  */
 export async function chat(
   messages: Omit<ChatMessage, 'role'>[] | ChatMessage[],
@@ -834,14 +939,28 @@ export async function chat(
   const model = options.model || getDefaultLlmModel();
   const provider = detectProvider(model);
   const startTime = Date.now();
+  const timeoutMs = getLlmTimeoutMs();
+  const deadline = llmAbortAfter(timeoutMs);
+  const callerSignal = options.signal;
+  const combined = callerSignal
+    ? combineAbortSignals(callerSignal, deadline.signal)
+    : { signal: deadline.signal, dispose: () => {} };
+  const signal = combined.signal;
 
   console.log(`LLM dispatch: ${model} (${provider})`);
 
   try {
-    const response = await dispatchProvider(provider, messages, systemPrompt, {
-      ...options,
-      model,
-    });
+    const response = await raceWithLlmDeadline(
+      dispatchProvider(provider, messages, systemPrompt, {
+        ...options,
+        model,
+        signal,
+      }),
+      deadline,
+      timeoutMs,
+      callerSignal,
+      signal
+    );
 
     const tracePayload = buildLlmTracePayload({
       provider,
@@ -887,6 +1006,8 @@ export async function chat(
     await recordLangfuseTrace(tracePayload);
 
     throw error;
+  } finally {
+    combined.dispose();
   }
 }
 

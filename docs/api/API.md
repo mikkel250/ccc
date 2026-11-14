@@ -191,7 +191,7 @@ Rate limit exceeded (see above).
 
 #### 503 Service Unavailable
 
-Auth misconfiguration (`TAILOR_API_KEY` unset, production bypass hard-block), master CV unavailable, curator prompt missing `{{MASTER_CV_JSON}}`, rate-limit Redis failure, or LLM service error (client-safe messages). Upstream timeouts, connection failures, and provider rate limits are LLM service errors.
+Auth misconfiguration (`TAILOR_API_KEY` unset, production bypass hard-block), master CV unavailable, curator prompt missing `{{MASTER_CV_JSON}}`, rate-limit Redis failure, or LLM service error (client-safe messages). Upstream timeouts, connection failures, provider rate limits, and server-side `LLM_TIMEOUT_MS` aborts are LLM service errors.
 
 #### 500 Internal Server Error
 
@@ -220,6 +220,7 @@ Errors use `{ "error": string }`. `remaining` / `resetTime` appear on 429 only.
 | `RATE_LIMIT_SESSION_ID_MAX_CHARS` | Max chars for a `sessionId` caller key | `128` |
 | `TAILOR_REQUEST_MAX_BYTES` / `TAILOR_JD_MAX_CHARS` | Ingress limits | `65536` / `50000` |
 | `TAILOR_CURATED_JSON_MAX_BYTES` / `TAILOR_RESPONSE_MAX_BYTES` | Egress limits | `512000` / `2097152` |
+| `LLM_TIMEOUT_MS` | Abort hung `chat()` dispatches (HTTP tailor, inbox, smoke) | `300000` |
 
 Full catalog with comments: [`.env.example`](../../.env.example)
 

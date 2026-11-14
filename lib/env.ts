@@ -69,6 +69,8 @@ const DEFAULT_LLM_MODEL = 'openrouter/openai/gpt-5.4-mini';
 const DEFAULT_TAILOR_MODEL = 'anthropic/sonnet';
 const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
 const MIN_MAX_TOKENS = 1;
+/** Max ms for a `chat()` dispatch before abort. Raise for slow frontier/reasoning. */
+export const DEFAULT_LLM_TIMEOUT_MS = 300_000;
 
 function validateDefaultModel(model: string): string {
   const slash = model.indexOf('/');
@@ -114,6 +116,14 @@ export function getDeepSeekBaseUrl(): string {
 
 export function getDefaultLlmModel(): string {
   return getLLMConfig().defaultModel;
+}
+
+/**
+ * Bound every `chat()` dispatch. Min 1ms so a zero/negative env cannot disable
+ * the deadline. Caller abort signals still win when they fire first.
+ */
+export function getLlmTimeoutMs(): number {
+  return Math.max(1, Math.floor(getEnvNumber("LLM_TIMEOUT_MS", DEFAULT_LLM_TIMEOUT_MS)));
 }
 
 export function getTailorModel(): string {
