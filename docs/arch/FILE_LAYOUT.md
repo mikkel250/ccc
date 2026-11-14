@@ -9,7 +9,8 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── page.tsx                  # Returns notFound() — API-only, no frontend
 │   ├── not-found.tsx             # 404 page
 │   └── api/
-│       ├── hello/route.ts        # Health check GET /api/hello
+│       ├── hello/route.ts        # Liveness GET /api/hello
+│       ├── ready/route.ts        # Readiness GET /api/ready (auth + master CV + Redis env)
 │       ├── tailor-cv/route.ts    # POST /api/tailor-cv — main CV generation endpoint
 │       └── lib/                  # All business logic lives here
 │           ├── llm.ts            # Multi-provider LLM client
@@ -19,6 +20,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── cv-schema.ts      # Ajv draft-2020-12 validation + size limits
 │           ├── json-docx-builder.ts # Mechanical JSON → .docx (BUILDER_VERSION)
 │           ├── tailor-auth.ts    # Bearer shared-secret gate
+│           ├── readiness.ts      # Config-only readiness checks for GET /api/ready
 │           ├── smoke-helpers.ts  # Smoke artifact redaction, parity catalog, nested paths
 │           ├── smoke-runner.ts   # verifySmokePipeline — health → tailor → artifacts
 │           ├── chat-prompt.ts    # Chat assistant system prompt (legacy, no route yet)
@@ -91,6 +93,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── smoke-helpers.test.ts              # Artifact redaction
 │   ├── master-cv.test.ts / cv-schema.test.ts
 │   ├── tailor-auth.test.ts
+│   ├── readiness.test.ts                  # GET /api/ready config checks + Railway healthcheck
 │   ├── tailor-pipeline.test.ts            # HTTP adapter + runTailorCore
 │   ├── inbox-tailor.test.ts               # Labeled-message in-process entry
 │   ├── inbox-scan.test.ts                 # Scan: draft/reuse/processed/skip

@@ -52,11 +52,43 @@ HTTP 429
 
 ## `GET /api/hello`
 
-Health probe. No LLM call, no master CV access.
+Liveness probe. Confirms the Node process is up. No LLM call, no master CV access, no Redis check. `npm run smoke` uses this before calling tailor.
 
 **Response 200:**
 ```json
 { "service": "cv-tailoring-api", "status": "ok" }
+```
+
+---
+
+## `GET /api/ready`
+
+Readiness probe. No auth header, no LLM call, no Redis ping. Returns **200** only when this process can serve `POST /api/tailor-cv` without immediately 503ing on missing config:
+
+| Check | Ready when |
+|-------|------------|
+| `auth` | `TAILOR_API_KEY` is set, or local insecure bypass is on outside production-like deploys |
+| `masterCv` | Valid master CV in the startup preload cache, or loaded once from `MASTER_CV_JSON` / `MASTER_CV_PATH` if that cache is still empty |
+| `redis` | `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are both set |
+
+Railway `healthcheckPath` is this route. A failed check is **503** (`status: "not_ready"`) so a misconfigured deploy is not marked healthy. Check names only — no secret values.
+
+**Response 200:**
+```json
+{
+  "service": "cv-tailoring-api",
+  "status": "ok",
+  "checks": { "auth": "ok", "masterCv": "ok", "redis": "ok" }
+}
+```
+
+**Response 503:**
+```json
+{
+  "service": "cv-tailoring-api",
+  "status": "not_ready",
+  "checks": { "auth": "failed", "masterCv": "failed", "redis": "failed" }
+}
 ```
 
 ---
@@ -209,6 +241,7 @@ npm run regen-docx -- path/to/curated.json out.docx --builder-version=1.0.0
 
 ```bash
 curl http://localhost:3000/api/hello
+curl http://localhost:3000/api/ready
 
 curl -s -X POST http://localhost:3000/api/tailor-cv \
   -H "Content-Type: application/json" \

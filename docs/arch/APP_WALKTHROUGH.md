@@ -48,7 +48,8 @@ Inbox is not this HTTP client. `tailorLabeledMessage` (`app/api/lib/inbox-tailor
 |------|------|----------|-------|
 | Route handler | `app/api/tailor-cv/route.ts` | `POST` | `runtime = "nodejs"` — Railway Node process, not Edge |
 | Method guard | same | `GET` | Returns 405; only POST is supported |
-| Health check | `app/api/hello/route.ts` | `GET` | `{ service, status: "ok" }` — deploy probes and `npm run smoke` |
+| Liveness | `app/api/hello/route.ts` | `GET` | `{ service, status: "ok" }` — process up; `npm run smoke` |
+| Readiness | `app/api/ready/route.ts` | `GET` | `{ service, status, checks }` — auth + master CV (preload cache, load-once if empty) + Redis env; Railway `healthcheckPath` |
 
 The root page (`app/page.tsx :: Home`) calls `notFound()` — there is intentionally no frontend.
 

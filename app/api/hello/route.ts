@@ -1,4 +1,4 @@
-/** Deploy health probe — confirms the Node process is up. No LLM or KB access. */
+/** Liveness probe — confirms the Node process is up. No LLM, master CV, or Redis. */
 import { NextResponse } from "next/server";
 
 export async function GET() {

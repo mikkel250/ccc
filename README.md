@@ -54,7 +54,8 @@ Full catalog: [`.env.example`](.env.example)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/hello` | Health probe |
+| `GET` | `/api/hello` | Liveness probe (process up) |
+| `GET` | `/api/ready` | Readiness probe (auth, master CV, Redis env) |
 | `POST` | `/api/tailor-cv` | Bearer + JD → `{ cv, curatedJson, builderVersion, model, usage, remaining, resetTime }` |
 
 Full reference: [`docs/api/API.md`](docs/api/API.md)
