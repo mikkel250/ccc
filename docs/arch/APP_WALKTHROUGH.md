@@ -121,7 +121,7 @@ Parse/schema/builder failures → **422** with no dual artifacts. Success → `{
 | Curator/schema/builder | 422 | client-safe; no dual artifacts |
 | `RateLimitError` | 429 | forwards `error.message` |
 | `ServiceError` | 503 | forwards `error.message` |
-| LLM provider/quota/timeout/connection/429 errors | 503 | `isLlmServiceError(message)` → masked generic message |
+| LLM provider/quota/timeout/connection/429 errors | 503 | `isLlmServiceError(message)` → masked generic message. Includes server-side `LLM_TIMEOUT_MS` aborts. |
 | Other | 500 | generic internal error |
 
 ---
@@ -134,6 +134,7 @@ All runtime config flows through env vars parsed in `lib/env.ts`:
 |----------|--------|---------|
 | `TAILOR_MODEL` | `getTailorModel()` | Production CV generation |
 | `AI_MODEL` | `getDefaultLlmModel()` | Default when `chat()` has no model override |
+| `LLM_TIMEOUT_MS` | `getLlmTimeoutMs()` | Abort hung `chat()` dispatches (default 300000) |
 | `EVAL_*` | `getEvalModels()`, etc. | Offline eval pipeline only |
 | `RATE_LIMIT_*` | read in `rate-limit.ts` | Burst limiter |
 | Langfuse / LangSmith keys | init functions | Tracing (opt-in via `*_TRACING=true`) |

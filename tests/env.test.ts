@@ -1,5 +1,7 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import {
   getDeepSeekBaseUrl,
   getEnvFloat,
@@ -8,6 +10,8 @@ import {
   getEvalExtractionModel,
   getEvalModels,
   getLLMConfig,
+  getLlmTimeoutMs,
+  DEFAULT_LLM_TIMEOUT_MS,
   getTailorModel,
   getDefaultCurationMode,
   getSmokeParityModelsCsv,
@@ -287,5 +291,44 @@ describe("getDeepSeekBaseUrl", () => {
   it("defaults when DEEPSEEK_BASE_URL is empty string", () => {
     process.env.DEEPSEEK_BASE_URL = "";
     assert.equal(getDeepSeekBaseUrl(), "https://api.deepseek.com");
+  });
+});
+
+describe("getLlmTimeoutMs", () => {
+  const key = "LLM_TIMEOUT_MS";
+  const previous = process.env[key];
+
+  afterEach(() => {
+    if (previous === undefined) delete process.env[key];
+    else process.env[key] = previous;
+  });
+
+  it("defaults to DEFAULT_LLM_TIMEOUT_MS when unset", () => {
+    delete process.env[key];
+    assert.equal(getLlmTimeoutMs(), DEFAULT_LLM_TIMEOUT_MS);
+  });
+
+  it("reads a positive LLM_TIMEOUT_MS override", () => {
+    process.env[key] = "45000";
+    assert.equal(getLlmTimeoutMs(), 45000);
+  });
+
+  it("floors zero and negative values to 1ms", () => {
+    process.env[key] = "0";
+    assert.equal(getLlmTimeoutMs(), 1);
+    process.env[key] = "-5";
+    assert.equal(getLlmTimeoutMs(), 1);
+  });
+});
+
+describe("LLM_TIMEOUT_MS catalog", () => {
+  it(".env.example documents LLM_TIMEOUT_MS matching DEFAULT_LLM_TIMEOUT_MS", () => {
+    const content = fs.readFileSync(
+      path.join(process.cwd(), ".env.example"),
+      "utf-8"
+    );
+    const match = content.match(/^\s*#?\s*LLM_TIMEOUT_MS=(\d+)\s*$/m);
+    assert.ok(match, "LLM_TIMEOUT_MS must appear in .env.example");
+    assert.equal(Number(match[1]), DEFAULT_LLM_TIMEOUT_MS);
   });
 });
