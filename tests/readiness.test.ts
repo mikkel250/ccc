@@ -128,6 +128,17 @@ describe("evaluateReadiness", () => {
     assert.equal(result.checks.masterCv, "failed");
   });
 
+  it("reuses a settled master CV on later probes without reparsing", async () => {
+    process.env.TAILOR_API_KEY = "ready-test-key";
+    process.env.MASTER_CV_JSON = FIXTURE_CV;
+    process.env.UPSTASH_REDIS_REST_URL = "https://example-upstash.upstash.io";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "example-token";
+    assert.equal((await evaluateReadiness()).checks.masterCv, "ok");
+    process.env.MASTER_CV_JSON = "{not-json";
+    assert.equal((await evaluateReadiness()).ok, true);
+    assert.equal((await evaluateReadiness()).checks.masterCv, "ok");
+  });
+
   it("passes masterCv after a successful preload", async () => {
     process.env.MASTER_CV_JSON = FIXTURE_CV;
     loadMasterCv();

@@ -220,7 +220,8 @@ Errors use `{ "error": string, "requestId": string }`. `remaining` / `resetTime`
 | `RATE_LIMIT_SESSION_ID_MAX_CHARS` | Max chars for a `sessionId` caller key | `128` |
 | `TAILOR_REQUEST_MAX_BYTES` / `TAILOR_JD_MAX_CHARS` | Ingress limits | `65536` / `50000` |
 | `TAILOR_CURATED_JSON_MAX_BYTES` / `TAILOR_RESPONSE_MAX_BYTES` | Egress limits | `512000` / `2097152` |
-| `LLM_TIMEOUT_MS` | Abort hung `chat()` dispatches (HTTP tailor, inbox, smoke) | `300000` |
+| `LLM_TIMEOUT_MS` | Abort hung `chat()` provider dispatches (HTTP tailor, inbox, smoke) | `300000` |
+| `LANGFUSE_FLUSH_TIMEOUT_MS` | Bound the awaited Langfuse record after dispatch; timeout warns and continues | `5000` |
 | `LANGFUSE_TRACING` | Langfuse generations (exactly `true` to enable) | `false` |
 | `LANGSMITH_TRACING` | LangSmith runs (exactly `true` plus `LANGSMITH_API_KEY`) | `false` |
 

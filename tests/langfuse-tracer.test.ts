@@ -74,6 +74,22 @@ describe("recordLangfuseTrace — awaited", () => {
     });
     await assert.doesNotReject(() => recordLangfuseTrace(basePayload));
   });
+
+  it("returns when record() stays pending past LANGFUSE_FLUSH_TIMEOUT_MS", { timeout: 500 }, async () => {
+    const saved = process.env.LANGFUSE_FLUSH_TIMEOUT_MS;
+    process.env.LANGFUSE_FLUSH_TIMEOUT_MS = "30";
+    mock.method(langfuseTracer, "record", async () => {
+      await new Promise(() => {});
+    });
+    try {
+      const started = Date.now();
+      await recordLangfuseTrace(basePayload);
+      assert.ok(Date.now() - started < 400);
+    } finally {
+      if (saved === undefined) delete process.env.LANGFUSE_FLUSH_TIMEOUT_MS;
+      else process.env.LANGFUSE_FLUSH_TIMEOUT_MS = saved;
+    }
+  });
 });
 
 describe("buildLangfuseGenerationUpdate — content redaction (R8b)", () => {

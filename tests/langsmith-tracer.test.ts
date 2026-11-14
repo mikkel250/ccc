@@ -2,7 +2,7 @@ import { describe, it, mock, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { langsmithTracer } from "../app/api/lib/tracers/langsmith";
+import { langsmithTracer, resolveLangSmithEndpoint } from "../app/api/lib/tracers/langsmith";
 import { recordLangSmithTrace } from "../app/api/lib/tracers";
 import type { ChatResponse } from "../app/api/lib/llm";
 
@@ -51,15 +51,14 @@ describe("langsmithTracer.isEnabled", () => {
     assert.match(catalog, /^#? ?LANGSMITH_WORKSPACE_ID=/m);
     const endpoint = catalog.match(/^#? ?LANGSMITH_ENDPOINT=(.*)$/m);
     assert.ok(endpoint, "LANGSMITH_ENDPOINT must be catalogued in .env.example");
-    const source = readFileSync(
-      join(process.cwd(), "app/api/lib/tracers/langsmith.ts"),
-      "utf8"
-    );
-    const codeDefault = source.match(
-      /getEnvString\(\s*['"]LANGSMITH_ENDPOINT['"]\s*,\s*['"]([^'"]+)['"]/
-    );
-    assert.ok(codeDefault, "langsmith.ts must default LANGSMITH_ENDPOINT");
-    assert.equal(endpoint[1], codeDefault[1]);
+    const saved = process.env.LANGSMITH_ENDPOINT;
+    delete process.env.LANGSMITH_ENDPOINT;
+    try {
+      assert.equal(resolveLangSmithEndpoint(), endpoint[1]);
+    } finally {
+      if (saved === undefined) delete process.env.LANGSMITH_ENDPOINT;
+      else process.env.LANGSMITH_ENDPOINT = saved;
+    }
   });
 });
 

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NextRequest } from "next/server";
 import { POST, GET } from "../app/api/tailor-cv/route";
+import { REQUEST_ID_MAX_CHARS } from "../app/api/lib/request-id";
 import { RateLimitError, ServiceError } from "../app/api/lib/errors";
 import {
   __injectRatelimitForTest,
@@ -703,6 +704,31 @@ describe("POST /api/tailor-cv — request ids", () => {
     const json = (await response.json()) as { requestId?: string };
     assert.notEqual(json.requestId, inbound);
     assert.match(json.requestId!, REQUEST_ID_RE);
+    assert.equal(response.headers.get("x-request-id"), json.requestId);
+  });
+
+  it("replaces an overlong inbound X-Request-Id with one safe id on header and body", async () => {
+    const inbound = "a".repeat(REQUEST_ID_MAX_CHARS + 1);
+    const response = await POST(
+      buildPostRequest("", authHeaders({
+        "x-forwarded-for": "198.51.100.42",
+        "x-request-id": inbound,
+      }))
+    );
+    assert.equal(response.status, 400);
+    const json = (await response.json()) as { requestId?: string };
+    assert.notEqual(json.requestId, inbound);
+    assert.match(json.requestId!, REQUEST_ID_RE);
+    assert.equal(response.headers.get("x-request-id"), json.requestId);
+  });
+
+  it("GET 405 uses one generated safe id on the body and x-request-id", async () => {
+    const response = await GET();
+    assert.equal(response.status, 405);
+    const json = (await response.json()) as { error?: string; requestId?: string };
+    assert.match(json.error ?? "", /method not allowed/i);
+    assert.match(json.requestId!, REQUEST_ID_RE);
+    assert.equal(response.headers.get("x-request-id"), json.requestId);
   });
 
   it("sets x-request-id on 200 without adding requestId to the success body", async () => {

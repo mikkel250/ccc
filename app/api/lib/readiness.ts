@@ -2,10 +2,10 @@
  * Config-only readiness: can this process serve POST /api/tailor-cv without
  * immediately 503ing on missing auth, master CV, or Redis credentials.
  *
- * No LLM calls, no Redis ping. Master CV uses the startup preload cache, or
- * loads once if instrumentation has not finished (avoids Railway healthcheck
- * races). A network ping would restart the service on Upstash blips while
- * tailor already fail-closes those per request.
+ * No LLM calls, no Redis ping. A settled master-CV preload is reused as-is.
+ * Concurrent probes share that in-flight load instead of parsing the CV again.
+ * A network ping would restart the service on Upstash blips while tailor
+ * already fail-closes those per request.
  */
 import { getEnvString } from "../../../lib/env";
 import { preloadMasterCv } from "./master-cv";

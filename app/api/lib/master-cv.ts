@@ -10,8 +10,7 @@
  * Cache lives on `globalThis` so Next.js instrumentation and the route bundle
  * share one instance (each webpack graph would otherwise get its own module scope).
  */
-import { readFileSync, statSync, constants } from "node:fs";
-import { open } from "node:fs/promises";
+import { readFileSync, statSync, constants, promises as fsPromises } from "node:fs";
 import { getEnvString } from "../../../lib/env";
 import { ServiceError } from "./errors";
 import { validateCvJson } from "./cv-schema";
@@ -23,6 +22,7 @@ export type MasterCvLoadResult =
 /** globalThis key for the shared preload cache (overridable via env). */
 const MASTER_CV_CACHE_KEY =
   getEnvString("MASTER_CV_CACHE_KEY", "__cccMasterCvCache") ?? "__cccMasterCvCache";
+const MASTER_CV_INFLIGHT_KEY = `${MASTER_CV_CACHE_KEY}:inflight`;
 
 function getCachedResult(): MasterCvLoadResult | undefined {
   return Reflect.get(globalThis, MASTER_CV_CACHE_KEY) as
@@ -35,6 +35,20 @@ function setCachedResult(result: MasterCvLoadResult | undefined): void {
     Reflect.deleteProperty(globalThis, MASTER_CV_CACHE_KEY);
   } else {
     Reflect.set(globalThis, MASTER_CV_CACHE_KEY, result);
+  }
+}
+
+function getInflight(): Promise<MasterCvLoadResult> | undefined {
+  return Reflect.get(globalThis, MASTER_CV_INFLIGHT_KEY) as
+    | Promise<MasterCvLoadResult>
+    | undefined;
+}
+
+function setInflight(pending: Promise<MasterCvLoadResult> | undefined): void {
+  if (pending === undefined) {
+    Reflect.deleteProperty(globalThis, MASTER_CV_INFLIGHT_KEY);
+  } else {
+    Reflect.set(globalThis, MASTER_CV_INFLIGHT_KEY, pending);
   }
 }
 
@@ -69,7 +83,7 @@ async function loadFromPathAsync(filePath: string): Promise<MasterCvLoadResult> 
   let handle;
   try {
     // O_NOFOLLOW: refuse to open via symlink; fstat/read use the same descriptor.
-    handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    handle = await fsPromises.open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
   } catch {
     return { ok: false, error: "Master CV configuration is unavailable" };
   }
@@ -150,9 +164,20 @@ export async function preloadMasterCv(): Promise<MasterCvLoadResult> {
   if (existing !== undefined) {
     return existing;
   }
-  const result = await resolveMasterCvAsync();
-  setCachedResult(result);
-  return result;
+  const inflight = getInflight();
+  if (inflight) {
+    return inflight;
+  }
+  const pending = resolveMasterCvAsync()
+    .then((result) => {
+      setCachedResult(result);
+      return result;
+    })
+    .finally(() => {
+      setInflight(undefined);
+    });
+  setInflight(pending);
+  return pending;
 }
 
 /**
@@ -192,4 +217,5 @@ export function __resetMasterCvCacheForTest(): void {
     );
   }
   setCachedResult(undefined);
+  setInflight(undefined);
 }
