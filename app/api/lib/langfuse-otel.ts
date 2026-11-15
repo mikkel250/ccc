@@ -12,6 +12,7 @@ type FlushableSpanProcessor = {
 let otelStarted = false;
 let otelStarting: Promise<void> | null = null;
 let spanProcessor: FlushableSpanProcessor | null = null;
+let otelInitAttempts = 0;
 
 export function __resetLangfuseOtelForTest(): void {
   if (process.env.NODE_ENV !== "test") {
@@ -20,6 +21,16 @@ export function __resetLangfuseOtelForTest(): void {
   otelStarted = false;
   otelStarting = null;
   spanProcessor = null;
+  otelInitAttempts = 0;
+}
+
+export function __getLangfuseOtelInitAttemptsForTest(): number {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error(
+      "__getLangfuseOtelInitAttemptsForTest is only available in the test environment"
+    );
+  }
+  return otelInitAttempts;
 }
 
 export function __injectLangfuseSpanProcessorForTest(
@@ -52,6 +63,7 @@ export async function ensureLangfuseOtel(): Promise<void> {
   }
 
   otelStarting = (async () => {
+    otelInitAttempts += 1;
     try {
       const { NodeSDK } = await import("@opentelemetry/sdk-node");
       const { LangfuseSpanProcessor } = await import("@langfuse/otel");

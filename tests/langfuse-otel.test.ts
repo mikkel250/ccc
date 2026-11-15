@@ -10,6 +10,7 @@ import {
   ensureLangfuseOtel,
   flushLangfuseTraces,
   getLangfuseFlushTimeoutMs,
+  __getLangfuseOtelInitAttemptsForTest,
   __injectLangfuseSpanProcessorForTest,
   __resetLangfuseOtelForTest,
 } from "../app/api/lib/langfuse-otel";
@@ -85,8 +86,11 @@ describe("ensureLangfuseOtel gating", () => {
   });
 
   it("is a no-op when LANGFUSE_TRACING is unset", async () => {
+    process.env.LANGFUSE_PUBLIC_KEY = "pk-test";
+    process.env.LANGFUSE_SECRET_KEY = "sk-test";
     await ensureLangfuseOtel();
     await flushLangfuseTraces();
+    assert.equal(__getLangfuseOtelInitAttemptsForTest(), 0);
   });
 
   it("is a no-op when LANGFUSE_TRACING is not exactly true", async () => {
@@ -95,12 +99,14 @@ describe("ensureLangfuseOtel gating", () => {
     process.env.LANGFUSE_SECRET_KEY = "sk-test";
     await ensureLangfuseOtel();
     await flushLangfuseTraces();
+    assert.equal(__getLangfuseOtelInitAttemptsForTest(), 0);
   });
 
   it("is a no-op when keys are missing even if tracing is true", async () => {
     process.env.LANGFUSE_TRACING = "true";
     await ensureLangfuseOtel();
     await flushLangfuseTraces();
+    assert.equal(__getLangfuseOtelInitAttemptsForTest(), 0);
   });
 });
 
@@ -167,6 +173,7 @@ describe("ensureLangfuseOtel 0.301 start", () => {
 
     try {
       await ensureLangfuseOtel();
+      assert.equal(__getLangfuseOtelInitAttemptsForTest(), 1);
       await startActiveObservation(
         "otel-upgrade-probe",
         async (generation) => {
