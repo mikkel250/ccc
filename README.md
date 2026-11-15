@@ -1,6 +1,6 @@
 # CV Tailoring API
 
-Next.js 15 backend: `POST /api/tailor-cv` curates a JD-specific CV JSON from a private master JSON, mechanically renders `.docx`, and returns both artifacts. An inbox worker in this process (Gmail label → draft + attach) is specified in [docs/plans/2026-09-05-002-feat-inbox-worker-plan.md](docs/plans/2026-09-05-002-feat-inbox-worker-plan.md); no product UI in v1.
+Next.js 16 backend: `POST /api/tailor-cv` curates a JD-specific CV JSON from a private master JSON, mechanically renders `.docx`, and returns both artifacts. An inbox worker in this process (Gmail label → draft + attach) is specified in [docs/plans/2026-09-05-002-feat-inbox-worker-plan.md](docs/plans/2026-09-05-002-feat-inbox-worker-plan.md); no product UI in v1.
 
 ## Overview
 
@@ -12,7 +12,7 @@ Next.js 15 backend: `POST /api/tailor-cv` curates a JD-specific CV JSON from a p
 
 ## Prerequisites
 
-- Node.js ≥ 22.0.0
+- Node.js ≥ 22.15.0
 - npm
 - At least one LLM API key for the configured `TAILOR_MODEL` provider
 - `TAILOR_API_KEY`, plus `MASTER_CV_JSON` or `MASTER_CV_PATH`
