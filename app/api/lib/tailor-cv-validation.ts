@@ -25,7 +25,7 @@ export type ValidateTailorCvResult =
     }
   | { ok: false; error: string };
 
-function isTailorCvRequestBody(record: Record<string, unknown>): record is TailorCvRequestBody {
+function isTailorCvRequestBody(_record: Record<string, unknown>): _record is TailorCvRequestBody {
   return true;
 }
 

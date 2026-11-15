@@ -3,17 +3,6 @@ import assert from "node:assert/strict";
 import { scoreFormatCompliance } from "../app/api/lib/eval-format";
 import { FormatSection } from "../app/api/lib/eval-schema";
 
-const STRUAN_EIGHT_PART_SECTIONS = [
-  "Contact Information",
-  "Objective Value Statement",
-  "Relevant Accomplishments",
-  "Technical Skills",
-  "Standard Job Information",
-  "Company Summaries",
-  "Measurable Accomplishments",
-  "Education",
-] as const;
-
 const SECTION_CONTENT: Record<string, string> = {
   "Contact Information": "San Francisco, CA | email@example.com",
   "Objective Value Statement":

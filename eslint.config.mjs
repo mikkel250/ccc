@@ -1,6 +1,9 @@
 import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
-import tseslint from "typescript-eslint";
+import { FlatCompat } from "@eslint/eslintrc";
+
+const compat = new FlatCompat({
+  baseDirectory: import.meta.dirname,
+});
 
 const noTestFrameworkImports = [
   "error",
@@ -33,14 +36,24 @@ const noTestFrameworkImports = [
   },
 ];
 
+// eslint-config-next@15 (matching Next 15) — no ESM flat export; use FlatCompat.
 const eslintConfig = defineConfig([
-  ...nextVitals,
+  ...compat.extends("next/core-web-vitals", "next/typescript"),
   globalIgnores([
     ".next/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "references/**",
   ]),
+  {
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+    },
+  },
   {
     files: [
       "app/**/*.ts",
@@ -49,9 +62,6 @@ const eslintConfig = defineConfig([
       "instrumentation.ts",
       "instrumentation.node.ts",
     ],
-    plugins: {
-      "@typescript-eslint": tseslint.plugin,
-    },
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
       "no-restricted-imports": noTestFrameworkImports,
