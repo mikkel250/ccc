@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tailorCvDeps } from "../app/api/lib/tailor-cv-deps";
-import { RateLimitError } from "../app/api/lib/errors";
 import { resetRedisClientForTest } from "../app/api/lib/redis";
 import {
   authHeaders,

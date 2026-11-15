@@ -123,6 +123,7 @@ RUN_INBOX_REDIS_TESTS=1 UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... 
 | `tests/curator-prompt.test.ts` | Curator prompt contract |
 | `tests/knowledge-base.test.ts` | Legacy KB helpers (not tailor hot path) |
 | `tests/ci-workflow.test.ts` | GitHub Actions CI workflow: lint + `npm test` + build on PRs/`main`; no live-secret jobs |
+| `tests/eslint-config.test.ts` | ESLint 9 flat config; `eslint-config-next` major matches Next 15 (FlatCompat, not the Next 16 ESM export) |
 | `tests/markdown-docx.test.ts` | Legacy markdown→docx; `isValidDocxBase64` rejects unpadded / charset-invalid input |
 | `tests/npm-test-script.test.ts` | `package.json` `test` script keeps quoted `tests/**/*.test.ts` glob for nested tests under npm |
 | `tests/rate-limit.test.ts` | Dual IP + secret rate limits |
