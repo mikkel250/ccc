@@ -50,6 +50,36 @@ describe("LANGFUSE_FLUSH_TIMEOUT_MS catalog", () => {
   });
 });
 
+describe("test-only Langfuse OTEL helpers", () => {
+  it("setLangfuseSpanProcessorForTests throws outside the test environment", () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      assert.throws(
+        () => setLangfuseSpanProcessorForTests(null),
+        /only available in the test environment/i
+      );
+    } finally {
+      if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = originalNodeEnv;
+    }
+  });
+
+  it("resetLangfuseOtelForTests throws outside the test environment", () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      assert.throws(
+        () => resetLangfuseOtelForTests(),
+        /only available in the test environment/i
+      );
+    } finally {
+      if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = originalNodeEnv;
+    }
+  });
+});
+
 describe("flushLangfuseTraces", () => {
   const savedFlushTimeout = ORIGINAL_ENV.LANGFUSE_FLUSH_TIMEOUT_MS;
 
