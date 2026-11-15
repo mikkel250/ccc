@@ -2,6 +2,7 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
+import type { GoogleGenAI } from "@google/genai";
 import {
   chat,
   callOpenRouter,
@@ -460,26 +461,77 @@ describe("chat — LLM_TIMEOUT_MS", () => {
             requestOptions?: { signal?: AbortSignal }
           ) => {
             const signal = requestOptions?.signal;
-            await new Promise<void>((_resolve, reject) => {
-              if (signal?.aborted) {
-                reject(new DOMException("The operation was aborted", "AbortError"));
-                return;
-              }
-              signal?.addEventListener(
-                "abort",
-                () => {
-                  reject(
-                    new DOMException("The operation was aborted", "AbortError")
-                  );
-                },
-                { once: true }
-              );
-            });
+            await hangUntilAbort(signal, true);
             return mockOpenAiChatResponse("late", "openai/gpt-4o");
           },
         },
       },
     } as unknown as OpenAI;
+  }
+
+  function hangUntilAbort(signal: AbortSignal | undefined, honor: boolean): Promise<never> {
+    if (!honor) return new Promise(() => {});
+    return new Promise((_resolve, reject) => {
+      const abort = () => {
+        reject(new DOMException("The operation was aborted", "AbortError"));
+      };
+      if (signal?.aborted) {
+        abort();
+        return;
+      }
+      signal?.addEventListener("abort", abort, { once: true });
+    });
+  }
+
+  function trackAbortListeners(signal: AbortSignal): { added: number; removed: number } {
+    const counts = { added: 0, removed: 0 };
+    const add = signal.addEventListener.bind(signal);
+    const rem = signal.removeEventListener.bind(signal);
+    Object.defineProperty(signal, "addEventListener", {
+      configurable: true,
+      value: (
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+        options?: boolean | AddEventListenerOptions
+      ) => {
+        if (type === "abort") counts.added += 1;
+        return add(type, listener, options);
+      },
+    });
+    Object.defineProperty(signal, "removeEventListener", {
+      configurable: true,
+      value: (
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+        options?: boolean | EventListenerOptions
+      ) => {
+        if (type === "abort") counts.removed += 1;
+        return rem(type, listener, options);
+      },
+    });
+    return counts;
+  }
+
+  function assertAbortListenersReleased(counts: { added: number; removed: number }): void {
+    assert.ok(counts.added > 0, "expected abort listeners to be registered");
+    assert.equal(counts.removed, counts.added);
+  }
+
+  function assertTimedOut(err: unknown): boolean {
+    assert.ok(err instanceof Error);
+    assert.match(err.message, /timed out after 30ms/i);
+    assert.equal(isLlmServiceError(err.message), true);
+    return true;
+  }
+
+  function assertCombinedSignal(
+    received: AbortSignal | undefined,
+    caller: AbortSignal
+  ): asserts received is AbortSignal {
+    assert.ok(received, "provider received an abort signal");
+    assert.notEqual(received, caller);
+    assert.equal(received.aborted, true);
+    assert.equal(caller.aborted, false);
   }
 
   it("aborts a hung provider that ignores AbortSignal", { timeout: 500 }, async () => {
@@ -548,47 +600,116 @@ describe("chat — LLM_TIMEOUT_MS", () => {
     });
   });
 
-  it("releases caller abort listeners after successful chats reuse the same signal", async () => {
+  it("releases caller and combined abort listeners after successful chats reuse the same signal", async () => {
     process.env.LLM_TIMEOUT_MS = "5000";
     const controller = new AbortController();
-    const signal = controller.signal;
-    let added = 0;
-    let removed = 0;
-    const add = signal.addEventListener.bind(signal);
-    const rem = signal.removeEventListener.bind(signal);
-    Object.defineProperty(signal, "addEventListener", {
-      configurable: true,
-      value: (
-        type: string,
-        listener: EventListenerOrEventListenerObject,
-        options?: boolean | AddEventListenerOptions
-      ) => {
-        if (type === "abort") added += 1;
-        return add(type, listener, options);
+    const callerCounts = trackAbortListeners(controller.signal);
+    const combinedCounts: Array<{ added: number; removed: number }> = [];
+    const client = {
+      chat: {
+        completions: {
+          create: async (
+            _body: unknown,
+            requestOptions?: { signal?: AbortSignal }
+          ) => {
+            const providerSignal = requestOptions?.signal;
+            assert.ok(providerSignal);
+            assert.notEqual(providerSignal, controller.signal);
+            combinedCounts.push(trackAbortListeners(providerSignal));
+            return mockOpenAiChatResponse("routed", "openai/gpt-4o");
+          },
+        },
       },
-    });
-    Object.defineProperty(signal, "removeEventListener", {
-      configurable: true,
-      value: (
-        type: string,
-        listener: EventListenerOrEventListenerObject,
-        options?: boolean | EventListenerOptions
-      ) => {
-        if (type === "abort") removed += 1;
-        return rem(type, listener, options);
-      },
-    });
+    } as unknown as OpenAI;
 
     for (let i = 0; i < 3; i++) {
       await chat([{ role: "user", content: "Hi" }], "System", {
         model: "openrouter/openai/gpt-4o",
-        openRouterClient: createCapturingOpenRouterClient(),
-        signal,
+        openRouterClient: client,
+        signal: controller.signal,
       });
     }
 
-    assert.equal(added, 3);
-    assert.equal(removed, added);
+    assert.equal(callerCounts.added, 3);
+    assertAbortListenersReleased(callerCounts);
+    assert.equal(combinedCounts.length, 3);
+    for (const counts of combinedCounts) assertAbortListenersReleased(counts);
+  });
+
+  it("releases caller and combined abort listeners after a timeout", { timeout: 500 }, async () => {
+    const controller = new AbortController();
+    const callerCounts = trackAbortListeners(controller.signal);
+    let providerSignal: AbortSignal | undefined;
+    let combinedCounts: { added: number; removed: number } | undefined;
+    const client = {
+      chat: {
+        completions: {
+          create: async (
+            _body: unknown,
+            requestOptions?: { signal?: AbortSignal }
+          ) => {
+            providerSignal = requestOptions?.signal;
+            assert.ok(providerSignal);
+            assert.notEqual(providerSignal, controller.signal);
+            combinedCounts = trackAbortListeners(providerSignal);
+            return hangUntilAbort(providerSignal, false);
+          },
+        },
+      },
+    } as unknown as OpenAI;
+
+    await assert.rejects(
+      () =>
+        chat([{ role: "user", content: "Hi" }], "System", {
+          model: "openrouter/openai/gpt-4o",
+          openRouterClient: client,
+          signal: controller.signal,
+        }),
+      assertTimedOut
+    );
+
+    assertCombinedSignal(providerSignal, controller.signal);
+    assert.ok(combinedCounts);
+    assertAbortListenersReleased(callerCounts);
+    assertAbortListenersReleased(combinedCounts);
+  });
+
+  it("releases caller and combined abort listeners after provider rejection", async () => {
+    process.env.LLM_TIMEOUT_MS = "5000";
+    const controller = new AbortController();
+    const callerCounts = trackAbortListeners(controller.signal);
+    let combinedCounts: { added: number; removed: number } | undefined;
+    const client = {
+      chat: {
+        completions: {
+          create: async (
+            _body: unknown,
+            requestOptions?: { signal?: AbortSignal }
+          ) => {
+            const providerSignal = requestOptions?.signal;
+            assert.ok(providerSignal);
+            assert.notEqual(providerSignal, controller.signal);
+            combinedCounts = trackAbortListeners(providerSignal);
+            throw new Error("provider rejected");
+          },
+        },
+      },
+    } as unknown as OpenAI;
+
+    await assert.rejects(
+      () =>
+        chat([{ role: "user", content: "Hi" }], "System", {
+          model: "openrouter/openai/gpt-4o",
+          openRouterClient: client,
+          signal: controller.signal,
+        }),
+      /provider rejected/
+    );
+
+    assert.equal(controller.signal.aborted, false);
+    assert.ok(combinedCounts);
+    assertAbortListenersReleased(callerCounts);
+    assertAbortListenersReleased(combinedCounts);
   });
 
   it("fails closed when the caller signal is already aborted", { timeout: 500 }, async () => {
@@ -610,6 +731,135 @@ describe("chat — LLM_TIMEOUT_MS", () => {
       }
     );
   });
+
+  function openAiSignalClient(
+    honor: boolean,
+    capture: (signal: AbortSignal | undefined) => void
+  ) {
+    return {
+      chat: {
+        completions: {
+          create: async (
+            _body: unknown,
+            requestOptions?: { signal?: AbortSignal }
+          ) => {
+            capture(requestOptions?.signal);
+            return hangUntilAbort(requestOptions?.signal, honor);
+          },
+        },
+      },
+    } as unknown as OpenAI;
+  }
+
+  // DeepSeek shares OpenRouter's `{ signal }` request option, but callDeepSeek
+  // forwards that signal on its own. Anthropic uses messages.create's second
+  // argument; Google uses config.abortSignal.
+  const providerDispatches: Array<{
+    name: string;
+    chatOptions: (
+      honor: boolean,
+      capture: (signal: AbortSignal | undefined) => void
+    ) => Parameters<typeof chat>[2];
+  }> = [
+    {
+      name: "Anthropic",
+      chatOptions: (honor, capture) => ({
+        model: "anthropic/claude-sonnet-4-6",
+        anthropicClient: {
+          messages: {
+            create: async (
+              _body: unknown,
+              requestOptions?: { signal?: AbortSignal }
+            ) => {
+              capture(requestOptions?.signal);
+              return hangUntilAbort(requestOptions?.signal, honor);
+            },
+          },
+        } as unknown as Anthropic,
+      }),
+    },
+    {
+      name: "Google",
+      chatOptions: (honor, capture) => ({
+        model: "google/gemini-2.5-pro",
+        googleClient: {
+          models: {
+            generateContent: async (params: {
+              config?: { abortSignal?: AbortSignal };
+            }) => {
+              capture(params.config?.abortSignal);
+              return hangUntilAbort(params.config?.abortSignal, honor);
+            },
+          },
+        } as unknown as GoogleGenAI,
+      }),
+    },
+    {
+      name: "DeepSeek",
+      chatOptions: (honor, capture) => ({
+        model: "deepseek/deepseek-v4-pro",
+        deepseekClient: openAiSignalClient(honor, capture),
+      }),
+    },
+  ];
+
+  for (const providerCase of providerDispatches) {
+    for (const honor of [false, true]) {
+      it(
+        `aborts a hung ${providerCase.name} call that ${honor ? "honors" : "ignores"} AbortSignal and passes the combined signal`,
+        { timeout: 500 },
+        async () => {
+          const controller = new AbortController();
+          let received: AbortSignal | undefined;
+          await assert.rejects(
+            () =>
+              chat(
+                [{ role: "user", content: "Hi" }],
+                "System",
+                {
+                  ...providerCase.chatOptions(honor, (signal) => {
+                    received = signal;
+                  }),
+                  signal: controller.signal,
+                }
+              ),
+            assertTimedOut
+          );
+          assertCombinedSignal(received, controller.signal);
+        }
+      );
+    }
+
+    it(
+      `aborts ${providerCase.name} through the combined signal when the caller aborts`,
+      { timeout: 500 },
+      async () => {
+        process.env.LLM_TIMEOUT_MS = "5000";
+        const controller = new AbortController();
+        let received: AbortSignal | undefined;
+        const pending = chat(
+          [{ role: "user", content: "Hi" }],
+          "System",
+          {
+            ...providerCase.chatOptions(true, (signal) => {
+              received = signal;
+            }),
+            signal: controller.signal,
+          }
+        );
+        controller.abort();
+        await assert.rejects(pending, (err: unknown) => {
+          assert.ok(err instanceof DOMException);
+          assert.equal(err.name, "AbortError");
+          assert.doesNotMatch(err.message, /timed out/i);
+          return true;
+        });
+        assert.ok(received);
+        assert.notEqual(received, controller.signal);
+        assert.equal(received.aborted, true);
+      }
+    );
+  }
 });
 
 describe("isLlmServiceError", () => {
