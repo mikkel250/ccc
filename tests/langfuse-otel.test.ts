@@ -1,7 +1,8 @@
-import { describe, it, beforeEach, afterEach } from "node:test";
+import { describe, it, beforeEach, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { LangfuseSpanProcessor } from "@langfuse/otel";
 import {
   DEFAULT_LANGFUSE_FLUSH_TIMEOUT_MS,
   flushLangfuseTraces,
@@ -48,6 +49,27 @@ describe("LANGFUSE_FLUSH_TIMEOUT_MS catalog", () => {
 
 describe("flushLangfuseTraces", () => {
   it("resolves immediately when Langfuse OTEL was never started", async () => {
-    await assert.doesNotReject(() => flushLangfuseTraces());
+    const forceFlush = mock.method(
+      LangfuseSpanProcessor.prototype,
+      "forceFlush",
+      async () => {
+        throw new Error("forceFlush must not run when Langfuse OTEL was never started");
+      }
+    );
+    const warnings: unknown[][] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args);
+    };
+    try {
+      const pending = flushLangfuseTraces();
+      assert.equal(forceFlush.mock.callCount(), 0);
+      await assert.doesNotReject(() => pending);
+      assert.equal(forceFlush.mock.callCount(), 0);
+      assert.equal(warnings.length, 0);
+    } finally {
+      console.warn = originalWarn;
+      mock.restoreAll();
+    }
   });
 });

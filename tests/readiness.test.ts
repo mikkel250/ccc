@@ -164,6 +164,7 @@ describe("evaluateReadiness", () => {
       assert.equal(opens, 1);
       releaseOpen();
       const [a, b] = await Promise.all([first, second]);
+      assert.equal(opens, 1);
       assert.equal(a.ok, true);
       assert.deepEqual(a.checks.masterCv, b.checks.masterCv);
       assert.equal(a.checks.masterCv, "ok");
@@ -278,6 +279,29 @@ describe("GET /api/ready", () => {
     configureReadyEnv();
     const response = await GET();
     assert.equal(response.status, 200);
+  });
+
+  it("returns the documented JSON 503 when readiness evaluation throws", async () => {
+    configureReadyEnv();
+    __resetMasterCvCacheForTest();
+    const failure = Promise.reject(new Error("preload exploded"));
+    failure.catch(() => undefined);
+    Reflect.set(globalThis, "__cccMasterCvCache:inflight", failure);
+    try {
+      const response = await GET();
+      assert.equal(response.status, 503);
+      assert.match(response.headers.get("content-type") ?? "", /application\/json/);
+      assert.equal(response.headers.get("cache-control"), "no-store");
+      const body: unknown = await response.json();
+      assert.deepEqual(body, {
+        service: "cv-tailoring-api",
+        status: "not_ready",
+        checks: { auth: "failed", masterCv: "failed", redis: "failed" },
+      });
+      assert.equal(JSON.stringify(body).includes("preload exploded"), false);
+    } finally {
+      __resetMasterCvCacheForTest();
+    }
   });
 });
 

@@ -43,13 +43,17 @@ function b64(text: string): string {
   return Buffer.from(text, "utf8").toString("base64url");
 }
 
-function recruiterMessage(id = "m1", threadId = "t1"): unknown {
+function recruiterMessage(
+  id = "m1",
+  threadId = "t1",
+  bodyText: string | null = "We need a general manager with P&L ownership."
+): unknown {
   return {
     id,
     threadId,
     payload: {
       mimeType: "text/plain",
-      body: { data: b64("We need a general manager with P&L ownership.") },
+      body: bodyText === null ? {} : { data: b64(bodyText) },
       headers: [
         { name: "From", value: "recruiter@example.com" },
         { name: "Subject", value: "GM role" },
@@ -140,6 +144,7 @@ function gmailFetch(options: {
   onDraftCreate?: () => void;
   onMessageGet?: () => void;
   delayDraftMs?: number;
+  message?: unknown;
 }): (input: string | URL, init?: RequestInit) => Promise<Response> {
   return async (input, init) => {
     const url = String(input);
@@ -175,7 +180,7 @@ function gmailFetch(options: {
     }
     if (/\/users\/me\/messages\/[^/]+$/.test(parsed.pathname)) {
       options.onMessageGet?.();
-      return jsonResponse(recruiterMessage());
+      return jsonResponse(options.message ?? recruiterMessage());
     }
     if (parsed.pathname.endsWith("/users/me/messages")) {
       return jsonResponse({
@@ -389,6 +394,96 @@ describe("scanInbox", () => {
     }
     assert.equal(draftCreates, 0);
     assert.equal(memory.store.has(inboxProcessedKey("m1")), false);
+  });
+
+  it("keeps the tailor request id when body extraction fails", async () => {
+    const chatSpy = mock.method(tailorCvDeps, "chat", async () => {
+      throw new Error("chat must not run when extraction fails");
+    });
+    let draftCreates = 0;
+    const result = await scanInbox({
+      fetchImpl: gmailFetch({
+        message: recruiterMessage("m1", "t1", null),
+        onDraftCreate: () => {
+          draftCreates += 1;
+        },
+      }),
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.items[0]?.status, "tailor-failed");
+      assert.match(result.items[0]?.error ?? "", /no usable text/i);
+      assert.equal(typeof result.items[0]?.requestId, "string");
+      assert.match(result.items[0]!.requestId!, /^[A-Za-z0-9_-]{1,128}$/);
+    }
+    assert.equal(chatSpy.mock.callCount(), 0);
+    assert.equal(draftCreates, 0);
+  });
+
+  it("keeps the tailor request id when the message claim hits Redis", async () => {
+    const origSet = memory.set.bind(memory);
+    memory.set = async (key, value, opts) => {
+      if (key === inboxClaimKey("m1")) {
+        throw new Error("Inbox Redis timed out");
+      }
+      return origSet(key, value, opts);
+    };
+    const chatSpy = mock.method(tailorCvDeps, "chat", async () => {
+      throw new Error("chat must not run when Redis times out");
+    });
+    let draftCreates = 0;
+    const result = await scanInbox({
+      fetchImpl: gmailFetch({
+        onDraftCreate: () => {
+          draftCreates += 1;
+        },
+      }),
+      tailorDeps: tailorCvDeps,
+      sleep: async () => undefined,
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.items[0]?.status, "tailor-failed");
+      assert.equal(result.items[0]?.error, "Inbox Redis timed out");
+      assert.equal(typeof result.items[0]?.requestId, "string");
+      assert.match(result.items[0]!.requestId!, /^[A-Za-z0-9_-]{1,128}$/);
+    }
+    assert.equal(chatSpy.mock.callCount(), 0);
+    assert.equal(draftCreates, 0);
+  });
+
+  it("keeps the tailor request id when the job description exceeds the limit", async () => {
+    const previous = process.env.TAILOR_JD_MAX_CHARS;
+    process.env.TAILOR_JD_MAX_CHARS = "8";
+    const chatSpy = mock.method(tailorCvDeps, "chat", async () => {
+      throw new Error("chat must not run for an oversize job description");
+    });
+    let draftCreates = 0;
+    try {
+      const result = await scanInbox({
+        fetchImpl: gmailFetch({
+          onDraftCreate: () => {
+            draftCreates += 1;
+          },
+        }),
+        tailorDeps: tailorCvDeps,
+        sleep: async () => undefined,
+      });
+      assert.equal(result.ok, true);
+      if (result.ok) {
+        assert.equal(result.items[0]?.status, "tailor-failed");
+        assert.match(result.items[0]?.error ?? "", /size limit/i);
+        assert.equal(typeof result.items[0]?.requestId, "string");
+        assert.match(result.items[0]!.requestId!, /^[A-Za-z0-9_-]{1,128}$/);
+      }
+      assert.equal(chatSpy.mock.callCount(), 0);
+      assert.equal(draftCreates, 0);
+    } finally {
+      if (previous === undefined) delete process.env.TAILOR_JD_MAX_CHARS;
+      else process.env.TAILOR_JD_MAX_CHARS = previous;
+    }
   });
 
   it("skips processed ids without fetching the message", async () => {

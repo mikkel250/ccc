@@ -692,6 +692,41 @@ describe("POST /api/tailor-cv — request ids", () => {
     assert.equal(response.headers.get("x-request-id"), inbound);
   });
 
+  it("echoes a safe inbound X-Request-Id on RateLimitError with Retry-After", async () => {
+    const inbound = "rate-req-7";
+    mock.method(tailorCvDeps, "checkRateLimit", async () => {
+      throw new RateLimitError(
+        "Too many requests. Please wait before trying again."
+      );
+    });
+    const response = await POST(
+      buildPostRequest(VALID_BODY, { ...XFF, "x-request-id": inbound })
+    );
+    assert.equal(response.status, 429);
+    const retryAfter = response.headers.get("retry-after");
+    assert.ok(retryAfter);
+    assert.ok(Number(retryAfter) >= 1);
+    const json = (await response.json()) as { error: string; requestId?: string };
+    assert.match(json.error, /too many requests/i);
+    assert.equal(json.requestId, inbound);
+    assert.equal(response.headers.get("x-request-id"), inbound);
+  });
+
+  it("echoes a safe inbound X-Request-Id on a mapped ServiceError", async () => {
+    const inbound = "svc-req-9";
+    mock.method(tailorCvDeps, "requireMasterCv", () => {
+      throw new ServiceError("Master CV configuration is unavailable");
+    });
+    const response = await POST(
+      buildPostRequest(VALID_BODY, { ...XFF, "x-request-id": inbound })
+    );
+    assert.equal(response.status, 503);
+    const json = (await response.json()) as { error: string; requestId?: string };
+    assert.match(json.error, /master cv|unavailable/i);
+    assert.equal(json.requestId, inbound);
+    assert.equal(response.headers.get("x-request-id"), inbound);
+  });
+
   it("ignores an inbound X-Request-Id with disallowed characters", async () => {
     const inbound = "ok/injected";
     const response = await POST(
