@@ -1,4 +1,5 @@
 import { describe, it, beforeEach, afterEach, mock } from "node:test";
+import type { LangfuseSpanProcessor as LangfuseSpanProcessorType } from "@langfuse/otel";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -7,6 +8,8 @@ import {
   DEFAULT_LANGFUSE_FLUSH_TIMEOUT_MS,
   flushLangfuseTraces,
   getLangfuseFlushTimeoutMs,
+  resetLangfuseOtelForTests,
+  setLangfuseSpanProcessorForTests,
 } from "../app/api/lib/langfuse-otel";
 
 const ORIGINAL_ENV = { ...process.env };
@@ -48,6 +51,35 @@ describe("LANGFUSE_FLUSH_TIMEOUT_MS catalog", () => {
 });
 
 describe("flushLangfuseTraces", () => {
+  const savedFlushTimeout = ORIGINAL_ENV.LANGFUSE_FLUSH_TIMEOUT_MS;
+
+  afterEach(() => {
+    resetLangfuseOtelForTests();
+    mock.restoreAll();
+    if (savedFlushTimeout === undefined) delete process.env[key];
+    else process.env[key] = savedFlushTimeout;
+  });
+
+  function captureWarnings(): { warnings: unknown[][]; restore: () => void } {
+    const warnings: unknown[][] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args);
+    };
+    return {
+      warnings,
+      restore: () => {
+        console.warn = originalWarn;
+      },
+    };
+  }
+
+  function stubProcessor(
+    forceFlush: () => Promise<void>
+  ): LangfuseSpanProcessorType {
+    return { forceFlush } as LangfuseSpanProcessorType;
+  }
+
   it("resolves immediately when Langfuse OTEL was never started", async () => {
     const forceFlush = mock.method(
       LangfuseSpanProcessor.prototype,
@@ -56,11 +88,7 @@ describe("flushLangfuseTraces", () => {
         throw new Error("forceFlush must not run when Langfuse OTEL was never started");
       }
     );
-    const warnings: unknown[][] = [];
-    const originalWarn = console.warn;
-    console.warn = (...args: unknown[]) => {
-      warnings.push(args);
-    };
+    const { warnings, restore } = captureWarnings();
     try {
       const pending = flushLangfuseTraces();
       assert.equal(forceFlush.mock.callCount(), 0);
@@ -68,8 +96,58 @@ describe("flushLangfuseTraces", () => {
       assert.equal(forceFlush.mock.callCount(), 0);
       assert.equal(warnings.length, 0);
     } finally {
-      console.warn = originalWarn;
-      mock.restoreAll();
+      restore();
+    }
+  });
+
+  it(
+    "warns and resolves when forceFlush hangs past LANGFUSE_FLUSH_TIMEOUT_MS",
+    { timeout: 500 },
+    async () => {
+      process.env[key] = "1";
+      let flushCalls = 0;
+      setLangfuseSpanProcessorForTests(
+        stubProcessor(async () => {
+          flushCalls += 1;
+          await new Promise<void>(() => {});
+        })
+      );
+      const { warnings, restore } = captureWarnings();
+      try {
+        const started = Date.now();
+        await assert.doesNotReject(() => flushLangfuseTraces());
+        assert.ok(Date.now() - started < 200);
+        assert.equal(flushCalls, 1);
+        assert.equal(warnings.length, 1);
+        assert.match(String(warnings[0]?.[0]), /Langfuse flush failed or timed out/i);
+        const reason = warnings[0]?.[1];
+        assert.ok(reason instanceof Error);
+        assert.match(reason.message, /timed out after 1ms/i);
+      } finally {
+        restore();
+      }
+    }
+  );
+
+  it("warns and resolves when forceFlush rejects", async () => {
+    process.env[key] = "5000";
+    const exportError = new Error("langfuse export rejected");
+    let flushCalls = 0;
+    setLangfuseSpanProcessorForTests(
+      stubProcessor(async () => {
+        flushCalls += 1;
+        throw exportError;
+      })
+    );
+    const { warnings, restore } = captureWarnings();
+    try {
+      await assert.doesNotReject(() => flushLangfuseTraces());
+      assert.equal(flushCalls, 1);
+      assert.equal(warnings.length, 1);
+      assert.match(String(warnings[0]?.[0]), /Langfuse flush failed or timed out/i);
+      assert.equal(warnings[0]?.[1], exportError);
+    } finally {
+      restore();
     }
   });
 });

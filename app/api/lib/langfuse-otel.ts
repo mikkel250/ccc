@@ -85,6 +85,22 @@ function flushWithTimeout(processor: LangfuseSpanProcessor, timeoutMs: number): 
   });
 }
 
+/** Test-only: attach a span processor without bootstrapping OTEL. */
+export function setLangfuseSpanProcessorForTests(
+  processor: LangfuseSpanProcessor | null
+): void {
+  if (process.env.NODE_ENV !== "test") return;
+  spanProcessor = processor;
+}
+
+/** Test-only: reset lazy OTEL state between tests. */
+export function resetLangfuseOtelForTests(): void {
+  if (process.env.NODE_ENV !== "test") return;
+  otelStarted = false;
+  otelStarting = null;
+  spanProcessor = null;
+}
+
 /** Flush pending spans so they appear in Langfuse before the request ends. */
 export async function flushLangfuseTraces(): Promise<void> {
   if (!spanProcessor) return;
