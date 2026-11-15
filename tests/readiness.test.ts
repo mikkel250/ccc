@@ -1,7 +1,9 @@
-import { describe, it, beforeEach, afterEach } from "node:test";
+import { describe, it, beforeEach, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promises as fsPromises } from "node:fs";
 import { evaluateReadiness } from "../app/api/lib/readiness";
 import { __resetMasterCvCacheForTest, loadMasterCv } from "../app/api/lib/master-cv";
 import { GET, dynamic as readyDynamic } from "../app/api/ready/route";
@@ -126,6 +128,49 @@ describe("evaluateReadiness", () => {
     loadMasterCv();
     const result = await evaluateReadiness();
     assert.equal(result.checks.masterCv, "failed");
+  });
+
+  it("concurrent probes share one in-flight master CV load", { timeout: 2000 }, async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "readiness-preload-shared-"));
+    const cvPath = join(tempDir, "master.json");
+    writeFileSync(cvPath, FIXTURE_CV, { mode: 0o600 });
+    chmodSync(cvPath, 0o600);
+    process.env.TAILOR_API_KEY = "ready-test-key";
+    process.env.MASTER_CV_PATH = cvPath;
+    delete process.env.MASTER_CV_JSON;
+    process.env.UPSTASH_REDIS_REST_URL = "https://example-upstash.upstash.io";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "example-token";
+
+    let opens = 0;
+    let releaseOpen: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseOpen = resolve;
+    });
+    const realOpen = fsPromises.open.bind(fsPromises);
+    mock.method(
+      fsPromises,
+      "open",
+      async (...args: Parameters<typeof fsPromises.open>) => {
+        opens += 1;
+        await gate;
+        return realOpen(...args);
+      }
+    );
+
+    try {
+      const first = evaluateReadiness();
+      const second = evaluateReadiness();
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(opens, 1);
+      releaseOpen();
+      const [a, b] = await Promise.all([first, second]);
+      assert.equal(a.ok, true);
+      assert.deepEqual(a.checks.masterCv, b.checks.masterCv);
+      assert.equal(a.checks.masterCv, "ok");
+    } finally {
+      releaseOpen();
+      mock.restoreAll();
+    }
   });
 
   it("reuses a settled master CV on later probes without reparsing", async () => {
