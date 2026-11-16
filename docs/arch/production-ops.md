@@ -15,7 +15,7 @@ Operator runbook for the CCC API on Railway. Full env catalog and defaults: [`.e
 | `GET /api/hello` | Liveness: Node process is up. No auth, master CV, or Redis. | Do **not** use as `healthcheckPath`. |
 | `GET /api/ready` | Readiness: `auth`, `masterCv`, `redis` env/config. 200 or 503 `not_ready`. No LLM, no Redis ping, no secrets in the body. | `railway.toml` `healthcheckPath` / timeout 300s. |
 
-A 200 on hello with 503 on ready means the process is up but cannot serve tailor (missing key, master CV, or Redis env).
+A 200 on hello with 503 on ready means the process is up but cannot serve tailor: missing master CV or Redis env, or auth still 503 because instrumentation did not run. A missing `TAILOR_API_KEY` in a production-like deploy usually never reaches this state — startup exits first.
 
 ## Required production env
 
