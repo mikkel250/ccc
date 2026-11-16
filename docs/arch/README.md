@@ -28,6 +28,7 @@ The project was cloned from `portfolio-react-ts` and stripped of all portfolio p
 | Database | None on the tailor path (stateless). SQLite planned post-MVP for the learning system; PostgreSQL + pgvector later. | Do not treat SQLite as current storage. |
 | Storage | None | CV .docx is generated in-memory per request, returned as base64 |
 | Testing (unit) | node:test + node:assert/strict | Zero dependency, no config drift. Test-only injection via optional function parameters. Run: `npm test`. |
+| Lint | ESLint 9 + `eslint-config-next` 15 | Flat config via FlatCompat (`eslint .`). Pin `eslint-config-next` to the Next 15 line; the Next 16 ESM export (`eslint-config-next/core-web-vitals`) is not available on 15.x. |
 | Testing (E2E) | @playwright/test | HTTP-level API tests in `tests/e2e/`. Requires a running dev server (`npm run dev`). Run: `npm run test:e2e`. Set `RUN_E2E_LLM_TESTS=true` to include the full LLM call test. |
 | Observability | LangFuse + LangSmith | Dual tracing on all LLM calls |
 | Deployment | Railway (Hobby) | Default v1 host: long-lived Node (`npm start`). Vercel Hobby fluid functions default to and cap at 300s. See [Deployment hosting](./README.md#deployment-hosting-railway-vs-vercel). |

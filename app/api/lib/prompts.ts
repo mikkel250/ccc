@@ -7,7 +7,6 @@
 // devpro-build/app/api/lib/prompts.ts
 
 import { compilePrompt } from './langfuse-prompts';
-import { CHAT_SYSTEM_PROMPT } from './chat-prompt';
 
 /**
  * Check if query is asking about professional vs personal experience

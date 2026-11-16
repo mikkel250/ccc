@@ -7,7 +7,6 @@
  * Schema reference: docs/struan-8-part-cv-framework.md
  */
 
-import { LangfuseClient } from "@langfuse/client";
 import { initLangFuse } from "./tracers/langfuse";
 
 // Hardcoded fallback (kept in sync with the Langfuse prompt "cv-tailor-system")

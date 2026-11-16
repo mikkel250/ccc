@@ -9,17 +9,32 @@ import { ESLint } from "eslint";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function readPackageJson(): {
+  dependencies?: Record<string, string>;
   scripts?: { lint?: string };
   devDependencies?: Record<string, string>;
 } {
   return JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 }
 
-describe("eslint flat config (Next.js 16)", () => {
+function installedVersion(pkgName: string): string {
+  const pkg = JSON.parse(
+    readFileSync(join(root, "node_modules", pkgName, "package.json"), "utf8")
+  ) as { version: string };
+  assert.ok(pkg.version, `${pkgName} must declare a version`);
+  return pkg.version;
+}
+
+function majorFromSpec(spec: string): string {
+  const match = spec.match(/(\d+)/);
+  assert.ok(match, `could not parse major version from ${spec}`);
+  return match[1]!;
+}
+
+describe("eslint flat config (Next.js 15)", () => {
   it("has eslint.config.mjs at project root", () => {
     assert.ok(
       existsSync(join(root, "eslint.config.mjs")),
-      "eslint.config.mjs must exist for Next.js 16 ESLint flat config"
+      "eslint.config.mjs must exist for Next.js 15 ESLint flat config"
     );
   });
 
@@ -28,25 +43,67 @@ describe("eslint flat config (Next.js 16)", () => {
     assert.equal(
       pkg.scripts?.lint,
       "eslint .",
-      'lint script must be "eslint ." — next lint is removed in Next.js 16'
+      'lint script must be "eslint ." — next lint is deprecated in Next.js 15.5'
     );
   });
 
-  it("declares eslint and eslint-config-next as devDependencies", () => {
+  it("declares eslint, eslint-config-next, and @eslint/eslintrc as devDependencies", () => {
     const pkg = readPackageJson();
     assert.ok(pkg.devDependencies?.eslint, "eslint must be a devDependency");
     assert.ok(
       pkg.devDependencies?.["eslint-config-next"],
       "eslint-config-next must be a devDependency"
     );
+    assert.ok(
+      pkg.devDependencies?.["@eslint/eslintrc"],
+      "@eslint/eslintrc must be a direct devDependency for Next 15 FlatCompat"
+    );
   });
 
-  it("eslint.config.mjs exports flat config using eslint-config-next", () => {
+  it("pins eslint-config-next to the same major as next (15)", () => {
+    const pkg = readPackageJson();
+    const nextSpec = pkg.dependencies?.next;
+    const eslintConfigNextSpec = pkg.devDependencies?.["eslint-config-next"];
+    assert.ok(nextSpec, "next must be a dependency");
+    assert.ok(eslintConfigNextSpec, "eslint-config-next must be a devDependency");
+
+    const nextMajor = majorFromSpec(nextSpec);
+    const eslintConfigNextMajor = majorFromSpec(eslintConfigNextSpec);
+    assert.equal(nextMajor, "15", `next must stay on 15.x (got ${nextSpec})`);
+    assert.equal(
+      eslintConfigNextMajor,
+      nextMajor,
+      `eslint-config-next ${eslintConfigNextSpec} must match next ${nextSpec} major`
+    );
+
+    const nextInstalled = installedVersion("next");
+    const eslintConfigNextInstalled = installedVersion("eslint-config-next");
+    assert.equal(
+      majorFromSpec(nextInstalled),
+      "15",
+      `installed next must be 15.x (got ${nextInstalled})`
+    );
+    assert.equal(
+      majorFromSpec(eslintConfigNextInstalled),
+      "15",
+      `installed eslint-config-next must be 15.x (got ${eslintConfigNextInstalled})`
+    );
+  });
+
+  it("eslint.config.mjs uses Next 15 FlatCompat, not the Next 16 ESM export", () => {
     const configPath = join(root, "eslint.config.mjs");
     assert.ok(existsSync(configPath), "eslint.config.mjs must exist");
     const content = readFileSync(configPath, "utf8");
     assert.match(content, /eslint-config-next/);
     assert.match(content, /export default/);
+    assert.match(content, /FlatCompat/);
+    assert.match(content, /@eslint\/eslintrc/);
+    assert.match(content, /next\/core-web-vitals/);
+    assert.doesNotMatch(
+      content,
+      /from ["']eslint-config-next\/core-web-vitals["']/,
+      "Next 15 eslint-config-next has no flat-config ESM export at eslint-config-next/core-web-vitals"
+    );
     assert.match(
       content,
       /@typescript-eslint\/no-explicit-any/,

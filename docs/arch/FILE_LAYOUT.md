@@ -113,6 +113,7 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   └── plan/llm-eval-pipeline/           # Active eval pipeline plan
 ├── instrumentation.ts           # Next.js register (nodejs-only gate)
 ├── instrumentation.node.ts      # ensureSecureStartup (R5d) + preloadMasterCv
+├── eslint.config.mjs            # ESLint 9 flat config; eslint-config-next 15 via FlatCompat
 ├── next.config.mjs              # Next.js config (OTEL external packages)
 ├── .github/workflows/ci.yml     # PR/main: npm ci, lint, test, build (no smoke/e2e)
 ├── railway.toml                 # Railway API service (always-on npm start)
