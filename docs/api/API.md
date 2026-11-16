@@ -18,7 +18,7 @@ The inbox worker is **not** an HTTP presenter: `tailorLabeledMessage` (`app/api/
 
 Missing/invalid Bearer → **401**. Unset/`TAILOR_API_KEY` misconfiguration, production bypass hard-block, or other auth-gate unavailability → **503** (fail closed; not all auth failures are 401). Deployed environments fail closed when `TAILOR_API_KEY` is unset. Local insecure bypass (`TAILOR_AUTH_INSECURE_BYPASS=1`) is hard-blocked when production markers are set.
 
-**Rotation (R21a):** If the key may have leaked, replace `TAILOR_API_KEY` in the API deploy and in CCC at the same time; old Bearer tokens stop working immediately.
+**Rotation (R21a):** Procedure: [`docs/arch/production-ops.md`](../arch/production-ops.md). Replace `TAILOR_API_KEY` on the Railway web service and in every Bearer presenter (smoke CLI, ccc-frontend) in the same window, then recycle; old tokens fail after recycle. Repeated secret-bucket 429s are a suspected-leak signal — rotate before raising `RATE_LIMIT_SECRET_MAX` unless the owner already decided BFF concurrency needs a higher cap.
 
 **Consumer cutover:** When leaving local-only, CCC must present Bearer in the same release window as this API — there is no soft unauthenticated path.
 
@@ -225,7 +225,7 @@ Errors use `{ "error": string, "requestId": string }`. `remaining` / `resetTime`
 | `LANGFUSE_TRACING` | Langfuse generations (exactly `true` to enable) | `false` |
 | `LANGSMITH_TRACING` | LangSmith runs (exactly `true` plus `LANGSMITH_API_KEY`) | `false` |
 
-Full catalog with comments: [`.env.example`](../../.env.example)
+Full catalog with comments: [`.env.example`](../../.env.example). Production deploy, probes, and key rotation: [`docs/arch/production-ops.md`](../arch/production-ops.md).
 
 ---
 
