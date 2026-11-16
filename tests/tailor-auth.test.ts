@@ -1,5 +1,7 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { join } from "node:path";
 import {
   authenticateTailorRequest,
   bearerTokenEquals,
@@ -8,6 +10,32 @@ import {
   isProductionLikeDeploy,
   parseBearerToken,
 } from "../app/api/lib/tailor-auth";
+
+const REPO_ROOT = process.cwd();
+const STARTUP_PROBE = join(
+  REPO_ROOT,
+  "tests/fixtures/ensure-secure-startup-probe.ts"
+);
+
+function spawnEnsureSecureStartup(
+  envOverrides: NodeJS.ProcessEnv
+): ReturnType<typeof spawnSync> {
+  const env = { ...process.env, ...envOverrides };
+  for (const key of [
+    "TAILOR_API_KEY",
+    "TAILOR_AUTH_INSECURE_BYPASS",
+    "RAILWAY_ENVIRONMENT",
+    "VERCEL_ENV",
+  ] as const) {
+    if (!(key in envOverrides)) delete env[key];
+  }
+  return spawnSync(process.execPath, ["--import", "tsx", STARTUP_PROBE], {
+    cwd: REPO_ROOT,
+    env,
+    encoding: "utf8",
+    timeout: 20_000,
+  });
+}
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -112,6 +140,22 @@ describe("tailor-auth", () => {
     process.env.RAILWAY_ENVIRONMENT = "production";
     delete process.env.TAILOR_API_KEY;
     assert.doesNotThrow(() => ensureSecureStartup());
+  });
+
+  it("ensureSecureStartup exits non-zero in a production subprocess without TAILOR_API_KEY", () => {
+    const result = spawnEnsureSecureStartup({ NODE_ENV: "production" });
+    const output = `${result.stderr}\n${result.stdout}`;
+    assert.notEqual(result.status, 0, output);
+    assert.match(output, /TAILOR_API_KEY/);
+    assert.doesNotMatch(output, /secret-key|Bearer/i);
+  });
+
+  it("ensureSecureStartup does not exit in a production subprocess when the key is set", () => {
+    const result = spawnEnsureSecureStartup({
+      NODE_ENV: "production",
+      TAILOR_API_KEY: "secret-key",
+    });
+    assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
   });
 
   describe("getStartupSecurityError", () => {
