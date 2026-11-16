@@ -26,9 +26,29 @@ export function isTailorAuthBypassRequested(): boolean {
 }
 
 /**
- * Fatal when TAILOR_AUTH_INSECURE_BYPASS is set in a production-like deploy (R5d).
- * Operators must notice a crash-loop on misconfiguration; silently serving 503
- * per-request is not visible enough.
+ * Fatal startup messages for production-like deploys (R5d).
+ * Does not special-case NODE_ENV=test — {@link ensureSecureStartup} skips exit there.
+ */
+export function getStartupSecurityError(): string | undefined {
+  if (isProductionLikeDeploy() && isTailorAuthBypassRequested()) {
+    return (
+      "FATAL: TAILOR_AUTH_INSECURE_BYPASS is set in a production-like deploy. " +
+      "The bypass flag is only allowed in local/dev. Unset it or set the env to non-production."
+    );
+  }
+  if (isProductionLikeDeploy() && !getConfiguredTailorApiKey()) {
+    return (
+      "FATAL: TAILOR_API_KEY is unset or empty in a production-like deploy. " +
+      "Set TAILOR_API_KEY or the process will not serve tailor."
+    );
+  }
+  return undefined;
+}
+
+/**
+ * Fatal when TAILOR_AUTH_INSECURE_BYPASS is set, or TAILOR_API_KEY is unset,
+ * in a production-like deploy (R5d). Operators must notice a crash-loop on
+ * misconfiguration; silently serving 503 per-request is not visible enough.
  *
  * In test mode (NODE_ENV=test) this is a no-op so tests can toggle bypass
  * without terminating the process.
@@ -39,13 +59,10 @@ export function isTailorAuthBypassRequested(): boolean {
  */
 function assertSecureStartup(): void {
   if (process.env.NODE_ENV === "test") return;
-  if (isProductionLikeDeploy() && isTailorAuthBypassRequested()) {
-    console.error(
-      "FATAL: TAILOR_AUTH_INSECURE_BYPASS is set in a production-like deploy. " +
-        "The bypass flag is only allowed in local/dev. Unset it or set the env to non-production."
-    );
-    process.exit(1);
-  }
+  const message = getStartupSecurityError();
+  if (!message) return;
+  console.error(message);
+  process.exit(1);
 }
 
 /**

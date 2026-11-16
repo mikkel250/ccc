@@ -4,6 +4,7 @@ import {
   authenticateTailorRequest,
   bearerTokenEquals,
   ensureSecureStartup,
+  getStartupSecurityError,
   isProductionLikeDeploy,
   parseBearerToken,
 } from "../app/api/lib/tailor-auth";
@@ -104,6 +105,72 @@ describe("tailor-auth", () => {
     process.env.TAILOR_AUTH_INSECURE_BYPASS = "1";
     process.env.RAILWAY_ENVIRONMENT = "production";
     assert.doesNotThrow(() => ensureSecureStartup());
+  });
+
+  it("ensureSecureStartup is a no-op in test when production is missing the key", () => {
+    process.env.NODE_ENV = "test";
+    process.env.RAILWAY_ENVIRONMENT = "production";
+    delete process.env.TAILOR_API_KEY;
+    assert.doesNotThrow(() => ensureSecureStartup());
+  });
+
+  describe("getStartupSecurityError", () => {
+    it("fatals in production when TAILOR_API_KEY is unset", () => {
+      process.env.NODE_ENV = "production";
+      delete process.env.TAILOR_API_KEY;
+      const message = getStartupSecurityError();
+      assert.equal(typeof message, "string");
+      assert.match(message!, /TAILOR_API_KEY/);
+      assert.doesNotMatch(message!, /secret-key|Bearer/i);
+    });
+
+    it("fatals in production when TAILOR_API_KEY is whitespace-only", () => {
+      process.env.NODE_ENV = "production";
+      process.env.TAILOR_API_KEY = "   ";
+      const message = getStartupSecurityError();
+      assert.equal(typeof message, "string");
+      assert.match(message!, /TAILOR_API_KEY/);
+    });
+
+    it("fatals when VERCEL_ENV=production and the key is unset", () => {
+      process.env.VERCEL_ENV = "production";
+      delete process.env.TAILOR_API_KEY;
+      const message = getStartupSecurityError();
+      assert.equal(typeof message, "string");
+      assert.match(message!, /TAILOR_API_KEY/);
+    });
+
+    it("fatals when RAILWAY_ENVIRONMENT=production and the key is unset", () => {
+      process.env.RAILWAY_ENVIRONMENT = "production";
+      delete process.env.TAILOR_API_KEY;
+      const message = getStartupSecurityError();
+      assert.equal(typeof message, "string");
+      assert.match(message!, /TAILOR_API_KEY/);
+    });
+
+    it("returns undefined in production when the key is set and bypass is off", () => {
+      process.env.NODE_ENV = "production";
+      process.env.TAILOR_API_KEY = "secret-key";
+      assert.equal(getStartupSecurityError(), undefined);
+    });
+
+    it("returns the bypass fatal in production even when a key is set", () => {
+      process.env.NODE_ENV = "production";
+      process.env.TAILOR_API_KEY = "secret-key";
+      process.env.TAILOR_AUTH_INSECURE_BYPASS = "1";
+      const message = getStartupSecurityError();
+      assert.equal(typeof message, "string");
+      assert.match(message!, /TAILOR_AUTH_INSECURE_BYPASS/);
+    });
+
+    it("returns undefined locally when the key is unset and bypass is off", () => {
+      delete process.env.TAILOR_API_KEY;
+      assert.equal(isProductionLikeDeploy(), false);
+      assert.equal(getStartupSecurityError(), undefined);
+      const result = authenticateTailorRequest(null);
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.equal(result.status, 503);
+    });
   });
 
   it("treats VERCEL_ENV=production as a production-like deploy", () => {
