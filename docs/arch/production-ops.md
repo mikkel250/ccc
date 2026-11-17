@@ -38,13 +38,13 @@ Old Bearer tokens fail only after the web process has the new env (recycle). The
 
 1. Generate a high-entropy secret: `openssl rand -base64 32`.
 2. Set it as `TAILOR_API_KEY` on the **Railway web service** and in every Bearer presenter (smoke CLI, ccc-frontend BFF). Do not put the value on a command line, in a ticket, or in a screenshot.
-   - Smoke (`npm run smoke`) reads `TAILOR_API_KEY` from the process environment. Its dotenv load is repo-root **`.env` only** — it does **not** load `.env.local` (Next.js `npm run dev` does). Put the rotated key in `.env`, or `export TAILOR_API_KEY=...` in the shell before smoke. If you keep secrets in `.env.local`, copy them: `cp .env.local .env`.
+   - Smoke (`npm run smoke`) reads `TAILOR_API_KEY` from the process environment. Its dotenv load is repo-root **`.env` only** — it does **not** load `.env.local` (Next.js `npm run dev` does). Put the rotated key in `.env` by editing that file (do not `cp .env.local .env` over an existing `.env`). If the new value already lives in `.env.local`, copy only the `TAILOR_API_KEY` line into `.env`.
    - Railway deployment Details can show unmasked custom variables — treat dashboard access as secret access.
 3. Recycle / redeploy the web service so the process picks up the new value.
 4. Confirm: old Bearer → `POST /api/tailor-cv` **401**. New Bearer → smoke 200 (`npm run smoke -- <prod-url>`).
 5. If the leak was in git or logs, assume the old value is burned; rotate again if it was committed.
 
-**When to rotate:** suspected leak; secret value seen in a screenshot, ticket, or argv; **repeated 429s on the shared-secret bucket** (`RATE_LIMIT_SECRET_MAX`) while per-caller windows still have remaining — that is the origin leak signal. Rotate before raising the cap, unless the owner has already decided legitimate BFF concurrency needs a higher `RATE_LIMIT_SECRET_MAX`.
+**When to rotate:** suspected leak; secret value seen in a screenshot, ticket, or argv. Under shipped `RATE_LIMIT_MAX=5` / `RATE_LIMIT_SECRET_MAX=2`, secret-bucket 429s are expected from a single busy caller — investigate traffic before rotating. If the secret cap has already been raised above the per-caller cap and the shared window still saturates while individual callers have remaining, treat that as a suspected-origin leak and rotate before raising the cap further, unless the owner already decided legitimate BFF concurrency needs a higher `RATE_LIMIT_SECRET_MAX`.
 
 ## Rate-limit defaults (owner)
 

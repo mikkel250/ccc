@@ -18,7 +18,7 @@ The inbox worker is **not** an HTTP presenter: `tailorLabeledMessage` (`app/api/
 
 Missing/invalid Bearer → **401**. Unset/`TAILOR_API_KEY` misconfiguration, production bypass hard-block, or other auth-gate unavailability → **503** (fail closed; not all auth failures are 401). Deployed environments fail closed when `TAILOR_API_KEY` is unset. Local insecure bypass (`TAILOR_AUTH_INSECURE_BYPASS=1`) is hard-blocked when production markers are set.
 
-**Rotation (R21a):** Procedure: [`docs/arch/production-ops.md`](../arch/production-ops.md). Replace `TAILOR_API_KEY` on the Railway web service and in every Bearer presenter (smoke CLI, ccc-frontend) in the same window, then recycle; old tokens fail after recycle. Repeated secret-bucket 429s are a suspected-leak signal — rotate before raising `RATE_LIMIT_SECRET_MAX` unless the owner already decided BFF concurrency needs a higher cap.
+**Rotation (R21a):** Procedure: [`docs/arch/production-ops.md`](../arch/production-ops.md). Replace `TAILOR_API_KEY` on the Railway web service and in every Bearer presenter (smoke CLI, ccc-frontend) in the same window, then recycle; old tokens fail after recycle. Under shipped 5 / 2 defaults, secret-bucket 429s are expected from a single caller — investigate traffic before rotating. If the secret cap is already above the per-caller cap and still saturates while callers have remaining, treat that as a suspected-origin leak.
 
 **Consumer cutover:** When leaving local-only, CCC must present Bearer in the same release window as this API — there is no soft unauthenticated path.
 
