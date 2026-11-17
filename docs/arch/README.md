@@ -80,7 +80,7 @@ See [Pipeline enhancements](./PIPELINE_ENHANCEMENTS.md) for the two-pass pipelin
 - Do NOT fork the CV platform project. This project consumes the knowledge base directly from its own filesystem. Phase 2 will add a CV platform API integration.
 - Do NOT add frontend pages or components. No product UI in v1; the inbox worker is not a UI.
 - Do NOT add selective context retrieval in MVP. Inject everything.
-- Do NOT edit the production curator prompt only in git (`curator-prompt.ts` fallback) and ship it — update Langfuse (`cv-curator-json`, `production` label) and keep the hardcoded fallback in sync. Legacy `cv-prompt.ts` is not the tailor hot path.
+- Do NOT edit the production curator prompt only in git (`curator-prompt.ts` fallback) and ship it — update Langfuse (`cv-curator-json`, `production` label) and keep the hardcoded fallback in sync.
 - Do NOT leave Langfuse `cv-curator-json` `production` on the previous shape (e.g. bare CV JSON) after a curator-contract release. New processes substitute the hardcoded fallback when that text omits `reply_text`, but processes still inside the prompt cache TTL keep serving whatever they already fetched. Publish via `scripts/create-langfuse-prompts.ts` in the same release and recycle those processes.
 - Do NOT rely on Langfuse `latest` label in production — always use `production` label for deterministic prompt versioning.
 - Do NOT route inbox scan through `POST /api/tailor-cv` or share its rate-limit buckets — inbox tailor is in-process (product contract R8).

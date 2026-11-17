@@ -23,19 +23,13 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── readiness.ts      # Config-only readiness checks for GET /api/ready
 │           ├── smoke-helpers.ts  # Smoke artifact redaction, parity catalog, nested paths
 │           ├── smoke-runner.ts   # verifySmokePipeline — health → tailor → artifacts
-│           ├── chat-prompt.ts    # Chat assistant system prompt (legacy, no route yet)
-│           ├── jd-prompt.ts      # Job description analysis prompt (evaluation rubric inside)
-│           ├── prompts.ts        # Chat prompt builder (legacy, no route yet)
-│           ├── langfuse-prompts.ts  # Prompt management abstraction layer
 │           ├── tracers/          # Unified LangSmith + Langfuse tracing adapters
 │           │   ├── tracer.ts     # TracePayload + Tracer interface
 │           │   ├── langsmith.ts  # LangSmith adapter
 │           │   ├── langfuse.ts   # Langfuse adapter (+ initLangFuse export)
 │           │   └── index.ts      # recordLangSmithTrace / recordLangfuseTrace
 │           ├── langfuse-otel.ts  # OTEL bootstrap (lazy)
-│           ├── knowledge-base.ts # Legacy markdown KB helpers (not tailor hot path)
 │           ├── markdown-docx.ts  # Legacy markdown → .docx (not tailor hot path)
-│           ├── cv-prompt.ts      # Legacy markdown tailor prompt (not hot path)
 │           ├── redis.ts          # Shared Upstash Redis client singleton
 │           ├── gmail-config.ts   # Gmail OAuth/API env getters
 │           ├── gmail-oauth.ts    # Authorize URL, PKCE, callback, token exchange/refresh
@@ -62,13 +56,12 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │           ├── eval-extract.ts    # JD metadata extraction (legacy eval helpers)
 │           ├── eval-format.ts     # 8-part format compliance checker
 │           └── eval-cv-helpers.ts # parseEvalModels / artifact payload helpers
-├── knowledge-base/               # Legacy markdown corpus + test-jds/ for smoke defaults
+├── knowledge-base/
 │   └── test-jds/                 # Raw recruiter JD fixtures (smoke default)
 ├── references/json-curator/      # Port refs: schema, sample, resume_builder.js, curator prompt
 ├── lib/
 │   ├── env.ts                    # Env var parsing and model getters
-│   ├── providers.ts              # Provider type + KNOWN_PROVIDERS leaf registry
-│   └── formatDate.ts             # Date formatting utility
+│   └── providers.ts              # Provider type + KNOWN_PROVIDERS leaf registry
 ├── scripts/
 │   ├── create-langfuse-prompts.ts  # Publish cv-curator-json (production) from the fallback text
 │   ├── e2e-tailor-cv.ts           # npm run smoke — live API + artifacts
@@ -101,7 +94,6 @@ Canonical project tree for the CV Tailoring API. The tree is the source of truth
 │   ├── inbox-scan-railway.test.ts         # API toml is not a cron; scan toml is
 │   ├── gmail-drafts.test.ts               # MIME + draft create vs reuse
 │   ├── route.test.ts                      # Tailor route (mocked curator)
-│   ├── cv-prompt*.test.ts                 # Legacy markdown prompt tests
 │   ├── markdown-docx.test.ts              # Legacy markdown→docx
 │   └── …                                  # LLM, rate-limit, env, etc.
 ├── eval-results/                 # Eval output artifacts per JD×model

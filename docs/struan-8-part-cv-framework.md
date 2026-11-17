@@ -1,6 +1,6 @@
 # Sam Struan 8-Part CV Framework
 
-Reference for the CV tailoring API baseline output. The system prompt in `app/api/lib/cv-prompt.ts` (and Langfuse `cv-tailor-system`) instructs the model to emit this structure in strict Markdown.
+Historical reference for the pre-curator markdown tailor output (recoverable from git history). Production tailor uses the JSON curator (`app/api/lib/curator-prompt.ts`) and mechanical `json-docx-builder.ts`; this document still describes the Struan section model used by legacy eval format scoring (`app/api/lib/eval-format.ts`).
 
 ## Overview
 
@@ -122,8 +122,4 @@ Forbidden in model output: HTML, tables, JSON, code fences.
 
 ## Grounding rule
 
-Every fact must appear in `knowledge-base/` content injected as `{CONTEXT}`. The tailoring API does not invent employers, dates, metrics, or tools.
-
-## Sync with Langfuse
-
-Production uses Langfuse prompt `cv-tailor-system` (label: `production`). When this framework changes, update Langfuse and keep `getCvPromptFallbackText()` in `cv-prompt.ts` aligned manually.
+Every fact must appear in the Master CV (today: `MASTER_CV_JSON` / `MASTER_CV_PATH`). The tailoring API does not invent employers, dates, metrics, or tools.

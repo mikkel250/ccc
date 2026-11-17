@@ -2,7 +2,7 @@
  * Stage 2 format scorer — sync check that generated CVs match the Struan 8-part structure.
  *
  * No LLM call: validates headings against FormatSection in eval-schema.ts.
- * Same structural contract enforced by cv-prompt.ts in production.
+ * Same structural contract as the retired markdown tailor prompt (pre-curator).
  */
 import { FormatSection, type FormatScore } from "./eval-schema";
 
@@ -12,7 +12,7 @@ function normalizeHeading(text: string): string {
   return text.trim().toLowerCase();
 }
 
-/** Extract CV section headings per cv-prompt contract: `##` sections; legacy `# Section` h1 also accepted. */
+/** Extract CV section headings per historical markdown tailor contract: `##` sections; legacy `# Section` h1 also accepted. */
 function extractTopLevelHeadings(markdown: string): string[] {
   const headings: string[] = [];
   for (const line of markdown.split("\n")) {

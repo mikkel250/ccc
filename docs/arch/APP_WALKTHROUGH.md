@@ -170,14 +170,6 @@ Local regen without LLM: `npm run regen-docx -- curated.json out.docx --builder-
 
 ---
 
-## Legacy prompt modules (not on production tailor path)
-
-Prompt files cloned from the portfolio chat bot remain for a hypothetical future `/api/chat` route. Dead RAG helpers (`input-filter.ts`, `getRelevantContext`, chat-prompt model variants) were removed — recoverable from git history if needed.
-
-- `chat-prompt.ts`, `jd-prompt.ts`, `prompts.ts`, `langfuse-prompts.ts`
-
----
-
 ## Scripts and verification
 
 | Script | Entry | Verifies |

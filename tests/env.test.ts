@@ -251,12 +251,6 @@ describe("getEvalExtractionModel", () => {
 });
 
 describe("provider registry — leaf module (no llm import cycle)", () => {
-  it("loads llm module without throwing when getLLMConfig validates defaults", async () => {
-    const { LLM_CONFIG } = await import("../app/api/lib/llm");
-    assert.equal(typeof LLM_CONFIG.defaultModel, "string");
-    assert.match(LLM_CONFIG.defaultModel, /^[^/]+\/.+/);
-  });
-
   it("getLLMConfig returns a validated default model after llm import", async () => {
     await import("../app/api/lib/llm");
     const config = getLLMConfig();

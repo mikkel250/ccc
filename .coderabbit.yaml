@@ -287,8 +287,7 @@ reviews:
       instructions: |
         Same dual-tracer contract as `app/api/lib/tracers/**`: Langfuse awaited
         with bounded flush; content redacted; `production` prompt label not
-        `latest`. `langfuse-prompts.ts` is legacy portfolio-chat helpers, not
-        the tailor curator path (`curator-prompt.ts` is).
+        `latest`. Tailor curator prompts live in `curator-prompt.ts`.
 
     - path: "{app/api/lib/tailor-auth.ts,app/api/lib/rate-limit.ts,app/api/lib/redis.ts,app/api/lib/errors.ts,instrumentation.ts,instrumentation.node.ts}"
       instructions: |
