@@ -1,6 +1,8 @@
 # Sam Struan 8-Part CV Framework
 
-Reference for the CV tailoring API baseline output. The system prompt in `app/api/lib/cv-prompt.ts` (and Langfuse `cv-tailor-system`) instructs the model to emit this structure in strict Markdown.
+> **Historical (pre–JSON curator).** Production tailoring grounds on master CV JSON (`master-cv.schema.json`, curator prompt in `app/api/lib/curator-prompt.ts`). See [json curator pipeline](./plans/2026-07-20-001-feat-json-curator-cv-pipeline-plan.md).
+
+Reference for the legacy Markdown CV baseline. The retired `app/api/lib/cv-prompt.ts` / Langfuse `cv-tailor-system` path used this structure in strict Markdown.
 
 ## Overview
 
@@ -14,7 +16,7 @@ Sam Struan’s framework separates **what you tailor per application** from **wh
 
 **Include:** City and state (or region), cell/phone, email, LinkedIn. For creative or technical roles, add portfolio or GitHub when relevant. For 100% remote US roles, include location when required for tax/payroll compliance.
 
-**Do not:** Invent contact details not in the knowledge base.
+**Do not:** Invent contact details not in the master CV JSON.
 
 ---
 
@@ -122,8 +124,4 @@ Forbidden in model output: HTML, tables, JSON, code fences.
 
 ## Grounding rule
 
-Every fact must appear in `knowledge-base/` content injected as `{CONTEXT}`. The tailoring API does not invent employers, dates, metrics, or tools.
-
-## Sync with Langfuse
-
-Production uses Langfuse prompt `cv-tailor-system` (label: `production`). When this framework changes, update Langfuse and keep `getCvPromptFallbackText()` in `cv-prompt.ts` aligned manually.
+Every fact must appear in the resolved master CV JSON. The curator does not invent employers, dates, metrics, or tools.

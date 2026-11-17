@@ -1,5 +1,5 @@
 ---
-status: open
+status: closed
 execution: code
 priority: p2
 plan: docs/plans/2026-09-03-001-feat-retire-llm-judges-plan.md
@@ -12,11 +12,11 @@ Branch: `feature/retire-llm-judges`
 Plan: `docs/plans/2026-09-03-001-feat-retire-llm-judges-plan.md`
 Review run: `/tmp/compound-engineering-501/ce-code-review/20260903-123627-a5b44e32`
 
-Eligible review-followup applies were skipped: remaining actionable item is dedicated eval-parse unit tests.
+Eligible review-followup applies were skipped; eval-parse unit tests restored on `main` (`tests/eval-parse.test.ts`).
 
 ## Residual Review Findings
 
-- P2 `app/api/lib/eval-parse.ts:5` — Dedicated eval-parse unit tests were deleted with eval-judge — https://github.com/mikkel250/ccc/issues/38
+- ~~P2 eval-parse unit tests~~ — closed; `tests/eval-parse.test.ts` on `main` (GitHub #38)
 
 ### Settled-conflict (report-only; do not revert)
 

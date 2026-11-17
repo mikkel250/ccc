@@ -16,7 +16,7 @@ Canonical instructions for AI coding agents working in this repository.
 - Prefer existing local patterns over introducing new abstractions.
 - Update docs when behavior, architecture, or test strategy changes.
 - Run the validation command in `## Commands` after docs changes when the CLI is available, and follow its traceability guidance for behavior specs.
-- Follow the project code conventions in `docs/arch/CODE_CONVENTIONS.md`.
+- Follow the project code conventions in `docs/arch/README.md` (stack table and module boundaries).
 - Follow TDD for new behavior and bug fixes (see Testing Philosophy).
 - For complex multi-step tasks (intake, decomposition, review), reason through fully before producing any artifact. Do not narrate the reasoning process in output — lead with conclusions and artifacts.
 

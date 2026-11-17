@@ -1,7 +1,9 @@
 # Eval Model Selection Requirements
 
+> **Superseded.** Judges and `scripts/eval-cv.ts` quality gates were retired ([retire LLM judges](../plans/2026-09-03-001-feat-retire-llm-judges-plan.md)). Use `docs/arch/MODEL_SELECTION.md` and operator smoke for model choice.
+
 **Session:** 2026-06-10  
-**Status:** Refined test matrix — ready for `.env` update and re-run of `scripts/eval-cv.ts`
+**Status:** Historical — judge-heavy eval matrix; do not re-run as production guidance
 
 ## Summary
 

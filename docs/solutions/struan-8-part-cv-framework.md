@@ -6,6 +6,8 @@ source: docs/struan-8-part-cv-framework.md
 
 # Sam Struan 8-Part CV Framework
 
+> **Historical.** Shipped tailoring uses JSON curation (`master-cv.schema.json`, `curator-prompt.ts`), not eight-part Markdown. Kept for pivot-era context.
+
 ## Problem
 LLM-generated CVs hallucinate when the entire document is treated as a rewriting target. Rewriting everything per JD invites inconsistency, fabrication, and attention dilution. Recruiters also lack company context that would make accomplishment bullets credible.
 
@@ -24,9 +26,8 @@ Separate the CV into **stable sections** (factual, unchanging) and **one tailori
 ### Key architectural decisions
 - **Stable/factual separation** reduces hallucination surface — only part 3 changes meaningfully per JD
 - **Company summaries** (part 6) frame bullets in believable scale — one of the most overlooked résumé sections
-- **Grounding rule:** every fact must appear in `knowledge-base/` content; no invented employers, dates, metrics, or tools
-- **Strict Markdown output only** — no HTML, tables, JSON, or code fences (docx parser requirement)
-- **Sync contract:** production uses Langfuse `cv-tailor-system` (label: `production`); fallback in `cv-prompt.ts` kept aligned manually
+- **Grounding rule (current):** every fact must appear in master CV JSON; no invented employers, dates, metrics, or tools
+- **Legacy output:** strict Markdown eight-part doc (pre–JSON curator); mechanical `.docx` today is `json-docx-builder.ts`
 
 ## See Also
 - [Original source](docs/struan-8-part-cv-framework.md)

@@ -1,6 +1,6 @@
 # Brainstorms
 
-Exploration and requirements artifacts from `/workflows-brainstorm`.
+Exploration and requirements artifacts from `/ce-brainstorm`.
 
 ## Index
 

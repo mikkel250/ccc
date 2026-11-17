@@ -12,18 +12,16 @@ Lanes (`lfg` / `operator` / `parked` / `awaiting-merge`) mark whether drain may 
 
 Shipped on `main`: JSON curator API, auth/rate-limit, smoke library, flexible cover-letter DOCX, LLM-judge retirement, this README.
 
-Named leftover: [eval-parse unit tests](./2026-09-06-001-test-restore-eval-parse-unit-tests-plan.md) from the retire-judges review (GitHub #38). Lane: awaiting-merge
-
 Operator focus (STRATEGY, not `/ce-work`): in-field `strict` submit bar. Lane: operator
 
-Drain order (composite pick): GitHub #38, then M7. Inbox product contract: [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md).
+Drain order (composite pick): M7, then remaining inbox rows. Inbox product contract: [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md).
 
 ## Milestones (build order)
 
 | # | Milestone | Status | Plan | Unblocks | Lane |
 |---|-----------|--------|------|----------|------|
 | M1 | JSON curator API returns curated JSON + `.docx` | done | [json curator pipeline](./2026-07-20-001-feat-json-curator-cv-pipeline-plan.md) | Smoke + later surfaces | |
-| M2 | MVP auth + rate limiting | done | [Upstash rate limit](./2026-06-12-feat-upstash-redis-rate-limit-plan.md), [client IP resolution](./2026-07-04-001-fix-rate-limit-client-ip-resolution-plan.md) | Safe operator/product traffic | |
+| M2 | MVP auth + rate limiting | done | [Upstash rate limit](../solutions/upstash-redis-rate-limit-migration.md) (review archive: [plan](./2026-06-12-feat-upstash-redis-rate-limit-plan.md)), [client IP resolution](./2026-07-04-001-fix-rate-limit-client-ip-resolution-plan.md) | Safe operator/product traffic | |
 | M3 | Flexible flag + cover letter; critique-revise retired | parked | [flexible posture + critique](./2026-07-27-feat-flexible-curation-posture-and-critique-loop-plan.md) — critique half superseded by [retire LLM judges](./2026-09-03-001-feat-retire-llm-judges-plan.md); STRATEGY is not investing in `flexible` as the commercial path | — | parked |
 | M4 | Smoke runner library + cover-letter DOCX (no judges) | done | [entrypoint extract](./2026-07-23-refactor-extract-entrypoint-complexity-plan.md) (U3 on `main`), [cover letter DOCX](./2026-07-28-feat-smoke-cover-letter-docx-plan.md) | Operator artifact loop | |
 | M5 | Retire LLM judges from tailor and smoke | done | [retire LLM judges](./2026-09-03-001-feat-retire-llm-judges-plan.md) | Single-pass tailor; human quality loop | |
@@ -31,7 +29,7 @@ Drain order (composite pick): GitHub #38, then M7. Inbox product contract: [inbo
 | M7 | Cross-model parity matrix | in progress | [cross-model parity](./2026-09-06-002-feat-cross-model-parity-matrix-plan.md) | Production confidence across providers | awaiting-merge |
 | M8.1 | Strict reply text on `POST /api/tailor-cv` | done | [strict reply text](./2026-09-06-003-feat-strict-reply-text-plan.md) — shipped on strict HTTP + smoke; inbox in-process path stacks on M8.4 | Smoke yields a sendable recruiter reply plus CV artifacts | |
 | M8.2 | Gmail auth + list labeled mail | in progress | [gmail auth + list](./2026-09-06-004-feat-gmail-auth-list-plan.md) — product contract [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) R6, R13, R15, R16 | Local list of recruiter-labeled messages without creating drafts | awaiting-merge |
-| M8.3 | Body extract + processed-ID store | in progress | [inbox extract + store](./2026-09-06-005-feat-inbox-extract-store-plan.md) — product contract [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) R7, R10, R12 | Second extract of the same message is a no-op after the first mark | lfg |
+| M8.3 | Body extract + processed-ID store | done | [inbox extract + store](./2026-09-06-005-feat-inbox-extract-store-plan.md) — `tests/inbox-processed-store.test.ts`, `tests/gmail-body.test.ts` on `main` | Second extract of the same message is a no-op after the first mark | |
 | M8.4 | Tailor from a labeled message | in progress | [in-process tailor](./2026-09-06-006-feat-in-process-tailor-plan.md) — product contract [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) R8 | In-process strict tailor returns `.docx` and reply text without public rate-limit buckets | awaiting-merge |
 | M8.5 | Thread draft + attach + body | in progress | [gmail thread draft](./2026-09-06-007-feat-gmail-thread-draft-plan.md) — product contract [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) R10, R11, R13 | Local scan creates a Gmail reply draft with body and CV `.docx` | awaiting-merge |
 | M8.6 | Railway schedule for the same scan job | in progress | [railway inbox cron](./2026-09-06-008-feat-railway-inbox-cron-plan.md) — product contract [inbox worker](./2026-09-05-002-feat-inbox-worker-plan.md) R14 | Deploy scans while the laptop is closed; reruns skip processed ids | awaiting-merge |
@@ -45,7 +43,7 @@ M5–M6 numbering here is the *current* board. Historical “M5 tenure honesty�
 - **Tenure honesty guardrails** — was a pivot-path milestone; no plan. Do not start while STRATEGY parks pivot/`flexible` commercial investment. Lane: parked
 - **Holistic “strong enough” smoke judge** — retired. See [retire LLM judges](./2026-09-03-001-feat-retire-llm-judges-plan.md).
 - **Judge model bakeoff** — [superseded](./2026-07-30-001-feat-judge-model-bakeoff-plan.md); do not implement. Lane: parked
-- **Code-quality / review-todo maintenance** — [code quality hardening](./2026-06-07-code-quality-hardening.md), [close review todos](./2026-07-05-001-refactor-close-outstanding-code-review-todos-plan.md). `todos/` is a closed receipt book (filenames match YAML). Residual eval-parse tests are the named leftover. Lane: parked
+- **Code-quality / review-todo maintenance** — [code quality hardening](./2026-06-07-code-quality-hardening.md), [close review todos](./2026-07-05-001-refactor-close-outstanding-code-review-todos-plan.md). `todos/` is a closed receipt book (filenames match YAML). Lane: parked
 - **Full product vision** — frontend, multi-user, learning system (see `docs/arch/LEARNING_SYSTEM.md`); deferred beyond the personal-tool finish line.
 
 ## How to update
