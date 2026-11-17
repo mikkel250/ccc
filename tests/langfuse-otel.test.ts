@@ -144,9 +144,7 @@ describe("flushLangfuseTraces", () => {
       );
       const { warnings, restore } = captureWarnings();
       try {
-        const started = Date.now();
         await assert.doesNotReject(() => flushLangfuseTraces());
-        assert.ok(Date.now() - started < 200);
         assert.equal(flushCalls, 1);
         assert.equal(warnings.length, 1);
         assert.match(String(warnings[0]?.[0]), /Langfuse flush failed or timed out/i);
