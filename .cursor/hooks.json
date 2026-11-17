@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "stop": [
+      {
+        "command": ".cursor/hooks/check-open-questions.sh"
+      },
+      {
+        "command": ".cursor/hooks/check-review-notes.sh"
+      }
+    ]
+  }
+}
