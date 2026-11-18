@@ -79,6 +79,7 @@ curl http://localhost:3000/api/hello
 ```
 
 Ad-hoc `curl` to `POST /api/tailor-cv` is **not** a supported operator method once smoke exists (see product contract). Use smoke for live checks.
+
 ---
 
 ## Testing
