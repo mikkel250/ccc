@@ -16,7 +16,7 @@ This project uses test-driven development for new behavior and bug fixes. Canoni
 
 | Requirement | Notes |
 |-------------|--------|
-| Node.js ≥22.0.0 | Same as production (Railway); `.nvmrc` present |
+| Node.js ≥22.15.0 | Same as production (Railway); `.nvmrc` present (`@opentelemetry/sdk-node` 0.301 requires it) |
 | `npm install` | From repo root |
 | LLM API key | At least one provider from `.env.example` |
 | Running server | Required for e2e and manual `curl` tests (not for `npm test`) |
@@ -123,7 +123,9 @@ RUN_INBOX_REDIS_TESTS=1 UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... 
 | `tests/curator-prompt.test.ts` | Curator prompt contract |
 | `tests/knowledge-base.test.ts` | Legacy KB helpers (not tailor hot path) |
 | `tests/ci-workflow.test.ts` | GitHub Actions CI workflow: lint + `npm test` + build on PRs/`main`; no live-secret jobs |
-| `tests/eslint-config.test.ts` | ESLint 9 flat config; `eslint-config-next` major matches Next 15 (FlatCompat, not the Next 16 ESM export) |
+| `tests/eslint-config.test.ts` | ESLint 9 flat config; `eslint-config-next` major matches Next 16 (native ESM, not FlatCompat) |
+| `tests/next-config.test.ts` | Next 16 config: no custom webpack (Turbopack default); OTEL packages stay external |
+| `tests/langfuse-otel.test.ts` | Lazy OTEL start gated on `LANGFUSE_TRACING`; 0.301.x sdk-node pin; bounded flush |
 | `tests/markdown-docx.test.ts` | Legacy markdown→docx; `isValidDocxBase64` rejects unpadded / charset-invalid input |
 | `tests/npm-test-script.test.ts` | `package.json` `test` script keeps quoted `tests/**/*.test.ts` glob for nested tests under npm |
 | `tests/rate-limit.test.ts` | Dual IP + secret rate limits |

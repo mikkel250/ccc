@@ -3,12 +3,47 @@
  * Started once when LANGFUSE_TRACING=true and keys are set.
  */
 
-import type { LangfuseSpanProcessor } from "@langfuse/otel";
 import { getEnvNumber } from "../../../lib/env";
+
+type FlushableSpanProcessor = {
+  forceFlush: () => Promise<void>;
+};
 
 let otelStarted = false;
 let otelStarting: Promise<void> | null = null;
-let spanProcessor: LangfuseSpanProcessor | null = null;
+let spanProcessor: FlushableSpanProcessor | null = null;
+let otelInitAttempts = 0;
+
+export function __resetLangfuseOtelForTest(): void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("__resetLangfuseOtelForTest is only available in the test environment");
+  }
+  otelStarted = false;
+  otelStarting = null;
+  spanProcessor = null;
+  otelInitAttempts = 0;
+}
+
+export function __getLangfuseOtelInitAttemptsForTest(): number {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error(
+      "__getLangfuseOtelInitAttemptsForTest is only available in the test environment"
+    );
+  }
+  return otelInitAttempts;
+}
+
+export function __injectLangfuseSpanProcessorForTest(
+  processor: FlushableSpanProcessor | null
+): void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error(
+      "__injectLangfuseSpanProcessorForTest is only available in the test environment"
+    );
+  }
+  spanProcessor = processor;
+  otelStarted = processor !== null;
+}
 
 export async function ensureLangfuseOtel(): Promise<void> {
   if (otelStarted) return;
@@ -28,23 +63,25 @@ export async function ensureLangfuseOtel(): Promise<void> {
   }
 
   otelStarting = (async () => {
+    otelInitAttempts += 1;
     try {
       const { NodeSDK } = await import("@opentelemetry/sdk-node");
       const { LangfuseSpanProcessor } = await import("@langfuse/otel");
 
-      spanProcessor = new LangfuseSpanProcessor({
+      const processor = new LangfuseSpanProcessor({
         // Next.js API routes are short-lived — batched export often never flushes
         exportMode: "immediate",
         baseUrl: process.env.LANGFUSE_BASE_URL,
         publicKey: process.env.LANGFUSE_PUBLIC_KEY,
         secretKey: process.env.LANGFUSE_SECRET_KEY,
       });
+      spanProcessor = processor;
 
       const sdk = new NodeSDK({
-        spanProcessors: [spanProcessor],
+        spanProcessors: [processor],
       });
 
-      sdk.start();
+      await sdk.start();
       otelStarted = true;
       console.log("Langfuse OTEL started (lazy, immediate export)");
     } catch (error) {
@@ -66,7 +103,7 @@ export function getLangfuseFlushTimeoutMs(): number {
   );
 }
 
-function flushWithTimeout(processor: LangfuseSpanProcessor, timeoutMs: number): Promise<void> {
+function flushWithTimeout(processor: FlushableSpanProcessor, timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error(`Langfuse flush timed out after ${timeoutMs}ms`)),

@@ -30,11 +30,11 @@ function majorFromSpec(spec: string): string {
   return match[1]!;
 }
 
-describe("eslint flat config (Next.js 15)", () => {
+describe("eslint flat config (Next.js 16)", () => {
   it("has eslint.config.mjs at project root", () => {
     assert.ok(
       existsSync(join(root, "eslint.config.mjs")),
-      "eslint.config.mjs must exist for Next.js 15 ESLint flat config"
+      "eslint.config.mjs must exist for Next.js 16 ESLint flat config"
     );
   });
 
@@ -43,24 +43,25 @@ describe("eslint flat config (Next.js 15)", () => {
     assert.equal(
       pkg.scripts?.lint,
       "eslint .",
-      'lint script must be "eslint ." — next lint is deprecated in Next.js 15.5'
+      'lint script must be "eslint ." — next lint is removed in Next.js 16'
     );
   });
 
-  it("declares eslint, eslint-config-next, and @eslint/eslintrc as devDependencies", () => {
+  it("declares eslint and eslint-config-next as devDependencies without FlatCompat", () => {
     const pkg = readPackageJson();
     assert.ok(pkg.devDependencies?.eslint, "eslint must be a devDependency");
     assert.ok(
       pkg.devDependencies?.["eslint-config-next"],
       "eslint-config-next must be a devDependency"
     );
-    assert.ok(
+    assert.equal(
       pkg.devDependencies?.["@eslint/eslintrc"],
-      "@eslint/eslintrc must be a direct devDependency for Next 15 FlatCompat"
+      undefined,
+      "Next 16 eslint-config-next is native ESM; do not keep @eslint/eslintrc FlatCompat"
     );
   });
 
-  it("pins eslint-config-next to the same major as next (15)", () => {
+  it("pins eslint-config-next to the same major as next (16)", () => {
     const pkg = readPackageJson();
     const nextSpec = pkg.dependencies?.next;
     const eslintConfigNextSpec = pkg.devDependencies?.["eslint-config-next"];
@@ -69,7 +70,7 @@ describe("eslint flat config (Next.js 15)", () => {
 
     const nextMajor = majorFromSpec(nextSpec);
     const eslintConfigNextMajor = majorFromSpec(eslintConfigNextSpec);
-    assert.equal(nextMajor, "15", `next must stay on 15.x (got ${nextSpec})`);
+    assert.equal(nextMajor, "16", `next must stay on 16.x (got ${nextSpec})`);
     assert.equal(
       eslintConfigNextMajor,
       nextMajor,
@@ -78,32 +79,39 @@ describe("eslint flat config (Next.js 15)", () => {
 
     const nextInstalled = installedVersion("next");
     const eslintConfigNextInstalled = installedVersion("eslint-config-next");
-    assert.equal(
-      majorFromSpec(nextInstalled),
-      "15",
-      `installed next must be 15.x (got ${nextInstalled})`
+    assert.match(
+      nextInstalled,
+      /^16\.4\./,
+      `installed next must be 16.4.x to clear nested postcss (got ${nextInstalled})`
     );
     assert.equal(
       majorFromSpec(eslintConfigNextInstalled),
-      "15",
-      `installed eslint-config-next must be 15.x (got ${eslintConfigNextInstalled})`
+      "16",
+      `installed eslint-config-next must be 16.x (got ${eslintConfigNextInstalled})`
     );
   });
 
-  it("eslint.config.mjs uses Next 15 FlatCompat, not the Next 16 ESM export", () => {
+  it("eslint.config.mjs uses Next 16 native ESM export, not FlatCompat", () => {
     const configPath = join(root, "eslint.config.mjs");
     assert.ok(existsSync(configPath), "eslint.config.mjs must exist");
     const content = readFileSync(configPath, "utf8");
-    assert.match(content, /eslint-config-next/);
     assert.match(content, /export default/);
-    assert.match(content, /FlatCompat/);
-    assert.match(content, /@eslint\/eslintrc/);
-    assert.match(content, /next\/core-web-vitals/);
-    assert.doesNotMatch(
+    assert.match(
       content,
       /from ["']eslint-config-next\/core-web-vitals["']/,
-      "Next 15 eslint-config-next has no flat-config ESM export at eslint-config-next/core-web-vitals"
+      "Next 16 eslint-config-next exposes a flat-config ESM export at eslint-config-next/core-web-vitals"
     );
+    assert.match(
+      content,
+      /from ["']eslint-config-next\/typescript["']/,
+      "Next 16 typescript lint rules come from eslint-config-next/typescript"
+    );
+    assert.doesNotMatch(
+      content,
+      /FlatCompat/,
+      "Next 16 native ESM export does not need @eslint/eslintrc FlatCompat"
+    );
+    assert.doesNotMatch(content, /@eslint\/eslintrc/);
     assert.match(
       content,
       /@typescript-eslint\/no-explicit-any/,

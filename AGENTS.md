@@ -6,7 +6,7 @@ Canonical instructions for AI coding agents working in this repository.
 
 - Name: CCC (Career Command Center)
 - Purpose: Personal in-field job-search tool. `POST /api/tailor-cv` curates a JD-specific CV. The product adds recruiter reply text on the strict path (M8.1) and an inbox worker in this process that scans a Gmail label and creates a reply draft with the CV attached. No product UI in v1; a separate frontend is deferred.
-- Primary stack: Node.js 22, TypeScript 5, Next.js 15 (App Router, API + inbox worker, no product UI), npm; SQLite planned post-MVP (stateless tailor today), Upstash Redis for rate limiting and processed Gmail message ids.
+- Primary stack: Node.js 22, TypeScript 5, Next.js 16 (App Router, API + inbox worker, no product UI), npm; SQLite planned post-MVP (stateless tailor today), Upstash Redis for rate limiting and processed Gmail message ids.
 
 ## Working Rules
 

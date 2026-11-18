@@ -32,7 +32,9 @@ function loadValidator(): ValidateFunction {
   if (validateFn) return validateFn;
   const fromEnv = getEnvString("CV_SCHEMA_PATH")?.trim();
   const schemaPath = fromEnv || join(process.cwd(), SCHEMA_RELATIVE);
-  const schema = JSON.parse(readFileSync(schemaPath, "utf8")) as object;
+  const schema = JSON.parse(
+    readFileSync(/* turbopackIgnore: true */ schemaPath, "utf8")
+  ) as object;
   const ajv = new Ajv2020({
     allErrors: true,
     strict: true,

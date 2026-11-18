@@ -12,7 +12,7 @@ Architecture decisions, code conventions, module boundaries, and infrastructure 
 
 ## Stack context (for agents)
 
-This project is the **CV Tailoring API plus inbox worker (in progress)** — a Next.js 15 backend deployed on Railway. `POST /api/tailor-cv` accepts a job description and returns a tailored CV as a base64-encoded `.docx` (plus curated JSON). The default `strict` path returns recruiter reply email text. Bearer auth (`TAILOR_API_KEY`); master CV is JSON via `MASTER_CV_JSON` / `MASTER_CV_PATH`; the LLM returns schema-validated curated JSON; the server mechanically builds `.docx`. No product UI. Gmail auth/list/body-extract/processed-id store, thread drafts, and `npm run inbox:scan` are in this process (product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`). Railway cron for that scan is a second service (`railway.inbox-scan.toml`, 05:00 UTC) running the same `npm run inbox:scan` job. A learning system with local SQLite storage is planned post-MVP.
+This project is the **CV Tailoring API plus inbox worker (in progress)** — a Next.js 16 backend deployed on Railway. `POST /api/tailor-cv` accepts a job description and returns a tailored CV as a base64-encoded `.docx` (plus curated JSON). The default `strict` path returns recruiter reply email text. Bearer auth (`TAILOR_API_KEY`); master CV is JSON via `MASTER_CV_JSON` / `MASTER_CV_PATH`; the LLM returns schema-validated curated JSON; the server mechanically builds `.docx`. No product UI. Gmail auth/list/body-extract/processed-id store, thread drafts, and `npm run inbox:scan` are in this process (product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`). Railway cron for that scan is a second service (`railway.inbox-scan.toml`, 05:00 UTC) running the same `npm run inbox:scan` job. A learning system with local SQLite storage is planned post-MVP.
 
 The project was cloned from `portfolio-react-ts` and stripped of all portfolio pages, components, and styles. Only the API layer and knowledge base were retained.
 
@@ -21,14 +21,14 @@ The project was cloned from `portfolio-react-ts` and stripped of all portfolio p
 | Layer | Choice | Notes |
 |-------|--------|-------|
 | Language | TypeScript 5 | Strict mode |
-| Framework | Next.js 15 App Router | API routes only (`app/api/`). No pages, no components, no layout beyond API root. |
-| Runtime | Node.js 22 LTS (≥22.0.0) | Railway (Nixpacks reads `.nvmrc`); no Edge Functions |
+| Framework | Next.js 16 App Router | API routes only (`app/api/`). No pages, no components, no layout beyond API root. |
+| Runtime | Node.js 22 LTS (≥22.15.0) | Railway (Nixpacks reads `.nvmrc`); no Edge Functions |
 | LLM | OpenAI, Anthropic, Google, DeepSeek, OpenRouter (multi-provider dispatch) | Model strings use `provider/model`. Routing is `parseNamespacedProvider` + `KNOWN_PROVIDERS` (`lib/providers.ts`). `dispatchProvider` may `switch` on provider for SDK call shape — that is integration, not routing. OpenRouter `service_tier: flex` is attached only in `callOpenRouter`, and only for `openai/*` and `google/*` model IDs (OpenRouter flex **restricts** routing to flex endpoints; it is not silently ignored). Direct `openai/` and `google/` prefixes do not get flex. Anthropic is always the direct API. Separate `TAILOR_MODEL` for CV generation. Tailor is a single curator pass. Native batch APIs deferred. |
 | Auth | Bearer shared-secret (`TAILOR_API_KEY`) | Required for `POST /api/tailor-cv` |
 | Database | None on the tailor path (stateless). SQLite planned post-MVP for the learning system; PostgreSQL + pgvector later. | Do not treat SQLite as current storage. |
 | Storage | None | CV .docx is generated in-memory per request, returned as base64 |
 | Testing (unit) | node:test + node:assert/strict | Zero dependency, no config drift. Test-only injection via optional function parameters. Run: `npm test`. |
-| Lint | ESLint 9 + `eslint-config-next` 15 | Flat config via FlatCompat (`eslint .`). Pin `eslint-config-next` to the Next 15 line; the Next 16 ESM export (`eslint-config-next/core-web-vitals`) is not available on 15.x. |
+| Lint | ESLint 9 + `eslint-config-next` 16 | Native ESM flat config (`eslint-config-next/core-web-vitals` + `eslint-config-next/typescript`). Pin `eslint-config-next` to the same major as `next`. |
 | Testing (E2E) | @playwright/test | HTTP-level API tests in `tests/e2e/`. Requires a running dev server (`npm run dev`). Run: `npm run test:e2e`. Set `RUN_E2E_LLM_TESTS=true` to include the full LLM call test. |
 | Observability | LangFuse + LangSmith | Dual tracing on all LLM calls |
 | Deployment | Railway (Hobby) | Default v1 host: long-lived Node (`npm start`). Vercel Hobby fluid functions default to and cap at 300s. See [Deployment hosting](./README.md#deployment-hosting-railway-vs-vercel). |
