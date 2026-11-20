@@ -1,12 +1,41 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { join } from "node:path";
 import {
   authenticateTailorRequest,
   bearerTokenEquals,
   ensureSecureStartup,
+  getStartupSecurityError,
   isProductionLikeDeploy,
   parseBearerToken,
 } from "../app/api/lib/tailor-auth";
+
+const REPO_ROOT = process.cwd();
+const STARTUP_PROBE = join(
+  REPO_ROOT,
+  "tests/fixtures/ensure-secure-startup-probe.ts"
+);
+
+function spawnEnsureSecureStartup(
+  envOverrides: NodeJS.ProcessEnv
+): ReturnType<typeof spawnSync> {
+  const env = { ...process.env, ...envOverrides };
+  for (const key of [
+    "TAILOR_API_KEY",
+    "TAILOR_AUTH_INSECURE_BYPASS",
+    "RAILWAY_ENVIRONMENT",
+    "VERCEL_ENV",
+  ] as const) {
+    if (!(key in envOverrides)) delete env[key];
+  }
+  return spawnSync(process.execPath, ["--import", "tsx", STARTUP_PROBE], {
+    cwd: REPO_ROOT,
+    env,
+    encoding: "utf8",
+    timeout: 20_000,
+  });
+}
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -104,6 +133,88 @@ describe("tailor-auth", () => {
     process.env.TAILOR_AUTH_INSECURE_BYPASS = "1";
     process.env.RAILWAY_ENVIRONMENT = "production";
     assert.doesNotThrow(() => ensureSecureStartup());
+  });
+
+  it("ensureSecureStartup is a no-op in test when production is missing the key", () => {
+    process.env.NODE_ENV = "test";
+    process.env.RAILWAY_ENVIRONMENT = "production";
+    delete process.env.TAILOR_API_KEY;
+    assert.doesNotThrow(() => ensureSecureStartup());
+  });
+
+  it("ensureSecureStartup exits non-zero in a production subprocess without TAILOR_API_KEY", () => {
+    const result = spawnEnsureSecureStartup({ NODE_ENV: "production" });
+    const output = `${result.stderr}\n${result.stdout}`;
+    assert.notEqual(result.status, 0, output);
+    assert.match(output, /TAILOR_API_KEY/);
+    assert.doesNotMatch(output, /secret-key|Bearer/i);
+  });
+
+  it("ensureSecureStartup does not exit in a production subprocess when the key is set", () => {
+    const result = spawnEnsureSecureStartup({
+      NODE_ENV: "production",
+      TAILOR_API_KEY: "secret-key",
+    });
+    assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+  });
+
+  describe("getStartupSecurityError", () => {
+    it("fatals in production when TAILOR_API_KEY is unset", () => {
+      process.env.NODE_ENV = "production";
+      delete process.env.TAILOR_API_KEY;
+      const message = getStartupSecurityError();
+      assert.equal(typeof message, "string");
+      assert.match(message!, /TAILOR_API_KEY/);
+      assert.doesNotMatch(message!, /secret-key|Bearer/i);
+    });
+
+    it("fatals in production when TAILOR_API_KEY is whitespace-only", () => {
+      process.env.NODE_ENV = "production";
+      process.env.TAILOR_API_KEY = "   ";
+      const message = getStartupSecurityError();
+      assert.equal(typeof message, "string");
+      assert.match(message!, /TAILOR_API_KEY/);
+    });
+
+    it("fatals when VERCEL_ENV=production and the key is unset", () => {
+      process.env.VERCEL_ENV = "production";
+      delete process.env.TAILOR_API_KEY;
+      const message = getStartupSecurityError();
+      assert.equal(typeof message, "string");
+      assert.match(message!, /TAILOR_API_KEY/);
+    });
+
+    it("fatals when RAILWAY_ENVIRONMENT=production and the key is unset", () => {
+      process.env.RAILWAY_ENVIRONMENT = "production";
+      delete process.env.TAILOR_API_KEY;
+      const message = getStartupSecurityError();
+      assert.equal(typeof message, "string");
+      assert.match(message!, /TAILOR_API_KEY/);
+    });
+
+    it("returns undefined in production when the key is set and bypass is off", () => {
+      process.env.NODE_ENV = "production";
+      process.env.TAILOR_API_KEY = "secret-key";
+      assert.equal(getStartupSecurityError(), undefined);
+    });
+
+    it("returns the bypass fatal in production even when a key is set", () => {
+      process.env.NODE_ENV = "production";
+      process.env.TAILOR_API_KEY = "secret-key";
+      process.env.TAILOR_AUTH_INSECURE_BYPASS = "1";
+      const message = getStartupSecurityError();
+      assert.equal(typeof message, "string");
+      assert.match(message!, /TAILOR_AUTH_INSECURE_BYPASS/);
+    });
+
+    it("returns undefined locally when the key is unset and bypass is off", () => {
+      delete process.env.TAILOR_API_KEY;
+      assert.equal(isProductionLikeDeploy(), false);
+      assert.equal(getStartupSecurityError(), undefined);
+      const result = authenticateTailorRequest(null);
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.equal(result.status, 503);
+    });
   });
 
   it("treats VERCEL_ENV=production as a production-like deploy", () => {
