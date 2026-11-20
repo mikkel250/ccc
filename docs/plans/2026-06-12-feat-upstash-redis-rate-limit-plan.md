@@ -1,3 +1,5 @@
+> **M2 shipped.** Implementation record: [Upstash Redis rate-limit migration](../solutions/upstash-redis-rate-limit-migration.md). This file is a Tier 3 **review archive** only — not an implementation plan.
+
 ## Review — Tier 3: 2026-06-12
 
 **Validation Summary:** 6 confirmed, 1 refuted, 0 needs human review

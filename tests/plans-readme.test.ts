@@ -179,9 +179,11 @@ describe("docs/plans/README.md — cross-file contracts", () => {
 
   it("lanes the named leftover and operator-focus lines in Active", () => {
     const content = fs.readFileSync(README_PATH, "utf-8");
-    const leftover = content.split("\n").find((line) => line.includes("GitHub #38"));
-    assert.ok(leftover, "Active must name leftover GitHub #38");
-    assert.equal(requireLaneToken(leftover, "leftover #38"), "awaiting-merge");
+    const activeSection = content.split("## Milestones")[0];
+    assert.ok(
+      !activeSection.includes("GitHub #38"),
+      "eval-parse shipped (tests/eval-parse.test.ts); Active must not list #38 leftover"
+    );
     const operator = content.split("\n").find((line) => line.includes("submit bar"));
     assert.ok(operator, "Active must name the in-field submit bar");
     assert.equal(requireLaneToken(operator, "submit bar"), "operator");

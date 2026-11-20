@@ -14,7 +14,7 @@ Architecture decisions, code conventions, module boundaries, and infrastructure 
 
 This project is the **CV Tailoring API plus inbox worker (in progress)** — a Next.js 15 backend deployed on Railway. `POST /api/tailor-cv` accepts a job description and returns a tailored CV as a base64-encoded `.docx` (plus curated JSON). The default `strict` path returns recruiter reply email text. Bearer auth (`TAILOR_API_KEY`); master CV is JSON via `MASTER_CV_JSON` / `MASTER_CV_PATH`; the LLM returns schema-validated curated JSON; the server mechanically builds `.docx`. No product UI. Gmail auth/list/body-extract/processed-id store, thread drafts, and `npm run inbox:scan` are in this process (product contract: `docs/plans/2026-09-05-002-feat-inbox-worker-plan.md`). Railway cron for that scan is a second service (`railway.inbox-scan.toml`, 05:00 UTC) running the same `npm run inbox:scan` job. A learning system with local SQLite storage is planned post-MVP.
 
-The project was cloned from `portfolio-react-ts` and stripped of all portfolio pages, components, and styles. Only the API layer and knowledge base were retained.
+The project was cloned from `portfolio-react-ts` and stripped of all portfolio pages, components, and styles. Only the API layer was retained; master CV is private JSON (`MASTER_CV_JSON` / `MASTER_CV_PATH`), not the legacy `knowledge-base/` Markdown tree.
 
 ## Stack
 
