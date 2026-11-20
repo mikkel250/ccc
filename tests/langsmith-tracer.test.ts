@@ -60,6 +60,20 @@ describe("langsmithTracer.isEnabled", () => {
       else process.env.LANGSMITH_ENDPOINT = saved;
     }
   });
+
+  it("resolveLangSmithEndpoint returns an explicit LANGSMITH_ENDPOINT override", () => {
+    const saved = process.env.LANGSMITH_ENDPOINT;
+    process.env.LANGSMITH_ENDPOINT = "https://langsmith.example.test/api";
+    try {
+      assert.equal(
+        resolveLangSmithEndpoint(),
+        "https://langsmith.example.test/api"
+      );
+    } finally {
+      if (saved === undefined) delete process.env.LANGSMITH_ENDPOINT;
+      else process.env.LANGSMITH_ENDPOINT = saved;
+    }
+  });
 });
 
 describe("recordLangSmithTrace — fire-and-forget", () => {

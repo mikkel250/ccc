@@ -148,8 +148,8 @@ Canonical catalog: `.env.example`. Cross-file invariant: documented `TAILOR_MODE
 
 | Layer | File | When it runs |
 |-------|------|--------------|
-| Langfuse generations | `app/api/lib/tracers/langfuse.ts :: record` via `recordLangfuseTrace` | Every `chat()` call when `LANGFUSE_TRACING=true`; awaited so flush completes |
-| Langfuse OTEL | `app/api/lib/langfuse-otel.ts :: ensureLangfuseOtel` | Lazy start on first trace; `flushLangfuseTraces()` before response ends |
+| Langfuse generations | `app/api/lib/tracers/langfuse.ts :: record` via `recordLangfuseTrace` | Every `chat()` call when `LANGFUSE_TRACING=true`; the await waits up to `LANGFUSE_FLUSH_TIMEOUT_MS`, then continues with a warning |
+| Langfuse OTEL | `app/api/lib/langfuse-otel.ts :: ensureLangfuseOtel` | Lazy start on first trace; `flushLangfuseTraces()` waits up to `LANGFUSE_FLUSH_TIMEOUT_MS`, then continues with a warning |
 | LangSmith runs | `app/api/lib/tracers/langsmith.ts :: record` via `recordLangSmithTrace` | Every `chat()` when `LANGSMITH_TRACING=true`; fire-and-forget |
 | Request ids | `app/api/lib/request-id.ts` via tailor route + `inbox-tailor` | Error JSON/`X-Request-Id` on `POST /api/tailor-cv`; `requestId` on inbox tailor failures |
 | Next.js hook | `instrumentation.ts` → `instrumentation.node.ts :: registerNode` | `ensureSecureStartup()` (R5d) + `preloadMasterCv()`; OTEL stays lazy; node work isolated so Edge compile avoids `node:crypto` |
