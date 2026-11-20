@@ -20,8 +20,6 @@ import anthropicModels from '../../../config/anthropic-models.json';
 // the provider registry; see lib/providers.ts for why it moved to a leaf module.
 export { KNOWN_PROVIDERS, type Provider };
 
-export const LLM_CONFIG = getLLMConfig();
-
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -1016,47 +1014,5 @@ export async function chat(
     throw error;
   } finally {
     combined.dispose();
-  }
-}
-
-export async function testConnection(): Promise<boolean> {
-  const defaultModel = getDefaultLlmModel();
-  const provider = detectProvider(defaultModel);
-
-  try {
-    switch (provider) {
-      case 'openrouter':
-        if (!process.env.OPENROUTER_API_KEY) return false;
-        await getOpenRouter().models.list();
-        return true;
-      case 'openai':
-        if (!process.env.OPENAI_API_KEY) return false;
-        await getOpenAI().models.list();
-        return true;
-      case 'anthropic':
-        if (!process.env.ANTHROPIC_API_KEY) return false;
-        await getAnthropic().models.list();
-        return true;
-      case 'deepseek':
-        if (!process.env.DEEPSEEK_API_KEY) return false;
-        return true;
-      case 'google':
-        if (!process.env.GOOGLE_API_KEY) return false;
-        await getGoogle().models.list();
-        return true;
-      default:
-        if (process.env.OPENROUTER_API_KEY) {
-          await getOpenRouter().models.list();
-          return true;
-        }
-        if (process.env.OPENAI_API_KEY) {
-          await getOpenAI().models.list();
-          return true;
-        }
-        return false;
-    }
-  } catch (error) {
-    console.error('LLM connection test failed:', error);
-    return false;
   }
 }

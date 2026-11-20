@@ -109,8 +109,6 @@ RUN_INBOX_REDIS_TESTS=1 UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... 
 
 | File | Covers |
 |------|--------|
-| `tests/cv-prompt.test.ts` | CV prompt schema |
-| `tests/cv-prompt-struan-fallback.test.ts` | Struan framework fallback text |
 | `tests/env.test.ts` | Env var parsing, provider/model validation, `LLM_TIMEOUT_MS` catalog |
 | `tests/llm-chat-dispatch.test.ts` | Provider dispatch, flex gating, `LLM_TIMEOUT_MS` abort |
 | `tests/errors.test.ts` | Typed error classes (`RateLimitError`, `ServiceError`) |
@@ -121,7 +119,6 @@ RUN_INBOX_REDIS_TESTS=1 UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... 
 | `tests/smoke-runner.test.ts` | `verifySmokePipeline` library with mocked fetch |
 | `tests/json-docx-builder.test.ts` | JSON→docx builder + regen CLI |
 | `tests/curator-prompt.test.ts` | Curator prompt contract |
-| `tests/knowledge-base.test.ts` | Legacy KB helpers (not tailor hot path) |
 | `tests/ci-workflow.test.ts` | GitHub Actions CI workflow: lint + `npm test` + build on PRs/`main`; no live-secret jobs |
 | `tests/eslint-config.test.ts` | ESLint 9 flat config; `eslint-config-next` major matches Next 15 (FlatCompat, not the Next 16 ESM export) |
 | `tests/markdown-docx.test.ts` | Legacy markdown→docx; `isValidDocxBase64` rejects unpadded / charset-invalid input |
