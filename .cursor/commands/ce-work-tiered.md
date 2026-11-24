@@ -11,12 +11,12 @@ Complexity tiers are already in the plan. Read them. Do not infer them. Review o
 
 ## Operating Rules
 
-- **Never ask the user.** Blockers go in the plan's `## Blockers` section. Move on to the next task.
+- **Never ask the user.** Blockers go in the plan's `## Blockers` section. After an exhausted failure (one tier-up retry done, or no higher tier), stop the run.
 - **The parent never writes feature code.** Implementation goes through Task subagents. The parent edits the plan file and docs, and runs verification.
 - **The parent is the only writer of the plan file.** Subagents report. The parent sets `Status:`.
 - **Verify, don't trust.** After each subagent, re-run the task's tests and lint yourself.
 - **Sequential dispatch.** One subagent at a time, in plan order. Subagents share one working tree.
-- **Sonnet only for Difficult.** Use only the routing table below. Sonnet 5.5 at high effort is approved for Difficult tasks in the plan and nothing else. No `*-fast` slugs.
+- **Sonnet only for Difficult (and one-tier-up retry from Complex).** Use only the routing table below. Sonnet 5.5 at high effort is approved for Difficult tasks in the plan, and for a single retry one tier up from a failed Complex task. No `*-fast` slugs.
 - **No git commits.** Leave all changes uncommitted.
 
 ---
@@ -30,6 +30,8 @@ Pass `model` explicitly on every Task call. Use `subagent_type: generalPurpose`.
 | Routine | `composer-2.5` |
 | Complex | `grok-4.7` (high effort) |
 | Difficult | `claude-sonnet-5-5` (high effort) |
+
+Tier-up on failure: `composer-2.5` → `grok-4.7` → `claude-sonnet-5-5`.
 
 If a slug is missing from the Task tool's list, add a Blocker naming it and stop the run. Do not substitute another model.
 
@@ -63,7 +65,8 @@ For each queued task, in order:
 3. Verify. Run the task's test scope and lint on the reported files. Run `git status` and confirm the changed files match the report.
 4. Record the outcome:
    - **Verified pass:** set `Status: Done`. For Difficult tasks, also add `Review: human-required`. The run continues.
-   - **Fail, or subagent reports BLOCKED:** set `Status: Blocked` and append a Blocker. Continue with the next task.
+   - **Fail on first attempt:** retry the same task once on the next tier up (Routine → Complex model, Complex → Difficult model). Difficult has no higher tier — treat a Difficult first-attempt failure as exhausted.
+   - **Fail after the one retry, or no higher tier, or subagent reports BLOCKED:** set `Status: Blocked`, append a Blocker, and stop the run. Do not continue the queue.
 5. Update the plan file after every task, so an interrupted run resumes cleanly.
 
 **Blocker format** (append only, never delete other entries):
@@ -145,8 +148,8 @@ Next: /ce-code-review-tiered on this branch
 
 ## Constraints
 
-- **No questions.** Record blockers and continue.
-- **Routing table only.** Sonnet is used only for Difficult tasks, as the table says.
+- **No questions.** Record blockers; after an exhausted failure, stop.
+- **Routing table only.** Sonnet is used for Difficult tasks and as the single tier-up retry from Complex.
 - **No git commits.**
 - **No scope creep.** Implement only what the plan specifies.
 - **Do not rewrite unrelated tests.** Focused additions covering the planned `Tests:` behavior are allowed.
@@ -161,11 +164,11 @@ Next: /ce-code-review-tiered on this branch
 **Wrong:** Trusting a subagent's "tests pass."
 **Right:** Re-run the tests and lint yourself before setting `Status: Done`.
 
-**Wrong:** Stopping the whole run because one task failed.
-**Right:** Mark that task Blocked and continue with the rest of the queue.
+**Wrong:** Retrying the same failed task on the same tier, or looping retries.
+**Right:** One retry one tier up, then mark Blocked and stop the run.
 
-**Wrong:** Using Sonnet for a Routine or Complex task, or retrying a failed task on Sonnet.
-**Right:** Sonnet only for Difficult tasks. A failed task is marked Blocked, and the run continues.
+**Wrong:** Using Sonnet for a first-attempt Routine or Complex task.
+**Right:** Sonnet for Difficult plan tasks, or as the single tier-up retry from a failed Complex task.
 
 **Wrong:** Classifying tasks when tiers are missing.
 **Right:** Add a Blocker pointing to `/ce-plan-classify`, then stop.
