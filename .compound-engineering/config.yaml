@@ -1,0 +1,12 @@
+# Compound Engineering -- repo config (team defaults)
+# Optional override: .compound-engineering/config.local.yaml (same keys; local wins).
+# See CE config-template / ccc-frontend config.local.example.yaml for the full key set.
+
+# Standing babysit handoff after ce-commit-push-pr opens a PR. false = do not
+# auto-invoke ce-babysit-pr. Per-run override: babysit:off on the ship step.
+auto_babysit: false
+
+# Plugin cross-model peer pass for stock ce-code-review / ce-doc-review.
+# off skips that plugin pass only. It does not disable the custom adversarial
+# Task reviewer in .cursor/commands/ce-code-review-tiered.md (and callers).
+cross_model_review_mode: off

@@ -1,5 +1,5 @@
 ---
-description: Autonomous tiered code review for Cursor Cloud Agents. Uses ce-code-review persona selection, runs reviewers as Task subagents on tier-matched models, and runs the adversarial review on Sonnet 5.5 high. Report only, with per-finding fix complexity and fix-specificity tags.
+description: Autonomous tiered code review for Cursor Cloud Agents. Uses ce-code-review persona selection, runs reviewers as Task subagents on tier-matched models, and when an adversarial pass runs uses a different-family model from the builder. Report only, with per-finding fix complexity, fix-specificity, and different_family_reviewer tags.
 argument-hint: "[base:<ref>] [PR URL] [blank = current branch vs its base]"
 ---
 
@@ -15,8 +15,9 @@ Persona selection and finding format come from the Compound Engineering `ce-code
 - **Never ask the user.** If something blocks a reviewer, record it in Coverage and continue.
 - **Reviewers are read-only.** They may run read-only git and search commands. They do not write files.
 - **Parent synthesizes.** Reviewers return findings. The parent dedupes, validates, tags, and writes the report.
-- **Premium: adversarial only in this command.** `claude-sonnet-5-5` at high effort is the only premium model here, and only for the adversarial reviewer.
+- **Premium: adversarial only in this command.** When an adversarial pass runs, premium Sonnet is allowed only for that reviewer, and only under the different-family rule below.
 - **Task slugs only.** Use only slugs the Task tool currently lists. Never use `*-fast` slugs.
+- **Review stays flexible.** The orchestrating model still decides whether a PR is complex enough to need more than a light review. Small, low-risk PRs can still get a light review. Do not spawn every persona, and do not imply every model must be used.
 
 ---
 
@@ -24,7 +25,7 @@ Persona selection and finding format come from the Compound Engineering `ce-code
 
 Pass `model` explicitly on every reviewer Task call. Use `subagent_type: generalPurpose`.
 
-Task slugs: Composer 2.5 = `composer-2.5`. Grok 4.7 = `grok-4.7` at high effort. Adversarial = `claude-sonnet-5-5` at high effort. Never use `sonnet-latest`.
+Task slugs: Composer 2.5 = `composer-2.5`. Grok 4.7 = `grok-4.7` at high effort. Adversarial default = `claude-sonnet-5-5` at high effort (subject to different-family rule). Never use `sonnet-latest`.
 
 | Persona                 | Default model                                                      |
 | ----------------------- | ------------------------------------------------------------------ |
@@ -39,7 +40,7 @@ Task slugs: Composer 2.5 = `composer-2.5`. Grok 4.7 = `grok-4.7` at high effort.
 | api-contract            | Grok 4.7                                                           |
 | data-migration          | Grok 4.7                                                           |
 | reliability             | Grok 4.7                                                           |
-| adversarial             | claude-sonnet-5-5 high, Task subagent (the one premium model here) |
+| adversarial             | Different-family rule below (when selected)                        |
 | previous-comments       | Composer 2.5                                                       |
 | julik-frontend-races    | Grok 4.7                                                           |
 | swift-ios               | Grok 4.7                                                           |
@@ -48,7 +49,19 @@ Task slugs: Composer 2.5 = `composer-2.5`. Grok 4.7 = `grok-4.7` at high effort.
 
 Do not blindly spawn every persona. Follow CE's existing conditional selection rules.
 
-If `claude-sonnet-5-5` is not in the Task tool's list, do not substitute another model. Record "adversarial: not run, no claude-sonnet-5-5 slug listed" in Coverage and continue.
+### Different-family adversarial (conditional)
+
+When an adversarial review pass runs, the reviewer must not be the builder's model family:
+
+| Builder family | Adversarial model |
+| -------------- | ----------------- |
+| Grok (e.g. `grok-4.7`) | `claude-sonnet-5-5` (High) |
+| Sonnet / Claude (e.g. `claude-sonnet-5-5`) | `grok-4.7` (High) |
+| Composer (e.g. `composer-2.5`) | `grok-4.7` (High) |
+
+Record the builder as `builder_model` (from the PR/run context: primary implementer model, or the dominant writer of the diff). If the builder family cannot be determined, default adversarial to `claude-sonnet-5-5` (High) and say so in Coverage.
+
+If the chosen adversarial slug is not in the Task tool's list, do not substitute another model. Record "adversarial: not run, no <slug> listed" in Coverage and continue.
 
 ---
 
@@ -114,7 +127,7 @@ Return only JSON in this shape:
 }
 ```
 
-**Adversarial reviewer:** same brief, with the persona file `references/personas/adversarial-reviewer.md`, the model from the routing table at high effort, and no change to the output shape. Its output is the completed adversarial review. Do not run a second adversarial pass, and do not run any external CLI.
+**Adversarial reviewer (when selected):** same brief, with the persona file `references/personas/adversarial-reviewer.md`, the different-family model from the rule above at high effort, and no change to the output shape. Its output is the completed adversarial review. Do not run a second adversarial pass, and do not run any external CLI. Turning off the plugin's `cross_model_review_mode` must not disable this custom adversarial Task reviewer.
 
 Tag rules for `fix_complexity` and `specific_fix` (the parent enforces these on every finding). Tiers match `ce-plan-classify`:
 - `fix_complexity` (the tier of the fix, not the bug):
@@ -152,13 +165,15 @@ Emit this report as the final response. Use this shape:
 
 **Verdict:** [Approve | Approve with notes | Request changes]
 **Diff:** N changed lines · risk signals: [list or none] · verification mechanism: [yes/no]
+**builder_model:** [slug or unknown]
+**reviewer_models:** [persona: slug, ...]
 
 ### Findings
-| # | Sev | Conf | File:Line | Title | Fix complexity | Specific fix |
-|---|-----|------|-----------|-------|----------------|--------------|
+| # | Sev | Conf | File:Line | Title | Fix complexity | Specific fix | Different-family |
+|---|-----|------|-----------|-------|----------------|--------------|------------------|
 
 ### Finding details
-For each finding: the why_it_matters text, the evidence lines, and the suggested fix.
+For each finding: the why_it_matters text, the evidence lines, the suggested fix, and `different_family_reviewer: true|false`.
 
 ### Residual risks
 - ...
@@ -168,7 +183,9 @@ For each finding: the why_it_matters text, the evidence lines, and the suggested
 
 ### Coverage
 - Reviewers run: [names and models]
-- Adversarial: [ran | not run, reason]. Requested model: [name], high effort. Served model: unverified. Independence: unverified.
+- builder_model: [slug or unknown]
+- reviewer_models: [list]
+- Adversarial: [ran | not run, reason]. Requested model: [name], high effort. Served model: unverified. Independence: [different-family | unverified | n/a].
 - Reviewers skipped: [name — CE selection reason]
 - Failed reviewers: [name — reason] or none
 - Limits: [gh unavailable, diff too large, etc.] or none
@@ -179,9 +196,11 @@ No files were changed.
 
 ### Findings (machine-readable)
 ```json
-[ { "title": "...", "severity": "P1", "file": "...", "line": 1, "confidence": 75, "fix_complexity": "Routine", "specific_fix": true, "suggested_fix": "...", "reviewers": ["..."] } ]
+[ { "title": "...", "severity": "P1", "file": "...", "line": 1, "confidence": 75, "fix_complexity": "Routine", "specific_fix": true, "suggested_fix": "...", "reviewers": ["..."], "different_family_reviewer": true } ]
 ```
 ```
+
+For each finding, set `different_family_reviewer` to `true` when at least one reviewer that raised it is a different model family from `builder_model`. Otherwise `false`. When `builder_model` is unknown, set `different_family_reviewer` to `false` and note the limit in Coverage.
 
 Verdict rules:
 - **Request changes:** any P0 finding, or any P1 with confidence 75 or 100.
@@ -194,7 +213,7 @@ Verdict rules:
 
 - **Report only.** No edits, commits, pushes, or branch changes.
 - **No questions.** Record limits in Coverage and continue.
-- **Premium: adversarial only.** Sonnet 5.5 high is the only approved premium model.
+- **Premium: adversarial only (when selected).** Premium Sonnet is allowed only when the different-family rule selects it for adversarial.
 - **No external CLI.** Do not run any cross-model runner or the `claude` CLI.
 - **No invented findings.** Every finding needs evidence in the diff or surrounding code.
 - **No style nits.** Linter-level issues are not findings.
@@ -204,16 +223,22 @@ Verdict rules:
 ## Wrong / Right
 
 **Wrong:** Running the adversarial review through an external CLI, or running it twice.
-**Right:** One adversarial Task subagent on the Sonnet slug. Its output counts as the completed adversarial review.
+**Right:** When an adversarial pass runs, one adversarial Task subagent on the different-family slug. Its output counts as the completed adversarial review.
 
-**Wrong:** Claiming Sonnet 5.5 produced a finding without a receipt.
+**Wrong:** Always forcing Sonnet for adversarial, even when the builder was Claude-family.
+**Right:** When an adversarial pass runs, pick the different-family model from the table (Grok-built → Sonnet; Sonnet-built → Grok; Composer-built → Grok).
+
+**Wrong:** Claiming a premium model produced a finding without a receipt.
 **Right:** Report the requested model and say the served model is unverified.
 
 **Wrong:** Applying a fix because it is obvious.
 **Right:** Report it with its fix complexity and specific-fix tag. A separate step applies fixes.
 
-**Wrong:** Substituting Grok when no Sonnet slug is listed.
+**Wrong:** Substituting another model when the chosen adversarial slug is not listed.
 **Right:** Record the adversarial review as not run, with the reason.
+
+**Wrong:** Treating every PR as requiring the full multi-model roster.
+**Right:** Follow CE selection; small, low-risk PRs can still get a light review.
 
 **Wrong:** Dropping a P0 finding because it is low confidence.
 **Right:** Keep P0 findings at confidence 50, and say so in the report.

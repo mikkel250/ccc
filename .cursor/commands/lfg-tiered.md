@@ -21,18 +21,20 @@ You are the orchestrator for an unattended run in a Cursor Cloud Agent. Take one
 
 | Slug | Use |
 |------|-----|
-| `composer-2.5` | Mechanical work: Routine fixes, the re-check, shipping |
+| `composer-2.5` | Mechanical work: Routine fixes, non-Composer re-checks, shipping |
 | `grok-4.7` (high effort) | Default for judgment work: planning, review, substantive fixes, compound |
 | `claude-sonnet-5-5` (high effort) | Approved premium use, listed below |
 
 Sonnet 5.5 at high effort is approved only for:
-1. The adversarial reviewer, inside `/ce-code-review-tiered`.
+1. The adversarial reviewer inside `/ce-code-review-tiered`, when an adversarial pass runs and the different-family rule selects Sonnet (builder was Grok-family).
 2. Difficult tasks in the plan, inside `ce-work-tiered`.
 3. Difficult review fixes that name no specific fix (stage 6).
 4. Debugging when the cause is unclear or a cheaper model already failed.
 5. A retry one tier up from Grok (stage 6 and the retry rule below).
 
 Nothing else uses Sonnet. If a slug is not in the Task tool's list, stop and report it. Do not substitute another model.
+
+**Review stays flexible.** The orchestrating model still decides whether a PR is complex enough to need more than a light review. Small, low-risk PRs can still get a light review. Do not imply every model must be used.
 
 ---
 
@@ -118,7 +120,9 @@ Run `ce-simplify-code` on the changed code, on `grok-4.7`.
 
 ### 6a. Review
 
-Run `/ce-code-review-tiered` on `grok-4.7` at high effort, with findings only. Every finding must have severity (P0–P3), a `specific_fix` value (yes or no), and a `fix_complexity` value (Routine, Complex, or Difficult). The adversarial reviewer runs as its own Sonnet subagent, per that command.
+Run `/ce-code-review-tiered` on `grok-4.7` at high effort, with findings only. Every finding must have severity (P0–P3), a `specific_fix` value (yes or no), a `fix_complexity` value (Routine, Complex, or Difficult), and `different_family_reviewer` (true or false). The report must also record `builder_model` and `reviewer_models`.
+
+When an adversarial review pass runs, the reviewer must not be the builder's model family (per `/ce-code-review-tiered`): Grok-built → `claude-sonnet-5-5` (High); Sonnet-built → `grok-4.7` (High); Composer-built → `grok-4.7` (High). Turning off the plugin's `cross_model_review_mode` must not disable this custom adversarial Task reviewer.
 
 ### 6b. Dedupe
 
@@ -152,7 +156,9 @@ After each pass, run `npm run lint`, `npm run typecheck`, and `npm test`. If the
 
 ### 6f. Re-check
 
-Do not re-run the full review. If a P0 or P1 fix changed more than 10 lines, run one `composer-2.5` subagent on that pass's diff. It checks only for new defects introduced by the fix. Any new finding becomes an issue. Do not loop.
+Do not re-run the full review. If a P0 or P1 fix changed more than 10 lines, run one re-check subagent on that pass's diff. It checks only for new defects introduced by the fix. Any new finding becomes an issue. Do not loop.
+
+When a P0/P1 finding that Composer fixed is re-checked, the re-check runs on `grok-4.7` (high), not Composer. For P0/P1 fixes applied by Grok or Sonnet, the re-check may stay on `composer-2.5`.
 
 ---
 
@@ -166,13 +172,13 @@ Run `ce-compound` on `grok-4.7` in non-interactive mode, if the run produced rea
 
 1. Confirm the branch is not `main`. Run `git branch --show-current` to check.
 2. If there is no remote, make the commit and stop there. Record the local-only state in the report.
-3. Run `ce-commit-push-pr` on `composer-2.5`, non-interactively, as `mikkel250`.
+3. Run `ce-commit-push-pr` on `composer-2.5`, non-interactively, as `mikkel250`, with `babysit:off`. Do not start babysit. Stop after the PR opens.
 4. The PR body includes, in this order:
    - The MERGE GATE block, if any never-low item was touched.
    - A summary of the change.
    - **Fixed in stage 6:** each fix with its severity, file, and model.
    - **Filed as issues:** each issue as a markdown link, with the reason it was not fixed.
-   - **Models by stage:** which model ran each stage.
+   - **Models by stage:** which model ran each stage (`builder_model`, `reviewer_models` when a review ran).
    - **Blocked tasks** from the build, and any residual risk.
    - **Coverage limits:** adversarial not run, `gh` unavailable, or anything else skipped.
 
@@ -180,13 +186,12 @@ Run `ce-compound` on `grok-4.7` in non-interactive mode, if the run produced rea
 
 ## Stage 9: Hand Off
 
-Do not watch CI or the PR. Do not send follow-ups. Output a final report:
+Do not watch CI or the PR. Do not request reviews. Do not merge. Do not send follow-ups. Output a final report:
 - The PR URL, or the local-only state.
 - The branch name.
 - Any MERGE GATE items.
 - The issues filed.
 - The models used.
-- `Branch pushed. Open or refresh the PR and wait for CodeRabbit before merging.`
 
 Merging is out of scope for this command.
 
@@ -214,8 +219,11 @@ Stop and report, without pushing anything new, when:
 **Wrong:** Re-running the full review after the fixes.
 **Right:** Run only the diff re-check in 6f.
 
-**Wrong:** Merging after CI passes.
-**Right:** Stop at the open PR and hand off.
+**Wrong:** Re-checking a Composer-applied P0/P1 fix on Composer.
+**Right:** When a P0/P1 finding that Composer fixed is re-checked, use `grok-4.7`.
+
+**Wrong:** Merging after CI passes, or babysitting after ship.
+**Right:** Pass `babysit:off`, stop at the open PR, and hand off.
 
 ---
 
