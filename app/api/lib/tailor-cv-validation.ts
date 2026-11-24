@@ -9,13 +9,6 @@ import {
 } from "./curation-mode";
 import { getTailorJdMaxChars } from "./cv-schema";
 
-export interface TailorCvRequestBody {
-  jobDescription?: unknown;
-  sessionId?: unknown;
-  curationMode?: unknown;
-  [key: string]: unknown;
-}
-
 export type ValidateTailorCvResult =
   | {
       ok: true;
@@ -24,10 +17,6 @@ export type ValidateTailorCvResult =
       curationMode: CurationMode;
     }
   | { ok: false; error: string };
-
-function isTailorCvRequestBody(_record: Record<string, unknown>): _record is TailorCvRequestBody {
-  return true;
-}
 
 export function validateTailorCvBody(
   body: unknown,
@@ -38,9 +27,6 @@ export function validateTailorCvBody(
   }
 
   const record = body as Record<string, unknown>;
-  if (!isTailorCvRequestBody(record)) {
-    return { ok: false, error: "Request body must be an object" };
-  }
 
   const jd = record.jobDescription;
 

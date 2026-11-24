@@ -24,9 +24,9 @@ Separate the CV into **stable sections** (factual, unchanging) and **one tailori
 ### Key architectural decisions
 - **Stable/factual separation** reduces hallucination surface — only part 3 changes meaningfully per JD
 - **Company summaries** (part 6) frame bullets in believable scale — one of the most overlooked résumé sections
-- **Grounding rule:** every fact must appear in `knowledge-base/` content; no invented employers, dates, metrics, or tools
-- **Strict Markdown output only** — no HTML, tables, JSON, or code fences (docx parser requirement)
-- **Sync contract:** production uses Langfuse `cv-tailor-system` (label: `production`); fallback in `cv-prompt.ts` kept aligned manually
+- **Grounding rule:** every fact must appear in the Master CV; no invented employers, dates, metrics, or tools
+- **Strict Markdown output only** — no HTML, tables, JSON, or code fences (legacy markdown-era docx path; eval format scorer only today)
+- Production tailor uses JSON curator + `json-docx-builder` — not this markdown prompt contract
 
 ## See Also
 - [Original source](docs/struan-8-part-cv-framework.md)

@@ -77,10 +77,10 @@ See [Pipeline enhancements](./PIPELINE_ENHANCEMENTS.md) for the two-pass pipelin
 
 ### Anti-patterns
 
-- Do NOT fork the CV platform project. This project consumes the knowledge base directly from its own filesystem. Phase 2 will add a CV platform API integration.
+- Do NOT fork the CV platform project. This project loads the Master CV from `MASTER_CV_JSON` (preferred) or `MASTER_CV_PATH` via `master-cv.ts`. Markdown under `knowledge-base/` is fixtures only (e.g. test JDs), not the tailor source. Phase 2 will add a CV platform API integration.
 - Do NOT add frontend pages or components. No product UI in v1; the inbox worker is not a UI.
 - Do NOT add selective context retrieval in MVP. Inject everything.
-- Do NOT edit the production curator prompt only in git (`curator-prompt.ts` fallback) and ship it — update Langfuse (`cv-curator-json`, `production` label) and keep the hardcoded fallback in sync. Legacy `cv-prompt.ts` is not the tailor hot path.
+- Do NOT edit the production curator prompt only in git (`curator-prompt.ts` fallback) and ship it — update Langfuse (`cv-curator-json`, `production` label) and keep the hardcoded fallback in sync.
 - Do NOT leave Langfuse `cv-curator-json` `production` on the previous shape (e.g. bare CV JSON) after a curator-contract release. New processes substitute the hardcoded fallback when that text omits `reply_text`, but processes still inside the prompt cache TTL keep serving whatever they already fetched. Publish via `scripts/create-langfuse-prompts.ts` in the same release and recycle those processes.
 - Do NOT rely on Langfuse `latest` label in production — always use `production` label for deterministic prompt versioning.
 - Do NOT route inbox scan through `POST /api/tailor-cv` or share its rate-limit buckets — inbox tailor is in-process (product contract R8).
@@ -93,7 +93,7 @@ See [File layout reference](./FILE_LAYOUT.md).
 
 ## Constraints
 
-- **Knowledge base is read-only at runtime**: Files are read from disk, not mutated by the API.
+- **Master CV is env-sourced and read-only at runtime**: Loaded from `MASTER_CV_JSON` or `MASTER_CV_PATH` (preloaded; request path serves cache). Not mutated by the API.
 - **Stateless (MVP)**: No application database. Rate limits and inbox processed-ids use Upstash Redis. Each tailor request is independent. Learning system (post-MVP) adds SQLite for feedback and few-shot storage — still ephemeral per-deployment, not a persistent multi-tenant database.
 - **Environment variables only**: All secrets via env vars. No hardcoded keys. No config files with secrets.
 
